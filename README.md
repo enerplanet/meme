@@ -1,5 +1,5 @@
 
-# THD-Spatial-AI Repository Template
+# Multi Energy Model Execution (MEME)
 
 [![MkDocs](https://github.com/THD-Spatial-AI/github-template/actions/workflows/docs.yml/badge.svg)](https://thd-spatial-ai.github.io/github-template)
 

@@ -1,0 +1,44 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "MkDocs: Install dependencies",
+      "type": "shell",
+      "command": "python",
+      "args": [
+        "-m",
+        "pip",
+        "install",
+        "-r",
+        "docs/requirements.txt"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "MkDocs: Serve",
+      "type": "shell",
+      "command": "python",
+      "args": [
+        "-m",
+        "mkdocs",
+        "serve"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "isBackground": true,
+      "dependsOn": [
+        "MkDocs: Install dependencies"
+      ],
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "clear": true
+      }
+    }
+  ]
+}

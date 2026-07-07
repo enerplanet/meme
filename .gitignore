@@ -1,0 +1,7 @@
+# Add files and directories to ignore in Git
+# You can find some language specific templates at https://github.com/github/gitignore
+
+site/
+.venv/
+__pycache__/
+venv/

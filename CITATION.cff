@@ -2,16 +2,16 @@
 # See https://citation-file-format.github.io/ for the full specification.
 
 cff-version: 1.2.0
-title: "Project Title"
+title: "Multi-Energy Model Execution (MEME)"
 message: "If you use this software, please cite it as below."
 type: software
 authors:
-  - family-names: "Last Name"
-    given-names: "First Name"
-    orcid: "https://orcid.org/0000-0000-0000-0000"
+  - family-names: "Weber"
+    given-names: "Andreas"
+    orcid: "https://orcid.org/0009-0004-5418-2847"
     affiliation: "BigGeoData & Spatial AI, Technische Hochschule Deggendorf"
-repository-code: "https://github.com/THD-Spatial-AI/github-template"
-url: "https://THD-Spatial-AI.github.io/github-template"
+repository-code: "https://github.com/enerplanet/meme"
+url: "https://enerplanet.github.io/meme"
 license: MIT
-version: "0.1.0"
-date-released: "2026-01-01"
+version: "0.1.0-alpha"
+date-released: "2026-07-16"

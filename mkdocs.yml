@@ -1,13 +1,13 @@
 # Project information
-site_name: THD-Spatial-AI GitHub Template
-site_author: THD-Spatial-AI
+site_name: Multi Energy Model Execution (MEME)
+site_author: Andreas Weber
 site_description: >-
-  Template repository for open source projects in the THD-Spatial-AI GitHub organisation
-site_url: https://THD-Spatial-AI.github.io/gitHub-template
+  Template documentation for MEME
+site_url: https://enerplanet.github.io/meme
 
 # Repository
-repo_name: THD-Spatial/GitHub-Template
-repo_url: https://github.com/THD-Spatial-AI/gitHub-template
+repo_name: enerplanet/meme
+repo_url: https://github.com/enerplanet/meme
 edit_uri: edit/main/docs/
 
 # Theme configuration

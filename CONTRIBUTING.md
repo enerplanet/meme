@@ -1,6 +1,6 @@
 # Contributing
 
-Thank you for taking the time to contribute to **[PROJECT_NAME]**.
+Thank you for taking the time to contribute to MEME.
 
 This project welcomes contributions such as bug reports, feature requests, documentation improvements, code changes, and general feedback.
 
@@ -34,8 +34,8 @@ Before creating a new issue or pull request, please:
 
 Use the project issue tracker for bug reports, feature requests, and documentation issues.
 
-- **Issue tracker:** [INSERT_ISSUE_TRACKER_URL]
-- **Discussions / Questions (optional):** [INSERT_DISCUSSION_URL_OR_REMOVE]
+- **Issue tracker:** [ISSUES](https://github.com/enerplanet/meme/issues)
+- **Discussions / Questions (optional):** [Discord of Enerplanet]
 
 When reporting an issue, please include:
 

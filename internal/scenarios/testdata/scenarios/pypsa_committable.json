@@ -1,0 +1,17 @@
+{
+  "model": {
+    "metadata": {"name": "pypsa_committable"},
+    "time": {"start": "2025-01-01", "end": "2025-01-02", "resolution": "1H"},
+    "carriers": {"electricity": {"unit": "MWh"}},
+    "nodes": {"n1": {}},
+    "technologies": {
+      "coal": {"role": "supply", "node": "n1", "carrier_out": "electricity",
+               "capacity": {"existing": 200, "expandable": false},
+               "operation": {"committable": true, "min_pu": 0.4, "start_up_cost": 5000, "shut_down_cost": 1000,
+                             "min_uptime": 3, "min_downtime": 2, "ramp_up": 0.6, "ramp_down": 0.6},
+               "costs": {"monetary": {"variable_om": 30}}},
+      "load": {"role": "demand", "node": "n1", "carrier_in": "electricity", "demand_profile": 100}
+    }
+  },
+  "experiment": {"mode": "plan", "solver": {"name": "highs"}}
+}

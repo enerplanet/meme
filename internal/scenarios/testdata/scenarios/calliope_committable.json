@@ -1,0 +1,20 @@
+{
+  "model": {
+    "metadata": {"name": "calliope_committable"},
+    "time": {"start": "2025-01-01", "end": "2025-01-02", "resolution": "1H"},
+    "carriers": {"electricity": {"unit": "MWh"}},
+    "nodes": {"n1": {}},
+    "technologies": {
+      "gen": {"role": "supply", "node": "n1", "carrier_out": "electricity",
+              "capacity": {"expandable": true, "max": 300, "per_unit": 100},
+              "operation": {"committable": true, "min_pu": 0.3},
+              "costs": {"monetary": {"variable_om": 5, "purchase": 1000}}},
+      "backup": {"role": "supply", "node": "n1", "carrier_out": "electricity",
+                 "capacity": {"existing": 1000, "expandable": false},
+                 "costs": {"monetary": {"variable_om": 500}}},
+      "load": {"role": "demand", "node": "n1", "carrier_in": "electricity", "demand_profile": "dem"}
+    },
+    "timeseries": {"dem": {"source": "inline", "values": [80, 250, 120, 60]}}
+  },
+  "experiment": {"mode": "plan", "solver": {"name": "cbc"}}
+}

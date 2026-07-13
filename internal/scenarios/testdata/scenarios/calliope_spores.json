@@ -1,0 +1,85 @@
+{
+  "model": {
+    "metadata": {
+      "name": "calliope_spores"
+    },
+    "time": {
+      "start": "2025-01-01",
+      "end": "2025-01-02",
+      "resolution": "1H"
+    },
+    "carriers": {
+      "electricity": {
+        "unit": "MWh"
+      }
+    },
+    "nodes": {
+      "n1": {}
+    },
+    "technologies": {
+      "pv": {
+        "role": "supply",
+        "node": "n1",
+        "carrier_out": "electricity",
+        "capacity": {
+          "expandable": true,
+          "max": 1000
+        },
+        "lifetime": 25,
+        "interest_rate": 0.05,
+        "costs": {
+          "monetary": {
+            "investment_per_capacity": 500000
+          }
+        }
+      },
+      "wind": {
+        "role": "supply",
+        "node": "n1",
+        "carrier_out": "electricity",
+        "capacity": {
+          "expandable": true,
+          "max": 1000
+        },
+        "lifetime": 25,
+        "interest_rate": 0.05,
+        "costs": {
+          "monetary": {
+            "investment_per_capacity": 700000
+          }
+        }
+      },
+      "load": {
+        "role": "demand",
+        "node": "n1",
+        "carrier_in": "electricity",
+        "demand_profile": "dem"
+      }
+    },
+    "timeseries": {
+      "dem": {
+        "source": "inline",
+        "values": [
+          80,
+          90,
+          120,
+          110,
+          95,
+          85
+        ]
+      }
+    }
+  },
+  "experiment": {
+    "mode": "alternatives",
+    "solver": {
+      "name": "cbc",
+      "options": {
+        "spores": {
+          "number": 5,
+          "tracking_parameter": "spores_tracker"
+        }
+      }
+    }
+  }
+}

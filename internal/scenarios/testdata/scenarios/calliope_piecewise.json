@@ -1,0 +1,89 @@
+{
+  "model": {
+    "metadata": {
+      "name": "calliope_piecewise"
+    },
+    "time": {
+      "start": "2025-01-01",
+      "end": "2025-01-02",
+      "resolution": "1H"
+    },
+    "carriers": {
+      "electricity": {
+        "unit": "MWh"
+      },
+      "gas": {
+        "unit": "MWh"
+      }
+    },
+    "nodes": {
+      "n1": {}
+    },
+    "technologies": {
+      "gas_src": {
+        "role": "supply",
+        "node": "n1",
+        "carrier_out": "gas",
+        "capacity": {
+          "expandable": true,
+          "max": 10000
+        },
+        "costs": {
+          "monetary": {
+            "variable_om": 20
+          }
+        }
+      },
+      "conv": {
+        "role": "conversion",
+        "node": "n1",
+        "carrier_in": "gas",
+        "carrier_out": "electricity",
+        "capacity": {
+          "existing": 1000,
+          "expandable": false
+        },
+        "performance": {
+          "type": "piecewise",
+          "breakpoints": [
+            {
+              "load": 0.0,
+              "efficiency": 0.5
+            },
+            {
+              "load": 0.25,
+              "efficiency": 0.6
+            },
+            {
+              "load": 1.0,
+              "efficiency": 0.45
+            }
+          ]
+        }
+      },
+      "load": {
+        "role": "demand",
+        "node": "n1",
+        "carrier_in": "electricity",
+        "demand_profile": "dem"
+      }
+    },
+    "timeseries": {
+      "dem": {
+        "source": "inline",
+        "values": [
+          100,
+          300,
+          450,
+          200
+        ]
+      }
+    }
+  },
+  "experiment": {
+    "mode": "plan",
+    "solver": {
+      "name": "cbc"
+    }
+  }
+}

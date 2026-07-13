@@ -1,0 +1,295 @@
+{
+  "model": {
+    "metadata": {
+      "name": "toy",
+      "currency": "EUR"
+    },
+    "time": {
+      "start": "2025-01-01",
+      "end": "2025-01-02",
+      "resolution": "1H"
+    },
+    "carriers": {
+      "electricity": {
+        "unit": "MWh",
+        "co2_intensity": 0
+      },
+      "heat": {
+        "unit": "MWh",
+        "co2_intensity": 0
+      },
+      "gas": {
+        "unit": "MWh",
+        "co2_intensity": 0.2
+      }
+    },
+    "nodes": {
+      "n1": {
+        "coords": {
+          "lat": 48.8,
+          "lon": 12.9
+        }
+      },
+      "n2": {
+        "coords": {
+          "lat": 49.0,
+          "lon": 13.2
+        }
+      }
+    },
+    "timeseries": {
+      "pv_cf": {
+        "source": "inline",
+        "values": [
+          0.0,
+          0.3,
+          0.6
+        ]
+      },
+      "load_n1": {
+        "source": "inline",
+        "values": [
+          40,
+          42,
+          45
+        ]
+      }
+    },
+    "technologies": {
+      "pv": {
+        "role": "supply",
+        "node": [
+          "n1",
+          "n2"
+        ],
+        "carrier_out": "electricity",
+        "capacity": {
+          "existing": 0,
+          "expandable": true,
+          "max": 500,
+          "unit": "MW"
+        },
+        "costs": {
+          "monetary": {
+            "investment_per_capacity": 600000,
+            "variable_om": 0
+          }
+        },
+        "lifetime": 25,
+        "interest_rate": 0.07,
+        "cost_basis": "overnight",
+        "node_overrides": {
+          "n2": {
+            "capacity": {
+              "existing": 0,
+              "expandable": true,
+              "max": 300
+            },
+            "costs": {
+              "monetary": {
+                "investment_per_capacity": 650000
+              }
+            }
+          }
+        },
+        "performance": {
+          "type": "physics",
+          "model": "pv",
+          "params": {
+            "tilt": 35,
+            "azimuth": 180,
+            "loss": 0.14
+          },
+          "precomputed": "pv_cf"
+        }
+      },
+      "ccgt": {
+        "role": "supply",
+        "node": "n1",
+        "carrier_out": "electricity",
+        "capacity": {
+          "existing": 100,
+          "expandable": false,
+          "unit": "MW"
+        },
+        "operation": {
+          "committable": true,
+          "start_up_cost": 5000,
+          "min_uptime": 3,
+          "ramp_up": 0.6
+        },
+        "costs": {
+          "monetary": {
+            "investment_per_capacity": 800000,
+            "variable_om": 45
+          }
+        },
+        "lifetime": 30,
+        "interest_rate": 0.07,
+        "cost_basis": "overnight"
+      },
+      "chp": {
+        "role": "conversion",
+        "node": "n1",
+        "flows": [
+          {
+            "carrier": "gas",
+            "direction": "in",
+            "reference": true
+          },
+          {
+            "carrier": "electricity",
+            "direction": "out",
+            "ratio": 0.4
+          },
+          {
+            "carrier": "heat",
+            "direction": "out",
+            "ratio": 0.45
+          }
+        ],
+        "capacity": {
+          "existing": 0,
+          "expandable": true,
+          "max": 250,
+          "unit": "MW"
+        },
+        "costs": {
+          "monetary": {
+            "investment_per_capacity": 900000,
+            "variable_om": 2
+          }
+        },
+        "lifetime": 25,
+        "interest_rate": 0.07,
+        "cost_basis": "overnight"
+      },
+      "battery": {
+        "role": "storage",
+        "node": "n1",
+        "carrier_in": "electricity",
+        "carrier_out": "electricity",
+        "capacity": {
+          "existing": 0,
+          "expandable": true,
+          "max": 200
+        },
+        "storage": {
+          "max_hours": 4,
+          "charge_eff": 0.95,
+          "discharge_eff": 0.95,
+          "self_discharge": 0.001,
+          "cyclic": true,
+          "initial_soc": 0.5
+        },
+        "costs": {
+          "monetary": {
+            "investment_per_capacity": 150000
+          }
+        },
+        "lifetime": 15,
+        "interest_rate": 0.07,
+        "cost_basis": "overnight"
+      },
+      "elec_demand": {
+        "role": "demand",
+        "node": "n1",
+        "carrier_in": "electricity",
+        "demand_profile": "load_n1"
+      }
+    },
+    "transmission": {
+      "line_n1_n2": {
+        "carrier": "electricity",
+        "from": "n1",
+        "to": "n2",
+        "bidirectional": true,
+        "efficiency": 0.97,
+        "capacity": {
+          "existing": 0,
+          "expandable": true,
+          "max": 300
+        },
+        "native": {
+          "pypsa": {
+            "x": 0.1,
+            "r": 0.01
+          }
+        }
+      }
+    },
+    "trade": {
+      "grid_n1": {
+        "node": "n1",
+        "carrier": "electricity",
+        "import": {
+          "limit": 500,
+          "price": 80,
+          "emission_factor": 0.35
+        },
+        "export": {
+          "limit": 500,
+          "price": 40
+        }
+      }
+    },
+    "emission_limits": [
+      {
+        "name": "co2_cap",
+        "sense": "<=",
+        "limit": 1000000
+      }
+    ],
+    "constraints": [
+      {
+        "name": "max_vre_capacity",
+        "terms": [
+          {
+            "coefficient": 1,
+            "variable": "capacity",
+            "techs": [
+              "pv"
+            ],
+            "carriers": [
+              "electricity"
+            ]
+          }
+        ],
+        "sense": "<=",
+        "bound": 800
+      },
+      {
+        "name": "pv_plus_ccgt_cap",
+        "terms": [
+          {
+            "coefficient": 1,
+            "variable": "capacity",
+            "techs": [
+              "pv"
+            ]
+          },
+          {
+            "coefficient": 1,
+            "variable": "capacity",
+            "techs": [
+              "ccgt"
+            ]
+          }
+        ],
+        "sense": "<=",
+        "bound": 600
+      }
+    ]
+  },
+  "experiment": {
+    "mode": "plan",
+    "objective": "min_cost",
+    "foresight": "perfect",
+    "solver": {
+      "name": "highs",
+      "options": {
+        "threads": 4
+      }
+    }
+  }
+}

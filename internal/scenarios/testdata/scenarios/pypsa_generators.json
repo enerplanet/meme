@@ -1,0 +1,20 @@
+{
+  "model": {
+    "metadata": {"name": "pypsa_generators", "currency": "EUR"},
+    "time": {"start": "2025-01-01", "end": "2025-01-02", "resolution": "1H"},
+    "carriers": {"electricity": {"unit": "MWh", "co2_intensity": 0}},
+    "nodes": {"n1": {}},
+    "technologies": {
+      "pv": {"role": "supply", "node": "n1", "carrier_out": "electricity",
+             "capacity": {"expandable": true, "min": 10, "max": 500},
+             "lifetime": 25, "interest_rate": 0.05,
+             "costs": {"monetary": {"investment_per_capacity": 600000, "variable_om": 0}}},
+      "ccgt": {"role": "supply", "node": "n1", "carrier_out": "electricity",
+               "capacity": {"expandable": true, "max": 800},
+               "lifetime": 25, "interest_rate": 0.07,
+               "costs": {"monetary": {"investment_per_capacity": 800000, "variable_om": 60, "fixed_om": 2000}}},
+      "load": {"role": "demand", "node": "n1", "carrier_in": "electricity", "demand_profile": 100}
+    }
+  },
+  "experiment": {"mode": "plan", "objective": "min_cost", "solver": {"name": "highs"}}
+}

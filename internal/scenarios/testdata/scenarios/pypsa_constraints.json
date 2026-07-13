@@ -1,0 +1,17 @@
+{
+  "model": {
+    "metadata": {"name": "pypsa_constraints"},
+    "time": {"start": "2025-01-01", "end": "2025-01-02", "resolution": "1H"},
+    "carriers": {"electricity": {"unit": "MWh"}},
+    "nodes": {"n1": {}},
+    "technologies": {
+      "pv": {"role": "supply", "node": "n1", "carrier_out": "electricity",
+             "capacity": {"expandable": true, "max": 1000}, "lifetime": 25, "interest_rate": 0.05,
+             "costs": {"monetary": {"investment_per_capacity": 500000}}},
+      "load": {"role": "demand", "node": "n1", "carrier_in": "electricity", "demand_profile": 100}
+    },
+    "constraints": [{"name": "max_pv", "sense": "<=", "bound": 800,
+                     "terms": [{"coefficient": 1, "variable": "capacity", "techs": ["pv"]}]}]
+  },
+  "experiment": {"mode": "plan", "solver": {"name": "highs"}}
+}

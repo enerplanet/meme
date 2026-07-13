@@ -1,0 +1,32 @@
+{
+  "model": {
+    "metadata": {"name": "adopt_extensions"},
+    "time": {"start": "2025-01-01", "end": "2025-01-02", "resolution": "1H"},
+    "discount_rate": 0.05,
+    "carriers": {"electricity": {"unit": "MWh"}},
+    "nodes": {"n1": {"coords": {"lat": 48.1, "lon": 11.6, "alt": 520}}},
+    "technologies": {
+      "battery": {"role": "storage", "node": "n1",
+                  "carrier_in": "electricity", "carrier_out": "electricity",
+                  "capacity": {"existing": 20, "expandable": false,
+                               "decommission": {"mode": "continuous"}},
+                  "storage": {"max_charge_rate": 0.5, "max_discharge_rate": 0.5,
+                              "no_simultaneous_charge_discharge": true},
+                  "costs": {"monetary": {"fixed_om_fraction": 0.02}}},
+      "load": {"role": "demand", "node": "n1", "carrier_in": "electricity",
+               "demand_profile": "dem"}
+    },
+    "trade": {
+      "grid": {"node": "n1", "carrier": "electricity",
+               "import": {"limit": "grid_cap", "price": 60, "emission_factor": 0.2},
+               "export": {"limit": 20, "price": 20, "emission_factor": 0.2}}
+    },
+    "timeseries": {
+      "dem": {"source": "inline", "values": [50, 50, 50, 50]},
+      "grid_cap": {"source": "inline", "values": [100, 100, 100, 100]}
+    }
+  },
+  "experiment": {"mode": "plan",
+                 "reporting": {"case_name": "extensions"},
+                 "solver": {"name": "glpk", "time_limit": 300, "mip_gap": 0.01}}
+}

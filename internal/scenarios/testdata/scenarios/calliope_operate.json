@@ -1,0 +1,79 @@
+{
+  "model": {
+    "metadata": {
+      "name": "calliope_operate"
+    },
+    "time": {
+      "start": "2025-01-01",
+      "end": "2025-01-02",
+      "resolution": "1H"
+    },
+    "carriers": {
+      "electricity": {
+        "unit": "MWh"
+      }
+    },
+    "nodes": {
+      "n1": {}
+    },
+    "technologies": {
+      "gen": {
+        "role": "supply",
+        "node": "n1",
+        "carrier_out": "electricity",
+        "capacity": {
+          "existing": 500,
+          "expandable": false
+        },
+        "costs": {
+          "monetary": {
+            "variable_om": 40
+          }
+        }
+      },
+      "load": {
+        "role": "demand",
+        "node": "n1",
+        "carrier_in": "electricity",
+        "demand_profile": "dem"
+      }
+    },
+    "timeseries": {
+      "dem": {
+        "source": "inline",
+        "values": [
+          70,
+          65,
+          60,
+          58,
+          60,
+          70,
+          90,
+          110,
+          120,
+          115,
+          110,
+          105,
+          100,
+          100,
+          105,
+          110,
+          120,
+          125,
+          120,
+          110,
+          100,
+          90,
+          80,
+          75
+        ]
+      }
+    }
+  },
+  "experiment": {
+    "mode": "operate",
+    "solver": {
+      "name": "cbc"
+    }
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "model": {
+    "metadata": {"name": "calliope_node_override"},
+    "time": {"start": "2025-01-01", "end": "2025-01-02", "resolution": "1H"},
+    "carriers": {"electricity": {"unit": "MWh"}},
+    "nodes": {"n1": {"coords": {"lat": 48, "lon": 11}}, "n2": {"coords": {"lat": 52, "lon": 7}}},
+    "technologies": {
+      "pv": {"role": "supply", "node": ["n1", "n2"], "carrier_out": "electricity",
+             "capacity": {"expandable": true, "max": 1000}, "lifetime": 25, "interest_rate": 0.05,
+             "costs": {"monetary": {"investment_per_capacity": 500000}},
+             "node_overrides": {
+               "n2": {"costs": {"monetary": {"investment_per_capacity": 300000}}}
+             }},
+      "l1": {"role": "demand", "node": "n1", "carrier_in": "electricity", "demand_profile": 100},
+      "l2": {"role": "demand", "node": "n2", "carrier_in": "electricity", "demand_profile": 80}
+    }
+  },
+  "experiment": {"mode": "plan", "solver": {"name": "cbc"}}
+}

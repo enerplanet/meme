@@ -1,0 +1,29 @@
+{
+  "model": {
+    "metadata": {"name": "adopt_min_emissions"},
+    "time": {"start": "2025-06-01", "end": "2025-06-01T03:00", "resolution": "1H"},
+    "carriers": {"electricity": {"unit": "MWh"}},
+    "nodes": {"n1": {"coords": {"lat": 48.8, "lon": 12.9},
+                     "climate": {"ghi": "s_ghi", "dni": "s_dni", "dhi": "s_dhi",
+                                  "temp_air": "s_temp", "ws10": "s_ws", "rh": 55}}},
+    "timeseries": {
+      "s_ghi":  {"source": "inline", "values": [0, 400, 800, 500]},
+      "s_dni":  {"source": "inline", "values": [0, 500, 900, 600]},
+      "s_dhi":  {"source": "inline", "values": [0, 100, 150, 120]},
+      "s_temp": {"source": "inline", "values": [12, 18, 25, 22]},
+      "s_ws":   {"source": "inline", "values": [3, 4, 5, 4]},
+      "dem":    {"source": "inline", "values": [50, 60, 90, 70]}
+    },
+    "technologies": {
+      "pv": {"role": "supply", "node": "n1", "carrier_out": "electricity",
+             "performance": {"type": "physics", "model": "pv"},
+             "capacity": {"expandable": true, "max": 1000},
+             "lifetime": 25, "interest_rate": 0.05,
+             "costs": {"monetary": {"investment_per_capacity": 800}}},
+      "load": {"role": "demand", "node": "n1", "carrier_in": "electricity", "demand_profile": "dem"}
+    },
+    "trade": {"grid": {"node": "n1", "carrier": "electricity",
+                       "import": {"limit": 1000000, "price": 100, "emission_factor": 0.4}}}
+  },
+  "experiment": {"mode": "plan", "objective": "min_emissions", "solver": {"name": "glpk"}}
+}

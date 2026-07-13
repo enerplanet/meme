@@ -1,0 +1,23 @@
+{
+  "model": {
+    "metadata": {"name": "adopt_wind"},
+    "time": {"start": "2025-03-01", "end": "2025-03-01T03:00", "resolution": "1H"},
+    "carriers": {"electricity": {"unit": "MWh"}},
+    "nodes": {"n1": {"coords": {"lat": 53.5, "lon": 8.1},
+      "climate": {"ws10": "s_ws", "temp_air": "s_temp"}}},
+    "timeseries": {
+      "s_ws": {"source": "inline", "values": [6, 9, 12, 8]},
+      "s_temp": {"source": "inline", "values": [5, 7, 9, 8]},
+      "dem": {"source": "inline", "values": [40, 60, 90, 55]}
+    },
+    "technologies": {
+      "wind": {"role": "supply", "node": "n1", "carrier_out": "electricity",
+               "performance": {"type": "physics", "model": "wind"},
+               "capacity": {"expandable": true, "max": 1500}, "lifetime": 25, "interest_rate": 0.05,
+               "costs": {"monetary": {"investment_per_capacity": 1200}}},
+      "load": {"role": "demand", "node": "n1", "carrier_in": "electricity", "demand_profile": "dem"}
+    },
+    "trade": {"grid": {"node": "n1", "carrier": "electricity", "import": {"limit": 1000000, "price": 500}}}
+  },
+  "experiment": {"mode": "plan", "solver": {"name": "glpk"}}
+}

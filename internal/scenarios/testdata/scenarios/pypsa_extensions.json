@@ -1,0 +1,43 @@
+{
+  "model": {
+    "metadata": {"name": "pypsa_extensions"},
+    "time": {"start": "2025-01-01", "end": "2025-01-02", "resolution": "1H",
+             "weights": 2},
+    "carriers": {"electricity": {"unit": "MWh"}},
+    "nodes": {"n1": {}, "n2": {}},
+    "technologies": {
+      "gen": {"role": "supply", "node": "n1", "carrier_out": "electricity",
+              "capacity": {"existing": 300, "expandable": false},
+              "costs": {"monetary": {"variable_om": 50}},
+              "build_year": 2024},
+      "mustrun": {"role": "supply", "node": "n1", "carrier_out": "electricity",
+                  "capacity": {"existing": 10, "expandable": false},
+                  "operation": {"equals_pu": 0.5}},
+      "pv": {"role": "supply", "node": "n1", "carrier_out": "electricity",
+             "capacity": {"expandable": true, "max": 500, "systemwide_max": 400},
+             "cost_basis": "annualized",
+             "costs": {"monetary": {"investment_per_capacity": 100}},
+             "operation": {"max_pu": "pv_cf"},
+             "annual_output_max": 100000},
+      "load": {"role": "demand", "node": "n2", "carrier_in": "electricity",
+               "demand_profile": "dem"}
+    },
+    "transmission": {
+      "line": {"carrier": "electricity", "from": "n1", "to": "n2",
+               "bidirectional": false, "distance": 100,
+               "loss_per_distance": 0.0001, "min_flow": 0.05,
+               "capacity": {"expandable": true, "max": 300}}
+    },
+    "trade": {
+      "backup": {"node": "n2", "carrier": "electricity",
+                 "import": {"limit": "grid_cap", "price": 200}}
+    },
+    "timeseries": {
+      "dem": {"source": "inline", "values": [100, 100, 100, 100]},
+      "pv_cf": {"source": "inline", "values": [0.1, 0.6, 0.8, 0.3]},
+      "grid_cap": {"source": "inline", "values": [50, 50, 50, 50]}
+    }
+  },
+  "experiment": {"mode": "plan",
+                 "solver": {"name": "highs", "time_limit": 300, "threads": 2}}
+}

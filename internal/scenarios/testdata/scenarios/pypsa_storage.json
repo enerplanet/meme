@@ -1,0 +1,18 @@
+{
+  "model": {
+    "metadata": {"name": "pypsa_storage"},
+    "time": {"start": "2025-01-01", "end": "2025-01-02", "resolution": "1H"},
+    "carriers": {"electricity": {"unit": "MWh"}},
+    "nodes": {"n1": {}},
+    "technologies": {
+      "grid": {"role": "supply", "node": "n1", "carrier_out": "electricity",
+               "capacity": {"expandable": true, "max": 10000}, "costs": {"monetary": {"variable_om": 50}}},
+      "batt": {"role": "storage", "node": "n1", "carrier_in": "electricity", "carrier_out": "electricity",
+               "storage": {"max_hours": 4, "charge_eff": 0.95, "discharge_eff": 0.95, "self_discharge": 0.001, "initial_soc": 0.5, "cyclic": true},
+               "capacity": {"expandable": true, "max": 500}, "lifetime": 15, "interest_rate": 0.05,
+               "costs": {"monetary": {"investment_per_capacity": 150000}}},
+      "load": {"role": "demand", "node": "n1", "carrier_in": "electricity", "demand_profile": 100}
+    }
+  },
+  "experiment": {"mode": "plan", "solver": {"name": "highs"}}
+}

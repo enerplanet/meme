@@ -1,0 +1,17 @@
+{
+  "model": {
+    "metadata": {"name": "pypsa_emission"},
+    "time": {"start": "2025-01-01", "end": "2025-01-02", "resolution": "1H"},
+    "carriers": {"electricity": {"unit": "MWh"}, "gas": {"unit": "MWh", "co2_intensity": 0.2}},
+    "nodes": {"n1": {}},
+    "technologies": {
+      "gas_src": {"role": "supply", "node": "n1", "carrier_out": "gas",
+                  "capacity": {"expandable": true, "max": 10000}, "costs": {"monetary": {"variable_om": 20}}},
+      "gasgen": {"role": "conversion", "node": "n1", "carrier_in": "gas", "carrier_out": "electricity", "efficiency": 0.5,
+                 "capacity": {"expandable": true, "max": 1000}, "costs": {"monetary": {"variable_om": 5}}},
+      "load": {"role": "demand", "node": "n1", "carrier_in": "electricity", "demand_profile": 100}
+    },
+    "emission_limits": [{"name": "co2_cap", "carrier": "co2", "sense": "<=", "limit": 1000000}]
+  },
+  "experiment": {"mode": "plan", "solver": {"name": "highs"}}
+}

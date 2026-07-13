@@ -1,0 +1,41 @@
+{
+  "model": {
+    "metadata": {"name": "calliope_extensions"},
+    "time": {"start": "2025-01-01", "end": "2025-01-02", "resolution": "1H"},
+    "discount_rate": 0.06,
+    "carriers": {"electricity": {"unit": "MWh"}},
+    "nodes": {"n1": {}, "n2": {}},
+    "technologies": {
+      "gasgen": {"role": "supply", "node": "n1", "carrier_out": "electricity",
+                 "capacity": {"expandable": true, "max": 300, "systemwide_max": 250},
+                 "cost_basis": "annualized",
+                 "costs": {"monetary": {"investment_per_capacity": 100, "fuel_cost": 30}}},
+      "battery": {"role": "storage", "node": "n1",
+                  "carrier_in": "electricity", "carrier_out": "electricity",
+                  "capacity": {"expandable": true, "max": 50},
+                  "storage": {"energy_capacity": {"expandable": true, "max": 100},
+                              "max_charge_rate": 0.5,
+                              "charge_eff": 0.95, "discharge_eff": 0.95,
+                              "depth_of_discharge": 0.1, "cyclic": true},
+                  "cost_basis": "annualized",
+                  "costs": {"monetary": {"investment_per_capacity": 20}}},
+      "load": {"role": "demand", "node": "n2", "carrier_in": "electricity",
+               "demand_profile": "dem"},
+      "flex_load": {"role": "demand", "node": "n1", "carrier_in": "electricity",
+                    "demand_profile": 10, "demand_curtailable": true}
+    },
+    "transmission": {
+      "line": {"carrier": "electricity", "from": "n1", "to": "n2",
+               "bidirectional": true, "distance": 50, "efficiency": 0.98,
+               "loss_per_distance": 0.0001,
+               "capacity": {"expandable": true, "max": 300},
+               "costs": {"monetary": {"investment_per_capacity_distance": 10}}}
+    },
+    "timeseries": {
+      "dem": {"source": "inline", "values": [80, 120, 90, 110]}
+    }
+  },
+  "experiment": {"mode": "plan",
+                 "reporting": {"save_logs": "logs"},
+                 "solver": {"name": "cbc", "time_limit": 300}}
+}

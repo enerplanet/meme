@@ -1,0 +1,18 @@
+{
+  "model": {
+    "metadata": {"name": "adopt_pareto"},
+    "time": {"start": "2025-01-01", "end": "2025-01-01T05:00", "resolution": "1H"},
+    "carriers": {"electricity": {"unit": "MWh"}},
+    "nodes": {"n1": {"coords": {"lat": 48.8, "lon": 12.9}}},
+    "technologies": {
+      "battery": {"role": "storage", "node": "n1", "carrier_in": "electricity", "carrier_out": "electricity",
+                  "storage": {"max_hours": 4, "charge_eff": 0.95, "discharge_eff": 0.95},
+                  "capacity": {"expandable": true, "max": 500}, "lifetime": 15, "interest_rate": 0.06,
+                  "costs": {"monetary": {"investment_per_capacity": 300000}}},
+      "load": {"role": "demand", "node": "n1", "carrier_in": "electricity", "demand_profile": 100}
+    },
+    "trade": {"grid": {"node": "n1", "carrier": "electricity",
+                       "import": {"limit": 1000, "price": 60, "emission_factor": 0.4}}}
+  },
+  "experiment": {"mode": "pareto", "solver": {"name": "glpk", "options": {"pareto": {"points": 6}}}}
+}

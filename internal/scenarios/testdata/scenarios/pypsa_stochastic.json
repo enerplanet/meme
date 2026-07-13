@@ -1,0 +1,26 @@
+{
+  "model": {
+    "metadata": {"name": "pypsa_stochastic"},
+    "time": {"start": "2025-01-01", "end": "2025-01-02", "resolution": "1H"},
+    "carriers": {"electricity": {"unit": "MWh"}},
+    "nodes": {"n1": {}},
+    "technologies": {
+      "gas": {"role": "supply", "node": "n1", "carrier_out": "electricity",
+              "capacity": {"existing": 300, "expandable": false},
+              "costs": {"monetary": {"variable_om": 60}}},
+      "pv": {"role": "supply", "node": "n1", "carrier_out": "electricity",
+             "capacity": {"expandable": true, "max": 200}, "lifetime": 25, "interest_rate": 0.05,
+             "costs": {"monetary": {"investment_per_capacity": 400000, "variable_om": 0}}},
+      "load": {"role": "demand", "node": "n1", "carrier_in": "electricity", "demand_profile": "dem"}
+    },
+    "timeseries": {"dem": {"source": "inline", "values": [100, 120, 110, 90]}}
+  },
+  "experiment": {
+    "mode": "stochastic",
+    "scenarios": [
+      {"name": "fuel_high", "weight": 0.5, "overrides": {"technologies.gas.costs.monetary.variable_om": 90}},
+      {"name": "fuel_low", "weight": 0.5, "overrides": {"technologies.gas.costs.monetary.variable_om": 30}}
+    ],
+    "solver": {"name": "highs"}
+  }
+}

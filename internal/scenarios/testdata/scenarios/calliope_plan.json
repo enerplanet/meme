@@ -1,0 +1,69 @@
+{
+  "model": {
+    "metadata": {
+      "name": "calliope_plan"
+    },
+    "time": {
+      "start": "2025-01-01",
+      "end": "2025-01-02",
+      "resolution": "1H"
+    },
+    "carriers": {
+      "electricity": {
+        "unit": "MWh"
+      }
+    },
+    "nodes": {
+      "n1": {
+        "coords": {
+          "lat": 48,
+          "lon": 11
+        }
+      }
+    },
+    "technologies": {
+      "pv": {
+        "role": "supply",
+        "node": "n1",
+        "carrier_out": "electricity",
+        "capacity": {
+          "expandable": true,
+          "max": 1000
+        },
+        "lifetime": 25,
+        "interest_rate": 0.05,
+        "costs": {
+          "monetary": {
+            "investment_per_capacity": 500000
+          }
+        }
+      },
+      "load": {
+        "role": "demand",
+        "node": "n1",
+        "carrier_in": "electricity",
+        "demand_profile": "dem"
+      }
+    },
+    "timeseries": {
+      "dem": {
+        "source": "inline",
+        "values": [
+          80,
+          90,
+          120,
+          110,
+          95,
+          85
+        ]
+      }
+    }
+  },
+  "experiment": {
+    "mode": "plan",
+    "objective": "min_cost",
+    "solver": {
+      "name": "cbc"
+    }
+  }
+}

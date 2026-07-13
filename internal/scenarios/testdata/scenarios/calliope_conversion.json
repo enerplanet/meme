@@ -1,0 +1,21 @@
+{
+  "model": {
+    "metadata": {"name": "calliope_conversion"},
+    "time": {"start": "2025-01-01", "end": "2025-01-02", "resolution": "1H"},
+    "carriers": {"electricity": {"unit": "MWh"}, "heat": {"unit": "MWh"}, "gas": {"unit": "MWh"}},
+    "nodes": {"n1": {"coords": {"lat": 48, "lon": 11}}},
+    "technologies": {
+      "gas_src": {"role": "supply", "node": "n1", "carrier_out": "gas",
+                  "capacity": {"expandable": true, "max": 10000}, "costs": {"monetary": {"variable_om": 20}}},
+      "chp": {"role": "conversion", "node": "n1",
+              "flows": [{"carrier": "gas", "direction": "in", "reference": true},
+                        {"carrier": "electricity", "direction": "out", "ratio": 0.4},
+                        {"carrier": "heat", "direction": "out", "ratio": 0.45}],
+              "capacity": {"expandable": true, "max": 1000}, "lifetime": 25, "interest_rate": 0.06,
+              "costs": {"monetary": {"investment_per_capacity": 600000}}},
+      "eload": {"role": "demand", "node": "n1", "carrier_in": "electricity", "demand_profile": 100},
+      "hload": {"role": "demand", "node": "n1", "carrier_in": "heat", "demand_profile": 112.5}
+    }
+  },
+  "experiment": {"mode": "plan", "solver": {"name": "cbc"}}
+}

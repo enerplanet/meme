@@ -1,0 +1,22 @@
+{
+  "model": {
+    "metadata": {"name": "pypsa_physics_precomputed"},
+    "time": {"start": "2025-06-01", "end": "2025-06-01T05:00", "resolution": "1H"},
+    "carriers": {"electricity": {"unit": "MWh"}},
+    "nodes": {"n1": {"coords": {"lat": 48.8, "lon": 12.9}}},
+    "technologies": {
+      "pv": {"role": "supply", "node": "n1", "carrier_out": "electricity",
+             "performance": {"type": "physics", "model": "pv", "precomputed": "pv_cf"},
+             "capacity": {"expandable": true, "max": 1000}, "lifetime": 25, "interest_rate": 0.05,
+             "costs": {"monetary": {"investment_per_capacity": 500000}}},
+      "gas": {"role": "supply", "node": "n1", "carrier_out": "electricity",
+              "capacity": {"expandable": true, "max": 1000}, "costs": {"monetary": {"variable_om": 80}}},
+      "load": {"role": "demand", "node": "n1", "carrier_in": "electricity", "demand_profile": "dem"}
+    },
+    "timeseries": {
+      "pv_cf": {"source": "inline", "values": [0.0, 0.2, 0.6, 0.9, 0.7, 0.3]},
+      "dem": {"source": "inline", "values": [90, 95, 120, 130, 110, 100]}
+    }
+  },
+  "experiment": {"mode": "plan", "solver": {"name": "highs"}}
+}

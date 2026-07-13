@@ -1,0 +1,13 @@
+{
+  "model": {
+    "metadata": {"name": "adopt_emission"},
+    "time": {"start": "2025-01-01", "end": "2025-01-01T03:00", "resolution": "1H"},
+    "carriers": {"electricity": {"unit": "MWh"}},
+    "nodes": {"n1": {"coords": {"lat": 48.8, "lon": 12.9}}},
+    "timeseries": {"dem": {"source": "inline", "values": [100, 120, 90, 110]}},
+    "technologies": {"load": {"role": "demand", "node": "n1", "carrier_in": "electricity", "demand_profile": "dem"}},
+    "trade": {"grid": {"node": "n1", "carrier": "electricity", "import": {"limit": 1000000, "price": 50, "emission_factor": 0.3}}},
+    "emission_limits": [{"name": "co2_cap", "sense": "<=", "limit": 1000000}]
+  },
+  "experiment": {"mode": "plan", "objective": "min_cost", "solver": {"name": "glpk"}}
+}

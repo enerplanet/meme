@@ -1,0 +1,18 @@
+{
+  "model": {
+    "metadata": {"name": "calliope_trade"},
+    "time": {"start": "2025-01-01", "end": "2025-01-02", "resolution": "1H"},
+    "carriers": {"electricity": {"unit": "MWh"}},
+    "nodes": {"n1": {}},
+    "technologies": {
+      "gen": {"role": "supply", "node": "n1", "carrier_out": "electricity",
+              "capacity": {"existing": 300, "expandable": false},
+              "costs": {"monetary": {"variable_om": 5}}},
+      "load": {"role": "demand", "node": "n1", "carrier_in": "electricity", "demand_profile": 100}
+    },
+    "trade": {"market": {"node": "n1", "carrier": "electricity",
+                         "import": {"limit": 500, "price": 60, "emission_factor": 0.35},
+                         "export": {"limit": 200, "price": 30}}}
+  },
+  "experiment": {"mode": "plan", "solver": {"name": "cbc"}}
+}

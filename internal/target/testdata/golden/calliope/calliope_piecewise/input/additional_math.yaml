@@ -1,0 +1,26 @@
+constraints:
+  balance_conversion:
+    description: "Fix the relationship between a `conversion` technology's outflow and consumption."
+    foreach: [nodes, techs, timesteps]
+    where: "base_tech==conversion AND NOT include_storage==true AND NOT piecewise_x"
+    equations:
+      - 
+        expression: "sum(flow_out_inc_eff, over=carriers) == sum(flow_in_inc_eff, over=carriers)"
+dimensions:
+  breakpoints:
+    description: "piecewise breakpoint index"
+    dtype: integer
+parameters:
+  piecewise_x:
+    description: "piecewise inflow values at the breakpoints"
+  piecewise_y:
+    description: "piecewise outflow values at the breakpoints"
+piecewise_constraints:
+  meme_piecewise_efficiency:
+    description: "energymodel piecewise part-load conversion performance"
+    foreach: [nodes, techs, timesteps]
+    where: "piecewise_x AND piecewise_y"
+    x_expression: "sum(flow_in, over=carriers)"
+    x_values: piecewise_x
+    y_expression: "sum(flow_out, over=carriers)"
+    y_values: piecewise_y

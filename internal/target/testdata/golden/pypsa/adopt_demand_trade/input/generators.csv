@@ -1,0 +1,3 @@
+name,bus,carrier,p_nom,p_nom_extendable,p_nom_max,capital_cost,marginal_cost,efficiency,p_max_pu,p_min_pu
+grid_import,n1::electricity,electricity,0,True,1e+06,,50,1,,
+grid_export,n1::electricity,electricity,0,True,50,,10,1,0,-1

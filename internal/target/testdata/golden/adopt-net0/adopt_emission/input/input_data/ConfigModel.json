@@ -1,0 +1,121 @@
+{
+  "economic": {
+    "global_discountrate": {
+      "value": -1
+    },
+    "global_simple_capex_model": {
+      "value": 0
+    }
+  },
+  "energybalance": {
+    "copperplate": {
+      "value": 0
+    },
+    "violation": {
+      "value": -1
+    }
+  },
+  "optimization": {
+    "emission_limit": {
+      "value": 1000000
+    },
+    "monte_carlo": {
+      "N": {
+        "value": 0
+      },
+      "on_what": {
+        "value": [
+          "Technologies"
+        ]
+      },
+      "sd": {
+        "value": 0.2
+      },
+      "type": {
+        "value": "normal_dis"
+      }
+    },
+    "multiyear": {
+      "value": 0
+    },
+    "objective": {
+      "value": "costs_emissionlimit"
+    },
+    "pareto_points": {
+      "value": 5
+    },
+    "timestaging": {
+      "value": 0
+    },
+    "typicaldays": {
+      "N": {
+        "value": 0
+      },
+      "method": {
+        "value": 2
+      },
+      "technologies_with_full_res": {
+        "value": [
+          "RES",
+          "STOR",
+          "Hydro_Open"
+        ]
+      }
+    }
+  },
+  "performance": {
+    "dynamics": {
+      "value": 0
+    }
+  },
+  "reporting": {
+    "case_name": {
+      "value": -1
+    },
+    "save_path": {
+      "value": "${BASE}/input/results"
+    },
+    "save_summary_path": {
+      "value": "${BASE}/input/results"
+    },
+    "write_results": {
+      "value": 1
+    },
+    "write_solution_diagnostics": {
+      "value": 0
+    }
+  },
+  "scaling": {
+    "scaling_factors": {
+      "cost_vars": {
+        "value": 0.001
+      },
+      "energy_vars": {
+        "value": 0.001
+      },
+      "objective": {
+        "value": 1
+      }
+    },
+    "scaling_on": {
+      "value": 0
+    }
+  },
+  "solveroptions": {
+    "mipgap": {
+      "value": 0.001
+    },
+    "nodetol": {
+      "value": 1e-9
+    },
+    "solver": {
+      "value": "glpk"
+    },
+    "threads": {
+      "value": 0
+    },
+    "timelim": {
+      "value": 10
+    }
+  }
+}

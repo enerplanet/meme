@@ -1,0 +1,15 @@
+{
+  "carriers": [
+    "electricity"
+  ],
+  "end_date": "2025-01-02 00:00",
+  "investment_period_length": 1,
+  "investment_periods": [
+    "period1"
+  ],
+  "nodes": [
+    "n1"
+  ],
+  "resolution": "1h",
+  "start_date": "2025-01-01 00:00"
+}

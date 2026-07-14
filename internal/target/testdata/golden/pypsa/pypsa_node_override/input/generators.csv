@@ -1,0 +1,3 @@
+name,bus,carrier,p_nom,p_nom_extendable,p_nom_max,capital_cost,marginal_cost,efficiency
+pv@n1,n1::electricity,electricity,0,True,1000,35476.228649614815,0,1
+pv@n2,n2::electricity,electricity,0,True,500,49666.72010946074,0,1

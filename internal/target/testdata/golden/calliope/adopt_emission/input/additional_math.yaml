@@ -1,0 +1,6 @@
+constraints:
+  co2_cap:
+    description: "energymodel emission limit"
+    equations:
+      - 
+        expression: "sum(cost[costs=co2], over=[nodes, techs, costs]) <= 1e+06"

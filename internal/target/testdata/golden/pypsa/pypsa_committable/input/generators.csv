@@ -1,0 +1,2 @@
+name,bus,carrier,p_nom,p_nom_extendable,p_nom_max,capital_cost,marginal_cost,efficiency,committable,min_down_time,min_up_time,p_min_pu,ramp_limit_down,ramp_limit_up,shut_down_cost,start_up_cost
+coal,n1::electricity,electricity,200,False,inf,0,30,1,True,2,3,0.4,0.6,0.6,1000,5000

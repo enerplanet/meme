@@ -1,0 +1,12 @@
+{
+  "n1": {
+    "Photovoltaic": {
+      "Economics": {
+        "discount_rate": 0.05,
+        "lifetime": 25,
+        "unit_CAPEX": 800
+      },
+      "size_max": 1000
+    }
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "n1": {
+    "Storage_Battery": {
+      "Economics": {
+        "OPEX_fixed": 0.02
+      },
+      "Flexibility": {
+        "charge_rate": 0.5,
+        "discharge_rate": 0.5
+      },
+      "Performance": {
+        "allow_only_one_direction": 1
+      },
+      "decommission": "continuous"
+    }
+  }
+}

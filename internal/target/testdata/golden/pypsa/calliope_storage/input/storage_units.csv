@@ -1,0 +1,2 @@
+name,bus,carrier,p_nom,p_nom_extendable,max_hours,efficiency_store,efficiency_dispatch,capital_cost,cyclic_state_of_charge,standing_loss,state_of_charge_initial
+batt,n1::electricity,electricity,0,False,4,0.95,0.95,0,True,0.001,0.5

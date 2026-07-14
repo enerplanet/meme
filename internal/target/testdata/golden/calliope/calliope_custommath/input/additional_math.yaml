@@ -1,0 +1,11 @@
+constraints:
+  max_pv:
+    description: "energymodel linear constraint"
+    equations:
+      - 
+        expression: "sum(flow_cap[techs=pv], over=[nodes, techs, carriers]) <= 800"
+  co2_cap:
+    description: "energymodel emission limit"
+    equations:
+      - 
+        expression: "sum(cost[costs=co2], over=[nodes, techs, costs]) <= 1e+06"

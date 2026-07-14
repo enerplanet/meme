@@ -1,0 +1,46 @@
+config:
+  init:
+    mode: base
+    broadcast_input_data: true
+  solve:
+    solver: glpk
+techs:
+  load:
+    base_tech: demand
+    carrier_in: electricity
+  grid_import:
+    base_tech: supply
+    carrier_out: electricity
+    flow_cap_max: 1e+06
+    cost_flow_out:
+      data: [50, 0.3]
+      index: [monetary, co2]
+      dims: costs
+  grid_export:
+    base_tech: demand
+    carrier_in: electricity
+    sink_use_max: 50
+    cost_flow_in:
+      data: [-10]
+      index: [monetary]
+      dims: costs
+nodes:
+  n1:
+    latitude: 48.8
+    longitude: 12.9
+    techs:
+      load:
+      grid_import:
+      grid_export:
+data_definitions:
+  objective_cost_weights:
+    data: 0
+    index: co2
+    dims: costs
+data_tables:
+  load__sink_use_equals:
+    data: dem.csv
+    rows: timesteps
+    columns: [techs, nodes]
+    add_dims:
+      parameters: sink_use_equals

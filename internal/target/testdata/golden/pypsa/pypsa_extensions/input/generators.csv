@@ -1,0 +1,5 @@
+name,bus,carrier,p_nom,p_nom_extendable,p_nom_max,capital_cost,marginal_cost,efficiency,build_year,e_sum_max,p_max_pu,p_min_pu
+gen,n1::electricity,electricity,300,False,inf,0,50,1,2024,,,
+mustrun,n1::electricity,electricity,10,False,inf,0,0,1,,,0.5,0.5
+pv,n1::electricity,electricity,0,True,500,100,0,1,,100000,,
+backup_import,n2::electricity,electricity,1,False,,,200,1,,,,

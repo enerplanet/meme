@@ -1,0 +1,12 @@
+{
+  "n1": {
+    "WindTurbine_Onshore_1500": {
+      "Economics": {
+        "discount_rate": 0.05,
+        "lifetime": 25,
+        "unit_CAPEX": 1200
+      },
+      "size_max": 1500
+    }
+  }
+}

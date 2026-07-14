@@ -1,0 +1,52 @@
+config:
+  init:
+    mode: spores
+    broadcast_input_data: true
+  solve:
+    solver: cbc
+    spores:
+      number: 5
+      tracking_parameter: spores_tracker
+techs:
+  load:
+    base_tech: demand
+    carrier_in: electricity
+  pv:
+    base_tech: supply
+    carrier_out: electricity
+    flow_cap_max: 1000
+    lifetime: 25
+    cost_flow_cap:
+      data: 500000
+      index: monetary
+      dims: costs
+    cost_interest_rate:
+      data: 0.05
+      index: monetary
+      dims: costs
+  wind:
+    base_tech: supply
+    carrier_out: electricity
+    flow_cap_max: 1000
+    lifetime: 25
+    cost_flow_cap:
+      data: 700000
+      index: monetary
+      dims: costs
+    cost_interest_rate:
+      data: 0.05
+      index: monetary
+      dims: costs
+nodes:
+  n1:
+    techs:
+      load:
+      pv:
+      wind:
+data_tables:
+  load__sink_use_equals:
+    data: dem.csv
+    rows: timesteps
+    columns: [techs, nodes]
+    add_dims:
+      parameters: sink_use_equals

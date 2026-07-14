@@ -1,0 +1,2 @@
+name,bus0,bus1,p_nom,p_nom_extendable,p_nom_max,efficiency,capital_cost,marginal_cost
+gasgen,n1::gas,n1::electricity,0,True,1000,0.5,0,5

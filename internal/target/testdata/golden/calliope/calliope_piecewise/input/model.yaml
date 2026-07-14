@@ -1,0 +1,48 @@
+config:
+  init:
+    mode: base
+    broadcast_input_data: true
+    math_paths:
+      additional_math: additional_math.yaml
+    extra_math: [additional_math]
+  solve:
+    solver: cbc
+techs:
+  conv:
+    base_tech: conversion
+    carrier_in: gas
+    carrier_out: electricity
+    piecewise_x:
+      data: [0, 416.6666666666667, 2222.222222222222]
+      index: [0, 1, 2]
+      dims: breakpoints
+    piecewise_y:
+      data: [0, 250, 1000]
+      index: [0, 1, 2]
+      dims: breakpoints
+    flow_cap_max: 1000
+    flow_cap_min: 1000
+  gas_src:
+    base_tech: supply
+    carrier_out: gas
+    flow_cap_max: 10000
+    cost_flow_out:
+      data: 20
+      index: monetary
+      dims: costs
+  load:
+    base_tech: demand
+    carrier_in: electricity
+nodes:
+  n1:
+    techs:
+      conv:
+      gas_src:
+      load:
+data_tables:
+  load__sink_use_equals:
+    data: dem.csv
+    rows: timesteps
+    columns: [techs, nodes]
+    add_dims:
+      parameters: sink_use_equals

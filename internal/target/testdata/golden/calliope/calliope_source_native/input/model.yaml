@@ -1,0 +1,39 @@
+config:
+  init:
+    mode: base
+    broadcast_input_data: true
+  solve:
+    solver: cbc
+techs:
+  load:
+    base_tech: demand
+    carrier_in: electricity
+  pv:
+    base_tech: supply
+    carrier_out: electricity
+    source_use_max: 0.25
+    source_unit: per_area
+    flow_cap_max: 1000
+    lifetime: 25
+    area_use_max: 5000
+    cost_flow_cap:
+      data: 500000
+      index: monetary
+      dims: costs
+    cost_interest_rate:
+      data: 0.05
+      index: monetary
+      dims: costs
+nodes:
+  n1:
+    available_area: 10000
+    techs:
+      load:
+      pv:
+data_tables:
+  load__sink_use_equals:
+    data: dem.csv
+    rows: timesteps
+    columns: [techs, nodes]
+    add_dims:
+      parameters: sink_use_equals

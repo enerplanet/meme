@@ -1,0 +1,18 @@
+{
+  "constraints": [
+    {
+      "name": "pv_systemwide_max",
+      "terms": [
+        {
+          "coefficient": 1,
+          "variable": "capacity",
+          "techs": [
+            "pv"
+          ]
+        }
+      ],
+      "sense": "<=",
+      "bound": 400
+    }
+  ]
+}

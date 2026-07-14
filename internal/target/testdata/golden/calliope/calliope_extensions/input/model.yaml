@@ -1,0 +1,80 @@
+config:
+  init:
+    mode: base
+    broadcast_input_data: true
+  solve:
+    solver: cbc
+    solver_options:
+      seconds: 300
+    save_logs: logs
+techs:
+  battery:
+    base_tech: storage
+    carrier_in: electricity
+    carrier_out: electricity
+    flow_out_eff: 0.95
+    flow_in_eff: 0.95
+    cyclic_storage: true
+    storage_cap_max: 100
+    storage_discharge_depth: 0.1
+    flow_cap_per_storage_cap_max: 0.5
+    flow_cap_max: 50
+    cost_flow_cap:
+      data: 20
+      index: monetary
+      dims: costs
+  flex_load:
+    base_tech: demand
+    carrier_in: electricity
+  gasgen:
+    base_tech: supply
+    carrier_out: electricity
+    flow_cap_max: 300
+    flow_cap_max_systemwide: 250
+    cost_flow_cap:
+      data: 100
+      index: monetary
+      dims: costs
+    cost_flow_in:
+      data: 30
+      index: monetary
+      dims: costs
+  load:
+    base_tech: demand
+    carrier_in: electricity
+  line:
+    base_tech: transmission
+    carrier_in: electricity
+    carrier_out: electricity
+    link_from: n1
+    link_to: n2
+    flow_out_eff: 0.98
+    flow_cap_max: 300
+    distance: 50
+    flow_out_eff_per_distance: 0.9999
+    cost_flow_cap_per_distance:
+      data: 10
+      index: monetary
+      dims: costs
+nodes:
+  n1:
+    techs:
+      battery:
+      flex_load:
+      gasgen:
+  n2:
+    techs:
+      load:
+data_tables:
+  flex_load__sink_use_max:
+    data: flex_load_sink_use_max.csv
+    rows: timesteps
+    columns: [techs, nodes]
+    add_dims:
+      parameters: sink_use_max
+  load__sink_use_equals:
+    data: dem.csv
+    rows: timesteps
+    columns: [techs, nodes]
+    add_dims:
+      parameters: sink_use_equals

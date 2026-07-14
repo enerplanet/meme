@@ -1,0 +1,56 @@
+config:
+  init:
+    mode: base
+    broadcast_input_data: true
+  solve:
+    solver: cbc
+techs:
+  l1:
+    base_tech: demand
+    carrier_in: electricity
+  l2:
+    base_tech: demand
+    carrier_in: electricity
+  pv:
+    base_tech: supply
+    carrier_out: electricity
+    flow_cap_max: 1000
+    lifetime: 25
+    cost_flow_cap:
+      data: 500000
+      index: monetary
+      dims: costs
+    cost_interest_rate:
+      data: 0.05
+      index: monetary
+      dims: costs
+nodes:
+  n1:
+    latitude: 48.0
+    longitude: 11.0
+    techs:
+      l1:
+      pv:
+  n2:
+    latitude: 52.0
+    longitude: 7.0
+    techs:
+      l2:
+      pv:
+        cost_flow_cap:
+          data: 300000
+          index: monetary
+          dims: costs
+data_tables:
+  l1__sink_use_equals:
+    data: l1_sink_use_equals.csv
+    rows: timesteps
+    columns: [techs, nodes]
+    add_dims:
+      parameters: sink_use_equals
+  l2__sink_use_equals:
+    data: l2_sink_use_equals.csv
+    rows: timesteps
+    columns: [techs, nodes]
+    add_dims:
+      parameters: sink_use_equals

@@ -1,0 +1,3 @@
+name,bus,p_set
+eload,n1::electricity,100
+hload,n1::heat,112.5

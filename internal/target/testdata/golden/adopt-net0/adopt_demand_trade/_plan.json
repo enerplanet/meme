@@ -1,0 +1,9 @@
+{
+  "target": "adopt-net0",
+  "entrypoint": "${BASE}/input/input_data",
+  "command": [
+    "python",
+    "run.py"
+  ],
+  "work_dir": "${BASE}"
+}

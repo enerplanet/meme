@@ -1,0 +1,75 @@
+config:
+  init:
+    mode: base
+    broadcast_input_data: true
+  solve:
+    solver: glpk
+techs:
+  battery:
+    base_tech: storage
+    carrier_in: electricity
+    carrier_out: electricity
+    flow_out_eff: 0.95
+    flow_in_eff: 0.95
+    storage_cap_max: 400
+    flow_cap_max: 100
+    lifetime: 15
+    cost_flow_cap:
+      data: 100
+      index: monetary
+      dims: costs
+    cost_interest_rate:
+      data: 0.05
+      index: monetary
+      dims: costs
+    cost_om_annual:
+      data: 2
+      index: monetary
+      dims: costs
+  load1:
+    base_tech: demand
+    carrier_in: electricity
+  load2:
+    base_tech: demand
+    carrier_in: electricity
+  grid1_import:
+    base_tech: supply
+    carrier_out: electricity
+    flow_cap_max: 500
+    cost_flow_out:
+      data: [60]
+      index: [monetary]
+      dims: costs
+  grid2_import:
+    base_tech: supply
+    carrier_out: electricity
+    flow_cap_max: 500
+    cost_flow_out:
+      data: [60]
+      index: [monetary]
+      dims: costs
+nodes:
+  n1:
+    techs:
+      battery:
+      load1:
+      grid1_import:
+  n2:
+    techs:
+      battery:
+        flow_cap_max: 40
+      load2:
+      grid2_import:
+data_tables:
+  load1__sink_use_equals:
+    data: load1_sink_use_equals.csv
+    rows: timesteps
+    columns: [techs, nodes]
+    add_dims:
+      parameters: sink_use_equals
+  load2__sink_use_equals:
+    data: load2_sink_use_equals.csv
+    rows: timesteps
+    columns: [techs, nodes]
+    add_dims:
+      parameters: sink_use_equals

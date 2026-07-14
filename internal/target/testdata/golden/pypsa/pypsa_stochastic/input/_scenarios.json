@@ -1,0 +1,28 @@
+{
+  "scenarios": [
+    {
+      "name": "fuel_high",
+      "weight": 0.5,
+      "sets": [
+        {
+          "table": "generators",
+          "component": "gas",
+          "attribute": "marginal_cost",
+          "value": 90
+        }
+      ]
+    },
+    {
+      "name": "fuel_low",
+      "weight": 0.5,
+      "sets": [
+        {
+          "table": "generators",
+          "component": "gas",
+          "attribute": "marginal_cost",
+          "value": 30
+        }
+      ]
+    }
+  ]
+}

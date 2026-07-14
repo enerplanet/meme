@@ -1,0 +1,13 @@
+{
+  "performance": [
+    {
+      "tech": "pv",
+      "node": "n1",
+      "performance": {
+        "type": "physics",
+        "model": "pv",
+        "precomputed": "pv_cf"
+      }
+    }
+  ]
+}

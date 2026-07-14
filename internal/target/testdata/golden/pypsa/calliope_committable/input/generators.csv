@@ -1,0 +1,3 @@
+name,bus,carrier,p_nom,p_nom_extendable,p_nom_max,capital_cost,marginal_cost,efficiency,committable,p_min_pu
+backup,n1::electricity,electricity,1000,False,inf,0,500,1,,
+gen,n1::electricity,electricity,0,True,300,0,5,1,True,0.3

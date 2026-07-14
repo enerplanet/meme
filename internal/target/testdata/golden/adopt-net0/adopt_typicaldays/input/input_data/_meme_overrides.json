@@ -1,0 +1,12 @@
+{
+  "n1": {
+    "Storage_Battery": {
+      "Economics": {
+        "discount_rate": 0.06,
+        "lifetime": 15,
+        "unit_CAPEX": 300000
+      },
+      "size_max": 500
+    }
+  }
+}

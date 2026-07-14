@@ -1,0 +1,49 @@
+config:
+  init:
+    mode: base
+    broadcast_input_data: true
+    extra_math: [milp]
+  solve:
+    solver: cbc
+techs:
+  backup:
+    base_tech: supply
+    carrier_out: electricity
+    flow_cap_max: 1000
+    flow_cap_min: 1000
+    cost_flow_out:
+      data: 500
+      index: monetary
+      dims: costs
+  gen:
+    base_tech: supply
+    carrier_out: electricity
+    cap_method: integer
+    integer_dispatch: true
+    flow_cap_per_unit: 100
+    purchased_units_max: 3
+    cost_purchase:
+      data: 1000
+      index: monetary
+      dims: costs
+    flow_out_min_relative: 0.3
+    cost_flow_out:
+      data: 5
+      index: monetary
+      dims: costs
+  load:
+    base_tech: demand
+    carrier_in: electricity
+nodes:
+  n1:
+    techs:
+      backup:
+      gen:
+      load:
+data_tables:
+  load__sink_use_equals:
+    data: dem.csv
+    rows: timesteps
+    columns: [techs, nodes]
+    add_dims:
+      parameters: sink_use_equals

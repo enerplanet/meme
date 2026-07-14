@@ -1,0 +1,60 @@
+config:
+  init:
+    mode: base
+    broadcast_input_data: true
+    math_paths:
+      additional_math: additional_math.yaml
+    extra_math: [additional_math]
+  solve:
+    solver: cbc
+techs:
+  chp:
+    base_tech: conversion
+    carrier_in: gas
+    carrier_out: [electricity, heat]
+    flow_cap_max: 1000
+    lifetime: 25
+    cost_flow_cap:
+      data: 600000
+      index: monetary
+      dims: costs
+    cost_interest_rate:
+      data: 0.06
+      index: monetary
+      dims: costs
+  eload:
+    base_tech: demand
+    carrier_in: electricity
+  gas_src:
+    base_tech: supply
+    carrier_out: gas
+    flow_cap_max: 10000
+    cost_flow_out:
+      data: 20
+      index: monetary
+      dims: costs
+  hload:
+    base_tech: demand
+    carrier_in: heat
+nodes:
+  n1:
+    latitude: 48.0
+    longitude: 11.0
+    techs:
+      chp:
+      eload:
+      gas_src:
+      hload:
+data_tables:
+  eload__sink_use_equals:
+    data: eload_sink_use_equals.csv
+    rows: timesteps
+    columns: [techs, nodes]
+    add_dims:
+      parameters: sink_use_equals
+  hload__sink_use_equals:
+    data: hload_sink_use_equals.csv
+    rows: timesteps
+    columns: [techs, nodes]
+    add_dims:
+      parameters: sink_use_equals

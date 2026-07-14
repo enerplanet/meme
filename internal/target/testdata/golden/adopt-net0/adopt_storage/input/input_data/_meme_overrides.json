@@ -1,0 +1,13 @@
+{
+  "n1": {
+    "Storage_Battery": {
+      "Economics": {
+        "OPEX_fixed": 20,
+        "discount_rate": 0.05,
+        "lifetime": 15,
+        "unit_CAPEX": 1000
+      },
+      "size_max": 500
+    }
+  }
+}

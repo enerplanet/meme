@@ -1,0 +1,2 @@
+name,bus,carrier,p_nom,p_nom_extendable,p_nom_max,capital_cost,marginal_cost,efficiency
+grid,n1::electricity,electricity,0,True,10000,0,50,1

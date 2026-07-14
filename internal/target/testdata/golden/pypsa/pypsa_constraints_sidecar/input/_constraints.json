@@ -1,0 +1,18 @@
+{
+  "constraints": [
+    {
+      "name": "force_pv",
+      "terms": [
+        {
+          "coefficient": 1,
+          "variable": "capacity",
+          "techs": [
+            "pv"
+          ]
+        }
+      ],
+      "sense": ">=",
+      "bound": 300
+    }
+  ]
+}

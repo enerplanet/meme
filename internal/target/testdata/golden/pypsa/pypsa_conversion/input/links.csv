@@ -1,0 +1,2 @@
+name,bus0,bus1,p_nom,p_nom_extendable,p_nom_max,efficiency,capital_cost,bus2,efficiency2,marginal_cost
+chp,n1::gas,n1::electricity,0,True,1000,0.4,46936.03092736437,n1::heat,0.45,0

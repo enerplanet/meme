@@ -1,0 +1,5 @@
+;Demand;Import limit;Export limit;Import price;Export price;Import emission factor;Export emission factor;Generic production
+2025-01-01 00:00:00;100;1e+06;;50;;;;
+2025-01-01 01:00:00;120;1e+06;;50;;;;
+2025-01-01 02:00:00;90;1e+06;;50;;;;
+2025-01-01 03:00:00;110;1e+06;;50;;;;

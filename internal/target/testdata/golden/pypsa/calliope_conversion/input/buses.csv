@@ -1,0 +1,4 @@
+name,carrier,x,y
+n1::electricity,electricity,11,48
+n1::gas,gas,11,48
+n1::heat,heat,11,48

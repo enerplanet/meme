@@ -1,0 +1,3 @@
+name,bus,carrier,p_nom,p_nom_extendable,max_hours,efficiency_store,efficiency_dispatch,capital_cost
+battery@n1,n1::electricity,electricity,0,True,4,0.95,0.95,11.634228760924435
+battery@n2,n2::electricity,electricity,0,True,4,0.95,0.95,11.634228760924435

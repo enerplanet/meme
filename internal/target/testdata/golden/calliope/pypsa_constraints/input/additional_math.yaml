@@ -1,0 +1,6 @@
+constraints:
+  max_pv:
+    description: "energymodel linear constraint"
+    equations:
+      - 
+        expression: "sum(flow_cap[techs=pv], over=[nodes, techs, carriers]) <= 800"

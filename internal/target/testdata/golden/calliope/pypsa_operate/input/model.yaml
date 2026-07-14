@@ -1,0 +1,37 @@
+config:
+  init:
+    mode: operate
+    broadcast_input_data: true
+  solve:
+    solver: cbc
+  build:
+    operate:
+      window: 12h
+      horizon: 12
+      overlap: 4
+techs:
+  gen:
+    base_tech: supply
+    carrier_out: electricity
+    flow_cap_max: 300
+    flow_cap_min: 300
+    cost_flow_out:
+      data: 30
+      index: monetary
+      dims: costs
+    flow_cap: 300
+  load:
+    base_tech: demand
+    carrier_in: electricity
+nodes:
+  n1:
+    techs:
+      gen:
+      load:
+data_tables:
+  load__sink_use_equals:
+    data: dem.csv
+    rows: timesteps
+    columns: [techs, nodes]
+    add_dims:
+      parameters: sink_use_equals

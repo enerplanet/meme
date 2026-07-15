@@ -1,0 +1,2779 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/enerplanet/meme/docs/revised_unified_schema.json",
+  "title": "Unified energy system model configuration (revision 2, converged with the meme Go implementation)",
+  "description": "Revision of unified_schema.json converged with meme's Go canonical model (internal/model: Job = Model + Experiment). Every divergence between the first-revision schema and the Go implementation was resolved by taking the better of the two designs; the decision log is docs/unified_schema_vs_go.md. Adopted from the GO IMPLEMENTATION: the Job document shape separating the physical `model` from the run-spec `experiment`; Go's JSON field names throughout (transmission, trade, emission_limits, bound, distance, max_pu, role, coords, ...), so the schema validates meme REST payloads directly; indexed parameters ({data, index, dims}) in $defs/Value; the Performance IR (constant | piecewise | physics with precomputed fallback); multi-class cost maps keyed by cost class ('monetary' is the class every emitter reads); explicit multi-port `flows` with direction and reference marking; the six-value run mode enum; dotted-path scenario overrides shared with `sweep`; and the implemented validation rules (storage role needs a storage block, demand role needs a demand_profile, flows need an input and at most one reference, referential integrity is checked by the Go side). Adopted from the FIRST-REVISION SCHEMA (now implemented in Go; \"x-go\" names the field): structured per-mode options (operate/alternatives/pareto/monte_carlo) instead of burying them in solver options; first-class solver time_limit/mip_gap/threads; richer capacity (systemwide bounds, unit counts, decommissioning); storage extras (power-energy-ratio mode, charge/discharge rate bounds, depth of discharge, async switch); transmission extras (per-distance loss/cost, min flow, auxiliary energy, emission factor); trade extras (series-valued limits, export emission factor, native block); reporting; emission accounting choice; unmet-demand/copperplate switches; rich investment periods; inline per-timestep arrays and non-finite literals in $defs/Value; and document-level native blocks that VALIDATE against the three untouched source schemas (adopt_net0_schema.json, pypsa_schema.json, calliope_schema.json). Annotations: every property carries \"x-go\" (the Go field it maps to, or null for a proposed extension) and, where useful, \"x-map\" (the native counterpart per framework; null = emulated or unsupported, see the source schemas' x-maps for detail). Canonical units: power MW, energy MWh, cost in metadata.currency, emissions t CO2-eq, distance km, time hours, fractions 0..1, timestamps ISO 8601.",
+  "x-source-schemas": {
+    "adopt-net0": "adopt_net0_schema.json (AdOpT-NET0 0.1.10)",
+    "pypsa": "pypsa_schema.json (PyPSA 1.2.4)",
+    "calliope": "calliope_schema.json (Calliope 0.7.0.dev7)"
+  },
+  "x-go-package": "github.com/enerplanet/meme/internal/model",
+  "x-report": "docs/unified_schema_vs_go.md",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "model"
+  ],
+  "properties": {
+    "api_key": {
+      "type": "string",
+      "description": "Transport-level authentication (checked when the server has API_KEY configured, ignored otherwise); redacted from the config.json persisted into the result bundle.",
+      "x-go": "Job.APIKey"
+    },
+    "model": {
+      "$ref": "#/$defs/Model",
+      "description": "The physical system: time domain, carriers, nodes, technologies, transmission, market trade, and system-wide limits.",
+      "x-go": "Job.Model"
+    },
+    "experiment": {
+      "$ref": "#/$defs/Experiment",
+      "description": "The run specification: everything about HOW to solve. Omitted = a plan-mode min-cost run with the default solver.",
+      "x-go": "Job.Experiment"
+    }
+  },
+  "$defs": {
+    "NonFiniteNumber": {
+      "title": "Non-finite number literal",
+      "type": "string",
+      "enum": [
+        "inf",
+        "-inf",
+        "NaN",
+        ".inf",
+        "-.inf",
+        ".nan"
+      ],
+      "description": "String spelling of an IEEE-754 non-finite value (JSON has no Infinity/NaN literals). Canonical: 'inf'/'-inf'/'NaN' (PyPSA convention); the YAML spellings '.inf'/'-.inf'/'.nan' (Calliope convention) are aliases. The Go model expresses 'unbounded' by omitting the field; emitters translate accordingly.",
+      "x-go": null
+    },
+    "NumberOrInf": {
+      "title": "Number or non-finite literal",
+      "oneOf": [
+        {
+          "type": "number"
+        },
+        {
+          "$ref": "#/$defs/NonFiniteNumber"
+        }
+      ]
+    },
+    "SeriesRef": {
+      "title": "Named time-series reference",
+      "type": "string",
+      "minLength": 1,
+      "description": "Reference to an entry of model.timeseries: the series id, optionally prefixed with 'ts:' (Value.SeriesID strips the prefix). A series named like a $defs/NonFiniteNumber literal must use the 'ts:' prefix.",
+      "examples": [
+        "pv_cf",
+        "ts:demand_profile"
+      ],
+      "not": {
+        "enum": [
+          "inf",
+          "-inf",
+          "NaN",
+          ".inf",
+          "-.inf",
+          ".nan"
+        ]
+      },
+      "x-go": "Value.Ref"
+    },
+    "IndexedParam": {
+      "title": "Indexed parameter",
+      "type": "object",
+      "description": "A parameter defined over one or more dimensions (Calliope's {data, index, dims} model): data[i] is the value at coordinate index[i], a tuple over dims. Structural rule (checked by Go Value.StructuralError, not expressible in JSON Schema): len(data) == len(index) and every index tuple has len(dims) coordinates. Example: {\"data\": [10, 20], \"index\": [[\"monetary\"], [\"co2\"]], \"dims\": [\"costs\"]}.",
+      "required": [
+        "data",
+        "index",
+        "dims"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "data": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "number"
+          }
+        },
+        "index": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "dims": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "x-go": "IndexedParam",
+      "x-map": {
+        "adopt-net0": null,
+        "pypsa": "reduced to a scalar via Value.Select/Reduce (multi-entry indexed params are rejected for flat targets, model.FirstMultiIndexed)",
+        "calliope": "indexed data/index/dims definition (native shape)"
+      }
+    },
+    "Value": {
+      "title": "Parameter value",
+      "description": "A possibly time-varying, possibly dimensioned parameter: a bare number; a time-series id string resolving against model.timeseries; an indexed {data, index, dims} object; an inline per-timestep array (interned into model.timeseries under a reserved \"_inline:\" id by Model.InternInlineSeries before validation, so emitters see exactly one series shape); or a non-finite literal (Go expresses unbounded by omission).",
+      "oneOf": [
+        {
+          "type": "number",
+          "description": "Scalar (Go Value.Scalar)."
+        },
+        {
+          "$ref": "#/$defs/SeriesRef"
+        },
+        {
+          "$ref": "#/$defs/IndexedParam"
+        },
+        {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/NumberOrInf"
+          },
+          "description": "Inline per-timestep values aligned with the model time index (interned to a registry series)."
+        },
+        {
+          "$ref": "#/$defs/NonFiniteNumber"
+        }
+      ],
+      "x-go": "Value (scalar | series ref | inline array | indexed param)"
+    },
+    "StringList": {
+      "title": "String or list of strings",
+      "description": "Accepts a single string or an array of strings (Go StringList).",
+      "oneOf": [
+        {
+          "type": "string",
+          "minLength": 1
+        },
+        {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      ],
+      "x-go": "StringList"
+    },
+    "TimeSeries": {
+      "title": "Time-series registry entry",
+      "type": "object",
+      "description": "An inline vector or a reference to a CSV column on disk.",
+      "required": [
+        "source"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "source": {
+          "type": "string",
+          "enum": [
+            "inline",
+            "file"
+          ],
+          "x-go": "TimeSeries.Source"
+        },
+        "path": {
+          "type": "string",
+          "description": "CSV path (source == \"file\").",
+          "x-go": "TimeSeries.Path"
+        },
+        "column": {
+          "type": "string",
+          "description": "Column within the file (source == \"file\").",
+          "x-go": "TimeSeries.Column"
+        },
+        "values": {
+          "type": "array",
+          "items": {
+            "type": "number"
+          },
+          "description": "Per-timestep values (source == \"inline\").",
+          "x-go": "TimeSeries.Values"
+        },
+        "unit": {
+          "type": "string",
+          "description": "Informational unit of the series values.",
+          "x-go": "TimeSeries.Unit"
+        }
+      },
+      "x-map": {
+        "adopt-net0": "columns of the per-node CSVs (ClimateData.csv, CarbonCost.csv, <carrier>.csv)",
+        "pypsa": "timeseries registry materialized to <list_name>-<attribute>.csv",
+        "calliope": "data_tables entries"
+      }
+    },
+    "NativeBlock": {
+      "title": "Component-level native passthrough",
+      "type": "object",
+      "description": "Framework-specific extra configuration for one component, merged verbatim into the emitted output of that framework and ignored for the others. Using a native block target-locks the payload; the Go side surfaces this as a warning (model.NativeWarnings).",
+      "additionalProperties": false,
+      "properties": {
+        "pypsa": {
+          "type": "object",
+          "additionalProperties": true,
+          "description": "Partial of PyPSA's own input schema (see pypsa_schema.json $defs for component attributes)."
+        },
+        "calliope": {
+          "type": "object",
+          "additionalProperties": true,
+          "description": "Partial of Calliope's own input schema (see calliope_schema.json $defs/techDef, $defs/nodeDef, $defs/config)."
+        },
+        "adopt-net0": {
+          "type": "object",
+          "additionalProperties": true,
+          "description": "Partial of AdOpT-NET0's own input schema (see adopt_net0_schema.json $defs; technology blocks patch technology_data/<name>.json like $defs/MemeOverrides)."
+        }
+      },
+      "x-go": "Native{PyPSA, Calliope, AdOpt json.RawMessage}"
+    },
+    "NativeModel": {
+      "title": "Model-level native passthrough",
+      "type": "object",
+      "description": "System-wide native configuration, one block per framework, merged verbatim into that framework's emitted output (PyPSA: the _native.pypsa.json sidecar; Calliope: the model YAML; AdOpT-NET0: the ConfigModel/topology files). Deliberately free-form to mirror the Go side (json.RawMessage) and real payloads, which carry annotation keys; the VOCABULARY each block should follow is the corresponding source schema (pypsa_schema.json, calliope_schema.json, adopt_net0_schema.json), which guarantees that everything expressible in any framework remains expressible here.",
+      "additionalProperties": false,
+      "properties": {
+        "pypsa": {
+          "type": "object",
+          "additionalProperties": true,
+          "description": "Partial PyPSA network document; vocabulary: pypsa_schema.json."
+        },
+        "calliope": {
+          "type": "object",
+          "additionalProperties": true,
+          "description": "Partial Calliope model definition; vocabulary: calliope_schema.json."
+        },
+        "adopt-net0": {
+          "type": "object",
+          "additionalProperties": true,
+          "description": "Partial AdOpT-NET0 document; vocabulary: adopt_net0_schema.json."
+        }
+      },
+      "x-go": "Model.Native"
+    },
+    "Model": {
+      "title": "Physical model",
+      "type": "object",
+      "description": "The physical system. Referential integrity (every node, carrier and series reference resolves; node_overrides name placed nodes) is enforced by the Go side (Model.Validate) and cannot be expressed in JSON Schema.",
+      "required": [
+        "metadata",
+        "time",
+        "carriers",
+        "nodes",
+        "technologies"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "metadata": {
+          "$ref": "#/$defs/Metadata",
+          "x-go": "Model.Metadata"
+        },
+        "time": {
+          "$ref": "#/$defs/Time",
+          "x-go": "Model.Time"
+        },
+        "periods": {
+          "type": "array",
+          "description": "Optional multi-horizon investment periods, in order. Entries are plain names or rich objects carrying the representative year (required by PyPSA multi-horizon), elapsed years, and objective weight. No emitter consumes periods yet.",
+          "items": {
+            "oneOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "$ref": "#/$defs/Period"
+              }
+            ]
+          },
+          "x-go": "Model.Periods []Period (string or rich object; no emitter consumes periods yet)",
+          "x-map": {
+            "adopt-net0": "Topology.investment_periods (+ investment_period_length)",
+            "pypsa": "investment_periods (integer years) + investment_period_weightings",
+            "calliope": null
+          }
+        },
+        "discount_rate": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0,
+          "default": null,
+          "description": "global discount/interest rate (fraction) applied to annualize investment of all components; null = each technology's own interest_rate applies.",
+          "x-go": "Model.DiscountRate",
+          "x-map": {
+            "adopt-net0": "ConfigModel.economic.global_discountrate.value (-1 = disabled)",
+            "pypsa": "broadcast to per-component discount_rate",
+            "calliope": "broadcast to cost_interest_rate"
+          }
+        },
+        "carriers": {
+          "type": "object",
+          "minProperties": 1,
+          "description": "Energy/material carriers, keyed by id. Go rejects a model with no carriers.",
+          "propertyNames": {
+            "minLength": 1
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/Carrier"
+          },
+          "x-go": "Model.Carriers"
+        },
+        "nodes": {
+          "type": "object",
+          "minProperties": 1,
+          "description": "Spatial nodes, keyed by id. Go rejects a model with no nodes. Which carriers exist at a node is DERIVED from the technologies, transmission and trade placed there (kept non-redundant on purpose).",
+          "propertyNames": {
+            "minLength": 1
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/Node"
+          },
+          "x-go": "Model.Nodes"
+        },
+        "timeseries": {
+          "type": "object",
+          "description": "Named time-series registry that Value series references resolve against.",
+          "propertyNames": {
+            "minLength": 1
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/TimeSeries"
+          },
+          "x-go": "Model.Timeseries"
+        },
+        "technologies": {
+          "type": "object",
+          "description": "Technology definitions, keyed by id. A technology may sit at several nodes; emitters expand it to one instance per node ('<id>@<node>').",
+          "propertyNames": {
+            "minLength": 1
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/Technology"
+          },
+          "x-go": "Model.Technologies"
+        },
+        "transmission": {
+          "type": "object",
+          "description": "Carrier transport between two nodes, keyed by id. Electrical load-flow parameters (impedances, AC power flow) are PyPSA-only and belong in native.pypsa.",
+          "propertyNames": {
+            "minLength": 1
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/Transmission"
+          },
+          "x-go": "Model.Transmission"
+        },
+        "trade": {
+          "type": "object",
+          "description": "Per-(node, carrier) import/export against an external market, keyed by id.",
+          "propertyNames": {
+            "minLength": 1
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/Trade"
+          },
+          "x-go": "Model.Trade"
+        },
+        "emission_limits": {
+          "type": "array",
+          "description": "System-wide caps on an emission species.",
+          "items": {
+            "$ref": "#/$defs/EmissionLimit"
+          },
+          "x-go": "Model.EmissionLimits"
+        },
+        "constraints": {
+          "type": "array",
+          "description": "Portable linear constraints: sum_i(coefficient_i * variable_i[scope_i]) sense bound. The target-neutral IR for global/share constraints and the linear slice of custom math; nonlinear constraints stay in native.",
+          "items": {
+            "$ref": "#/$defs/Constraint"
+          },
+          "x-go": "Model.Constraints"
+        },
+        "native": {
+          "$ref": "#/$defs/NativeModel"
+        }
+      }
+    },
+    "Metadata": {
+      "title": "Model metadata",
+      "type": "object",
+      "required": [
+        "name"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "x-go": "Metadata.Name"
+        },
+        "version": {
+          "type": "string",
+          "description": "User version string of the model itself.",
+          "x-go": "Metadata.Version"
+        },
+        "description": {
+          "type": "string",
+          "x-go": "Metadata.Description"
+        },
+        "currency": {
+          "type": "string",
+          "description": "Informational currency of all cost figures (no framework converts currencies).",
+          "x-go": "Metadata.Currency"
+        },
+        "currency_year": {
+          "type": "integer",
+          "description": "Reference year of the currency (real vs nominal cost figures).",
+          "x-go": "Metadata.CurrencyYear"
+        }
+      }
+    },
+    "Time": {
+      "title": "Time domain",
+      "type": "object",
+      "description": "The snapshot/timestep index. Temporal AGGREGATION (clustering, resampling) is a run concern and lives on experiment.time_aggregation.",
+      "required": [
+        "start",
+        "end"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "start": {
+          "type": "string",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}([ T]\\d{2}:\\d{2}(:\\d{2})?)?$",
+          "description": "First timestep (inclusive), ISO 8601.",
+          "x-go": "TimeConfig.Start",
+          "x-map": {
+            "adopt-net0": "Topology.start_date",
+            "pypsa": "first snapshot",
+            "calliope": "config.init.subset.timesteps[0]"
+          }
+        },
+        "end": {
+          "type": "string",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}([ T]\\d{2}:\\d{2}(:\\d{2})?)?$",
+          "description": "Last timestep (inclusive), ISO 8601.",
+          "x-go": "TimeConfig.End",
+          "x-map": {
+            "adopt-net0": "Topology.end_date",
+            "pypsa": "last snapshot",
+            "calliope": "config.init.subset.timesteps[1]"
+          }
+        },
+        "resolution": {
+          "type": "string",
+          "description": "Temporal resolution as a pandas frequency alias, e.g. \"1H\", \"3H\".",
+          "x-go": "TimeConfig.Resolution",
+          "x-map": {
+            "adopt-net0": "Topology.resolution",
+            "pypsa": "snapshot spacing + snapshot_weightings",
+            "calliope": "time index spacing / config.init.resample.timesteps"
+          }
+        },
+        "subset": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "items": {
+            "type": "string"
+          },
+          "description": "[start, end] inclusive sub-range of the horizon actually solved.",
+          "x-go": "TimeConfig.Subset",
+          "x-map": {
+            "adopt-net0": null,
+            "pypsa": "slice of snapshots",
+            "calliope": "config.init.subset.timesteps"
+          }
+        },
+        "timesteps": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "explicit timestep labels for irregular indices; takes precedence over start/end/resolution.",
+          "x-go": "TimeConfig.Timesteps (pypsa snapshots + calliope data tables; rejected by adopt-net0)",
+          "x-map": {
+            "adopt-net0": null,
+            "pypsa": "snapshots",
+            "calliope": "timesteps dimension of loaded data"
+          }
+        },
+        "weights": {
+          "$ref": "#/$defs/Value",
+          "description": "weight of each timestep in the objective and in energy/emission accounting (hours represented). Default 1.",
+          "x-go": "TimeConfig.Weights (pypsa snapshot_weightings scalar/series; calliope timestep_weights scalar; rejected by adopt-net0)",
+          "x-map": {
+            "adopt-net0": null,
+            "pypsa": "snapshot_weightings",
+            "calliope": "timestep_weights / timestep_resolution"
+          }
+        }
+      }
+    },
+    "Period": {
+      "title": "Investment period (rich form)",
+      "type": "object",
+      "required": [
+        "name"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "x-go": "Period.Name"
+        },
+        "year": {
+          "type": "integer",
+          "description": "Representative year (PyPSA investment periods must be increasing integer years).",
+          "x-go": "Period.Year"
+        },
+        "length_years": {
+          "type": "number",
+          "default": 1,
+          "description": "Elapsed years until the subsequent period.",
+          "x-go": "Period.LengthYears"
+        },
+        "objective_weight": {
+          "type": "number",
+          "default": 1,
+          "description": "Multiplier on this period's cost coefficients in the objective.",
+          "x-go": "Period.ObjectiveWeight"
+        }
+      }
+    },
+    "Carrier": {
+      "title": "Carrier",
+      "type": "object",
+      "description": "An energy or material vector (electricity, hydrogen, heat, CO2, ...). Kept orthogonal to Node; the PyPSA emitter fuses the two into buses.",
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Display/long name.",
+          "x-go": "Carrier.Name",
+          "x-map": {
+            "adopt-net0": null,
+            "pypsa": "carriers.<id>.nice_name",
+            "calliope": null
+          }
+        },
+        "unit": {
+          "type": "string",
+          "description": "Informational unit of carrier flows (e.g. MW, t/h).",
+          "x-go": "Carrier.Unit"
+        },
+        "co2_intensity": {
+          "type": "number",
+          "description": "Embedded emissions of consuming one MWh of this carrier as primary energy (t CO2-eq/MWh).",
+          "x-go": "Carrier.CO2Intensity",
+          "x-map": {
+            "adopt-net0": "spread onto technology emission factors and trade emission-factor columns",
+            "pypsa": "carriers.<id>.co2_emissions",
+            "calliope": "emulated via a co2 cost class"
+          }
+        },
+        "color": {
+          "type": "string",
+          "description": "Plotting color.",
+          "x-go": "Carrier.Color",
+          "x-map": {
+            "adopt-net0": null,
+            "pypsa": "carriers.<id>.color",
+            "calliope": "per-tech color"
+          }
+        },
+        "native": {
+          "$ref": "#/$defs/NativeBlock",
+          "x-go": "Carrier.Native"
+        }
+      }
+    },
+    "Node": {
+      "title": "Node",
+      "type": "object",
+      "description": "A spatial point. Technologies live at a node and declare their carriers; a node never carries carrier identity itself.",
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Display/long name.",
+          "x-go": "Node.Name"
+        },
+        "coords": {
+          "type": "object",
+          "required": [
+            "lat",
+            "lon"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "lat": {
+              "type": "number",
+              "minimum": -90,
+              "maximum": 90,
+              "x-go": "Coords.Lat"
+            },
+            "lon": {
+              "type": "number",
+              "minimum": -180,
+              "maximum": 180,
+              "x-go": "Coords.Lon"
+            },
+            "alt": {
+              "type": "number",
+              "description": "Altitude in metres (AdOpT-NET0 climate preprocessing).",
+              "x-go": "Coords.Alt"
+            }
+          },
+          "x-go": "Node.Coords",
+          "x-map": {
+            "adopt-net0": "NodeLocations.csv lon/lat/alt",
+            "pypsa": "buses x/y",
+            "calliope": "nodes latitude/longitude"
+          }
+        },
+        "allowed_techs": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string"
+          },
+          "description": "Restriction of which technologies may be placed at this node; omitted = no restriction.",
+          "x-go": "Node.AllowedTechs"
+        },
+        "available_area": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Area budget shared by all area-using technologies at this node (Calliope-gated capability).",
+          "x-go": "Node.AvailableArea",
+          "x-map": {
+            "adopt-net0": null,
+            "pypsa": null,
+            "calliope": "nodes.<id>.available_area"
+          }
+        },
+        "climate": {
+          "type": "object",
+          "description": "Weather series for physics-based performance models (AdOpT-NET0 ClimateData columns: ghi, dni, dhi, temp_air, rh, ws10, hydro_inflow); values are scalars or series references.",
+          "additionalProperties": {
+            "$ref": "#/$defs/Value"
+          },
+          "x-go": "Node.Climate",
+          "x-map": {
+            "adopt-net0": "node_data/<node>/ClimateData.csv columns",
+            "pypsa": "consumed by the orchestrator to precompute profiles",
+            "calliope": "consumed by the orchestrator to precompute profiles"
+          }
+        },
+        "native": {
+          "$ref": "#/$defs/NativeBlock",
+          "x-go": "Node.Native"
+        }
+      }
+    },
+    "Technology": {
+      "title": "Technology",
+      "type": "object",
+      "description": "Any node-local component that produces, consumes, converts, or stores carriers. Validation mirrored from Go (Model.Validate): role 'storage' requires the storage block; role 'demand' requires demand_profile. Cross-field rule not expressible here (Go-checked): with cost_basis 'overnight' (or unset), any investment_per_capacity needs lifetime and interest_rate to annualize.",
+      "required": [
+        "role",
+        "node"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "role": {
+          "type": "string",
+          "enum": [
+            "supply",
+            "demand",
+            "conversion",
+            "storage"
+          ],
+          "description": "Abstract component class.",
+          "x-go": "Technology.Role",
+          "x-map": {
+            "adopt-net0": "TechnologyDataFile.tec_type (RES/CONV1..4/STOR/SINK/...); demand = the <carrier>.csv Demand column",
+            "pypsa": "component selection: generators / links|processes / storage_units|stores / loads",
+            "calliope": "techs.<id>.base_tech"
+          }
+        },
+        "node": {
+          "$ref": "#/$defs/StringList",
+          "description": "Node(s) this technology sits at; emitters expand to one instance per node.",
+          "x-go": "Technology.Node",
+          "x-map": {
+            "adopt-net0": "presence in <period>/node_data/<node>/Technologies.json",
+            "pypsa": "one component row <id>@<node> per node",
+            "calliope": "nodes.<node>.techs.<id>"
+          }
+        },
+        "carrier_in": {
+          "$ref": "#/$defs/StringList",
+          "description": "Consumed carrier(s).",
+          "x-go": "Technology.CarrierIn"
+        },
+        "carrier_out": {
+          "$ref": "#/$defs/StringList",
+          "description": "Produced carrier(s).",
+          "x-go": "Technology.CarrierOut"
+        },
+        "efficiency": {
+          "$ref": "#/$defs/Value",
+          "description": "Simple one-in/one-out conversion factor. For multi-input or multi-output conversion use `flows`; when flows is non-empty it takes precedence.",
+          "x-go": "Technology.Efficiency",
+          "x-map": {
+            "adopt-net0": "Performance.performance coefficients (linear type 1)",
+            "pypsa": "generators/links.<id>.efficiency",
+            "calliope": "flow_out_eff"
+          }
+        },
+        "flows": {
+          "type": "array",
+          "minItems": 1,
+          "description": "Ports of a multi-carrier conversion. Ratios are per unit of the reference input flow (the one marked reference, or the first input). Rules (mirrored from Go): at least one input flow; at most one reference flow.",
+          "items": {
+            "$ref": "#/$defs/Flow"
+          },
+          "allOf": [
+            {
+              "contains": {
+                "type": "object",
+                "required": [
+                  "direction"
+                ],
+                "properties": {
+                  "direction": {
+                    "const": "in"
+                  }
+                }
+              },
+              "$comment": "At least one input flow."
+            },
+            {
+              "contains": {
+                "type": "object",
+                "required": [
+                  "reference"
+                ],
+                "properties": {
+                  "reference": {
+                    "const": true
+                  }
+                }
+              },
+              "minContains": 0,
+              "maxContains": 1,
+              "$comment": "At most one reference flow."
+            }
+          ],
+          "x-go": "Technology.Flows",
+          "x-map": {
+            "adopt-net0": "multi-carrier conversion (input_ratios / per-carrier performance coefficients)",
+            "pypsa": "multi-output Link (bus0 + bus1/efficiency + bus2/efficiency2 + ...) or Process rates",
+            "calliope": "indexed flow_out_eff/flow_in_eff over carriers"
+          }
+        },
+        "performance": {
+          "$ref": "#/$defs/Performance",
+          "x-go": "Technology.Performance"
+        },
+        "capacity": {
+          "$ref": "#/$defs/Capacity",
+          "description": "Capacity of the reference flow (MW). For storage this bounds charge/discharge POWER; stored energy is storage.energy_capacity.",
+          "x-go": "Technology.Capacity"
+        },
+        "operation": {
+          "$ref": "#/$defs/Operation",
+          "x-go": "Technology.Operation"
+        },
+        "storage": {
+          "$ref": "#/$defs/Storage",
+          "x-go": "Technology.Storage"
+        },
+        "demand_profile": {
+          "$ref": "#/$defs/Value",
+          "description": "Exogenous demand time series (MW, positive = consumption). Required when role is 'demand'.",
+          "x-go": "Technology.DemandProfile",
+          "x-map": {
+            "adopt-net0": "<carrier>.csv Demand column",
+            "pypsa": "loads.<id>.p_set",
+            "calliope": "sink_use_equals"
+          }
+        },
+        "demand_curtailable": {
+          "type": "boolean",
+          "default": false,
+          "description": "serving less than demand_profile is allowed (profile becomes an upper bound). System-wide slack is experiment.allow_unmet_demand.",
+          "x-go": "Technology.DemandCurtailable (calliope sink_use_max; rejected elsewhere)",
+          "x-map": {
+            "adopt-net0": null,
+            "pypsa": "emulated: negative-sign generator with p_max_pu = profile",
+            "calliope": "sink_use_max instead of sink_use_equals"
+          }
+        },
+        "area": {
+          "type": "object",
+          "description": "Land/area use constraints (Calliope-gated capability; counts against the node's available_area).",
+          "additionalProperties": false,
+          "properties": {
+            "max": {
+              "type": "number",
+              "minimum": 0,
+              "description": "Maximum area this technology may occupy.",
+              "x-go": "AreaSpec.Max",
+              "x-map": {
+                "adopt-net0": null,
+                "pypsa": null,
+                "calliope": "area_use_max"
+              }
+            },
+            "per_capacity": {
+              "type": "number",
+              "minimum": 0,
+              "description": "Area used per unit of installed capacity.",
+              "x-go": "AreaSpec.PerCapacity",
+              "x-map": {
+                "adopt-net0": null,
+                "pypsa": null,
+                "calliope": "area_use_per_flow_cap"
+              }
+            }
+          },
+          "x-go": "Technology.Area"
+        },
+        "source": {
+          "type": "object",
+          "description": "Resource/source bounds of a supply technology (Calliope-gated capability).",
+          "additionalProperties": false,
+          "properties": {
+            "cap": {
+              "type": "number",
+              "minimum": 0,
+              "description": "Installed source-consumption capacity bound.",
+              "x-go": "SourceSpec.Cap",
+              "x-map": {
+                "adopt-net0": null,
+                "pypsa": null,
+                "calliope": "source_cap_max"
+              }
+            },
+            "unit": {
+              "type": "string",
+              "enum": [
+                "absolute",
+                "per_area",
+                "per_cap"
+              ],
+              "description": "Unit basis of the source bound.",
+              "x-go": "SourceSpec.Unit",
+              "x-map": {
+                "adopt-net0": null,
+                "pypsa": "per_cap max is p_max_pu-like",
+                "calliope": "source_unit"
+              }
+            },
+            "max": {
+              "$ref": "#/$defs/Value",
+              "description": "Maximum source use per timestep (scalar or series), in the basis given by unit.",
+              "x-go": "SourceSpec.Max",
+              "x-map": {
+                "adopt-net0": null,
+                "pypsa": "p_max_pu when unit = per_cap",
+                "calliope": "source_use_max"
+              }
+            }
+          },
+          "x-go": "Technology.Source"
+        },
+        "costs": {
+          "type": "object",
+          "description": "Costs per cost class. Emitters read the class \"monetary\" (model.PrimaryCostClass) to populate the framework's monetary fields; other classes (e.g. \"co2\") are honored only by targets with multi-class cost support and warned about otherwise.",
+          "propertyNames": {
+            "minLength": 1
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/CostClass"
+          },
+          "x-go": "Technology.Costs map[string]CostClass"
+        },
+        "lifetime": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "description": "Technical/economic lifetime in years (annuitization; PyPSA multi-period retirement).",
+          "x-go": "Technology.Lifetime",
+          "x-map": {
+            "adopt-net0": "Economics.lifetime",
+            "pypsa": "<component>.lifetime",
+            "calliope": "techs.<id>.lifetime"
+          }
+        },
+        "interest_rate": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Component discount/interest rate (fraction) for annuitizing overnight investment; model.discount_rate (when set) overrides it globally.",
+          "x-go": "Technology.InterestRate",
+          "x-map": {
+            "adopt-net0": "Economics.discount_rate",
+            "pypsa": "<component>.discount_rate",
+            "calliope": "cost_interest_rate"
+          }
+        },
+        "cost_basis": {
+          "type": "string",
+          "enum": [
+            "overnight",
+            "annualized"
+          ],
+          "default": "overnight",
+          "description": "Whether investment_per_capacity figures are overnight (annuitized via lifetime + interest_rate) or already annualized.",
+          "x-go": "Technology.CostBasis",
+          "x-map": {
+            "adopt-net0": "overnight is native (unit_CAPEX + internal annuity)",
+            "pypsa": "overnight_cost vs capital_cost",
+            "calliope": "cost_depreciation_rate = 1 for annualized"
+          }
+        },
+        "emission_factor": {
+          "type": "number",
+          "description": "direct emissions per MWh of reference flow (t CO2-eq/MWh); negative for negative-emission technologies. Alternative to carrier-level co2_intensity - use one accounting route consistently.",
+          "x-go": "Technology.EmissionFactor (adopt-net0 Performance.emission_factor; calliope co2 cost class; rejected by pypsa)",
+          "x-map": {
+            "adopt-net0": "Performance.emission_factor",
+            "pypsa": "emulated via the fuel carrier's co2_emissions and efficiency",
+            "calliope": "emulated via a co2 cost class"
+          }
+        },
+        "annual_output_min": {
+          "type": "number",
+          "minimum": 0,
+          "description": "minimum total reference output over the weighted horizon (MWh).",
+          "x-go": "Technology.AnnualOutputMin (pypsa e_sum_min; rejected elsewhere)",
+          "x-map": {
+            "adopt-net0": null,
+            "pypsa": "generators.<id>.e_sum_min",
+            "calliope": "source_use_min / custom math"
+          }
+        },
+        "annual_output_max": {
+          "$ref": "#/$defs/NumberOrInf",
+          "description": "maximum total reference output over the weighted horizon (MWh), e.g. resource budgets.",
+          "x-go": "Technology.AnnualOutputMax (pypsa e_sum_max; rejected elsewhere)",
+          "x-map": {
+            "adopt-net0": null,
+            "pypsa": "generators.<id>.e_sum_max",
+            "calliope": "source_use_max with source_unit = absolute"
+          }
+        },
+        "build_year": {
+          "type": "integer",
+          "description": "commissioning year of existing capacity (multi-period retirement together with lifetime).",
+          "x-go": "Technology.BuildYear (pypsa build_year; warned-and-dropped elsewhere)",
+          "x-map": {
+            "adopt-net0": null,
+            "pypsa": "<component>.build_year",
+            "calliope": null
+          }
+        },
+        "active": {
+          "type": "boolean",
+          "default": true,
+          "description": "deactivate without deleting.",
+          "x-go": "Technology.Active (pypsa/calliope active flag; adopt-net0 omits the tech)",
+          "x-map": {
+            "adopt-net0": "omit from Technologies.json",
+            "pypsa": "<component>.active",
+            "calliope": "techs.<id>.active"
+          }
+        },
+        "node_overrides": {
+          "type": "object",
+          "description": "Per-node parameter overrides. Keys must be members of `node` (Go-checked). A non-nil override field replaces the base value wholesale; costs merge per cost class (Technology.At).",
+          "propertyNames": {
+            "minLength": 1
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/NodeOverride"
+          },
+          "x-go": "Technology.NodeOverrides",
+          "x-map": {
+            "adopt-net0": "per-node technology_data patches (_meme_overrides.json)",
+            "pypsa": "differing attribute values on the <id>@<node> rows",
+            "calliope": "nodes.<node>.techs.<id> inline overrides"
+          }
+        },
+        "native": {
+          "$ref": "#/$defs/NativeBlock",
+          "x-go": "Technology.Native"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "role": {
+                "const": "storage"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "storage"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "role": {
+                "const": "demand"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "demand_profile"
+            ]
+          }
+        }
+      ]
+    },
+    "NodeOverride": {
+      "title": "Per-node technology override",
+      "type": "object",
+      "description": "Replaces a subset of a technology's parameters at a specific node. Any absent field leaves the base value unchanged; costs are merged per cost class.",
+      "additionalProperties": false,
+      "properties": {
+        "carrier_in": {
+          "$ref": "#/$defs/StringList",
+          "x-go": "NodeOverride.CarrierIn"
+        },
+        "carrier_out": {
+          "$ref": "#/$defs/StringList",
+          "x-go": "NodeOverride.CarrierOut"
+        },
+        "efficiency": {
+          "$ref": "#/$defs/Value",
+          "x-go": "NodeOverride.Efficiency"
+        },
+        "performance": {
+          "$ref": "#/$defs/Performance",
+          "x-go": "NodeOverride.Performance"
+        },
+        "capacity": {
+          "$ref": "#/$defs/Capacity",
+          "x-go": "NodeOverride.Capacity"
+        },
+        "operation": {
+          "$ref": "#/$defs/Operation",
+          "x-go": "NodeOverride.Operation"
+        },
+        "storage": {
+          "$ref": "#/$defs/Storage",
+          "x-go": "NodeOverride.Storage"
+        },
+        "demand_profile": {
+          "$ref": "#/$defs/Value",
+          "x-go": "NodeOverride.DemandProfile"
+        },
+        "area": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "max": {
+              "type": "number",
+              "minimum": 0
+            },
+            "per_capacity": {
+              "type": "number",
+              "minimum": 0
+            }
+          },
+          "x-go": "NodeOverride.Area"
+        },
+        "source": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "cap": {
+              "type": "number",
+              "minimum": 0
+            },
+            "unit": {
+              "type": "string",
+              "enum": [
+                "absolute",
+                "per_area",
+                "per_cap"
+              ]
+            },
+            "max": {
+              "$ref": "#/$defs/Value"
+            }
+          },
+          "x-go": "NodeOverride.Source"
+        },
+        "costs": {
+          "type": "object",
+          "propertyNames": {
+            "minLength": 1
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/CostClass"
+          },
+          "x-go": "NodeOverride.Costs"
+        },
+        "native": {
+          "$ref": "#/$defs/NativeBlock",
+          "x-go": "NodeOverride.Native"
+        }
+      }
+    },
+    "Flow": {
+      "title": "Conversion flow port",
+      "type": "object",
+      "required": [
+        "carrier",
+        "direction"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "carrier": {
+          "type": "string",
+          "minLength": 1,
+          "x-go": "Flow.Carrier"
+        },
+        "direction": {
+          "type": "string",
+          "enum": [
+            "in",
+            "out"
+          ],
+          "x-go": "Flow.Direction"
+        },
+        "ratio": {
+          "type": "number",
+          "description": "Flow per unit of the reference input flow. Required on every non-reference flow; the reference input flow is its own basis (implicit ratio 1) and omits it.",
+          "x-go": "Flow.Ratio",
+          "exclusiveMinimum": 0
+        },
+        "reference": {
+          "type": "boolean",
+          "default": false,
+          "description": "Marks the reference input flow that capacity and ratios refer to (at most one per technology; defaults to the first input).",
+          "x-go": "Flow.Reference"
+        }
+      },
+      "if": {
+        "not": {
+          "required": [
+            "reference"
+          ],
+          "properties": {
+            "reference": {
+              "const": true
+            }
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "ratio"
+        ],
+        "$comment": "Non-reference flows must state their ratio; the reference flow may omit it."
+      }
+    },
+    "Performance": {
+      "title": "Performance model",
+      "type": "object",
+      "description": "How a technology converts input to output beyond a single efficiency: a piecewise part-load curve, or a physics-based model. AdOpT-NET0 evaluates these natively; PyPSA and Calliope require a precomputed series (`precomputed`). Piecewise rules mirrored from Go (Performance.Validate): >= 2 breakpoints, loads within [0,1] and strictly increasing (ordering not expressible here), efficiencies > 0.",
+      "required": [
+        "type"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": [
+            "constant",
+            "piecewise",
+            "physics"
+          ],
+          "x-go": "Performance.Type"
+        },
+        "efficiency": {
+          "$ref": "#/$defs/Value",
+          "description": "type == constant: the conversion efficiency.",
+          "x-go": "Performance.Efficiency"
+        },
+        "breakpoints": {
+          "type": "array",
+          "minItems": 2,
+          "description": "type == piecewise: part-load performance curve (MILP with min stable load).",
+          "items": {
+            "type": "object",
+            "required": [
+              "load",
+              "efficiency"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "load": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1,
+                "description": "Fraction of capacity.",
+                "x-go": "Breakpoint.Load"
+              },
+              "efficiency": {
+                "type": "number",
+                "exclusiveMinimum": 0,
+                "description": "Efficiency at that load.",
+                "x-go": "Breakpoint.Efficiency"
+              }
+            }
+          },
+          "x-go": "Performance.Breakpoints",
+          "x-map": {
+            "adopt-net0": "performance_function_type 3 piecewise fit",
+            "pypsa": "linearized by the orchestrator (_performance.json sidecar)",
+            "calliope": "piecewise_constraints custom math"
+          }
+        },
+        "min_load": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Minimum stable load, fraction of capacity (piecewise).",
+          "x-go": "Performance.MinLoad",
+          "x-map": {
+            "adopt-net0": "Performance.min_part_load",
+            "pypsa": "p_min_pu with committable",
+            "calliope": "flow_out_min_relative"
+          }
+        },
+        "model": {
+          "type": "string",
+          "enum": [
+            "pv",
+            "wind",
+            "heat_pump",
+            "open_hydro"
+          ],
+          "description": "type == physics: the recognized physics model (Go physicsModels). Each maps to an AdOpT-NET0 technology type; other targets need `precomputed`.",
+          "x-go": "Performance.Model",
+          "x-map": {
+            "adopt-net0": "tec_type RES (pv/wind fit), HeatPump_*, Hydro_Open",
+            "pypsa": "precomputed profile (pvlib/wind curve/COP) via the orchestrator",
+            "calliope": "precomputed profile via the orchestrator"
+          }
+        },
+        "params": {
+          "type": "object",
+          "additionalProperties": true,
+          "description": "Model-specific inputs (tilt, azimuth, cop_ref, ...).",
+          "x-go": "Performance.Params"
+        },
+        "precomputed": {
+          "$ref": "#/$defs/Value",
+          "description": "Series id of a precomputed profile for non-AdOpT targets.",
+          "x-go": "Performance.Precomputed"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "piecewise"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "breakpoints"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "physics"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "model"
+            ]
+          }
+        }
+      ]
+    },
+    "Capacity": {
+      "title": "Capacity specification",
+      "type": "object",
+      "description": "Fixed base (existing), whether size is a decision variable (expandable), and bounds; in `unit` (default MW; MWh for storage energy capacity).",
+      "additionalProperties": false,
+      "properties": {
+        "existing": {
+          "type": "number",
+          "minimum": 0,
+          "default": 0,
+          "description": "Pre-existing installed capacity.",
+          "x-go": "Capacity.Existing",
+          "x-map": {
+            "adopt-net0": "Technologies.json existing.<name> / network size.csv",
+            "pypsa": "p_nom (e_nom, s_nom)",
+            "calliope": "flow_cap_min = flow_cap_max = existing when not expandable"
+          }
+        },
+        "expandable": {
+          "type": "boolean",
+          "default": false,
+          "description": "Whether the optimizer may build capacity beyond `existing`.",
+          "x-go": "Capacity.Expandable",
+          "x-map": {
+            "adopt-net0": "Technologies.json new / Networks.json new",
+            "pypsa": "p_nom_extendable",
+            "calliope": "finite flow_cap_max decision variable"
+          }
+        },
+        "min": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Lower bound on total installed capacity.",
+          "x-go": "Capacity.Min",
+          "x-map": {
+            "adopt-net0": "size_min",
+            "pypsa": "p_nom_min",
+            "calliope": "flow_cap_min"
+          }
+        },
+        "max": {
+          "$ref": "#/$defs/NumberOrInf",
+          "description": "Upper bound on total installed capacity. Omitted or 'inf' = unbounded; Go expresses unbounded by omission and does not parse the 'inf' literal (a deliberate non-implementation - see the report).",
+          "x-go": "Capacity.Max (*float64; omission = unbounded)",
+          "x-map": {
+            "adopt-net0": "size_max (finite sentinel substituted for inf)",
+            "pypsa": "p_nom_max",
+            "calliope": "flow_cap_max"
+          }
+        },
+        "unit": {
+          "type": "string",
+          "description": "Unit of the size variable (e.g. MW, MWh, t/h).",
+          "x-go": "Capacity.Unit"
+        },
+        "per_unit": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "description": "Modular sizing: capacity of one integer module. Introduces integer variables.",
+          "x-go": "Capacity.PerUnit",
+          "x-map": {
+            "adopt-net0": "size_is_int = 1",
+            "pypsa": "p_nom_mod",
+            "calliope": "cap_method = integer + flow_cap_per_unit"
+          }
+        },
+        "units_min": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "minimum number of modules (with per_unit).",
+          "x-go": "Capacity.UnitsMin",
+          "x-map": {
+            "adopt-net0": "implied by size_min",
+            "pypsa": "implied by p_nom_min",
+            "calliope": "purchased_units_min"
+          }
+        },
+        "units_max": {
+          "$ref": "#/$defs/NumberOrInf",
+          "description": "maximum number of modules (with per_unit).",
+          "x-go": "Capacity.UnitsMax",
+          "x-map": {
+            "adopt-net0": "implied by size_max",
+            "pypsa": "implied by p_nom_max",
+            "calliope": "purchased_units_max"
+          }
+        },
+        "systemwide_min": {
+          "type": "number",
+          "minimum": 0,
+          "description": "lower bound on this component's capacity summed over all nodes.",
+          "x-go": "Capacity.SystemwideMin (calliope flow_cap_min_systemwide; pypsa sidecar constraint; rejected by adopt-net0)",
+          "x-map": {
+            "adopt-net0": null,
+            "pypsa": "sidecar linear constraint on capacity",
+            "calliope": "flow_cap_min_systemwide"
+          }
+        },
+        "systemwide_max": {
+          "$ref": "#/$defs/NumberOrInf",
+          "description": "upper bound on this component's capacity summed over all nodes.",
+          "x-go": "Capacity.SystemwideMax (calliope flow_cap_max_systemwide; pypsa sidecar constraint; rejected by adopt-net0)",
+          "x-map": {
+            "adopt-net0": null,
+            "pypsa": "global_constraints tech_capacity_expansion_limit",
+            "calliope": "flow_cap_max_systemwide"
+          }
+        },
+        "decommission": {
+          "type": "object",
+          "description": "what may happen to `existing` capacity during optimization.",
+          "additionalProperties": false,
+          "properties": {
+            "mode": {
+              "type": "string",
+              "enum": [
+                "impossible",
+                "continuous",
+                "only_complete"
+              ],
+              "default": "impossible",
+              "x-go": "Decommission.Mode (adopt-net0 native; calliope impossible/continuous; pypsa impossible only)",
+              "x-map": {
+                "adopt-net0": "TechnologyDataFile/NetworkDataFile decommission",
+                "pypsa": "emulated via p_nom bounds; only_complete needs native",
+                "calliope": "emulated via flow_cap_min; only_complete needs custom math"
+              }
+            },
+            "cost": {
+              "type": "number",
+              "minimum": 0,
+              "default": 0,
+              "description": "Cost per unit of retired capacity.",
+              "x-go": "Decommission.Cost (adopt-net0 Economics.decommission_cost)",
+              "x-map": {
+                "adopt-net0": "Economics.decommission_cost",
+                "pypsa": null,
+                "calliope": null
+              }
+            }
+          },
+          "x-go": "Capacity.Decommission"
+        }
+      }
+    },
+    "Operation": {
+      "title": "Dispatch envelope",
+      "type": "object",
+      "description": "Per-unit dispatch bounds, ramping and unit commitment. Ramp rates are fractions of installed capacity PER HOUR; frameworks constraining per timestep receive value * hours-per-timestep. Commitment fields beyond min stable load are honored where the target supports them (Calliope 0.7 base math has no start-up/min-up-time formulation).",
+      "additionalProperties": false,
+      "properties": {
+        "max_pu": {
+          "$ref": "#/$defs/Value",
+          "description": "Maximum output per unit of capacity (fraction; renewable feed-in profiles go here).",
+          "x-go": "Operation.MaxPU",
+          "x-map": {
+            "adopt-net0": "RES profile from ClimateData / generic production",
+            "pypsa": "p_max_pu",
+            "calliope": "source_use_max with source_unit = per_cap"
+          }
+        },
+        "min_pu": {
+          "$ref": "#/$defs/Value",
+          "description": "Minimum output per unit of capacity (fraction). > 0 without committable is a must-run condition.",
+          "x-go": "Operation.MinPU",
+          "x-map": {
+            "adopt-net0": "min_part_load",
+            "pypsa": "p_min_pu",
+            "calliope": "flow_out_min_relative"
+          }
+        },
+        "equals_pu": {
+          "$ref": "#/$defs/Value",
+          "description": "fixed dispatch per unit of capacity (non-curtailable resource); overrides max_pu/min_pu.",
+          "x-go": "Operation.EqualsPU (pypsa p_min_pu = p_max_pu; calliope source_use_equals; rejected by adopt-net0)",
+          "x-map": {
+            "adopt-net0": "generic production with curtailment_possible = 0",
+            "pypsa": "p_min_pu = p_max_pu",
+            "calliope": "source_use_equals with source_unit = per_cap"
+          }
+        },
+        "ramp_up": {
+          "$ref": "#/$defs/Value",
+          "description": "Maximum upward change (fraction of capacity per hour). Accepts the Value shapes; every target renders ramps as scalars today (series are rejected).",
+          "x-go": "Operation.RampUp (*Value; series rejected by ValidateFor)",
+          "x-map": {
+            "adopt-net0": "ramping_rate (absolute; converted via size and resolution)",
+            "pypsa": "ramp_limit_up",
+            "calliope": "flow_ramping (symmetric: min(up, down))"
+          }
+        },
+        "ramp_down": {
+          "$ref": "#/$defs/Value",
+          "description": "Maximum downward change (fraction of capacity per hour). Same scalar-only note as ramp_up.",
+          "x-go": "Operation.RampDown (*Value; series rejected by ValidateFor)",
+          "x-map": {
+            "adopt-net0": "ramping_rate (symmetric)",
+            "pypsa": "ramp_limit_down",
+            "calliope": "flow_ramping (symmetric)"
+          }
+        },
+        "committable": {
+          "type": "boolean",
+          "default": false,
+          "description": "Apply unit-commitment (on/off) constraints; introduces binaries.",
+          "x-go": "Operation.Committable",
+          "x-map": {
+            "adopt-net0": "dynamics = 1 + performance_function_type >= 2",
+            "pypsa": "committable",
+            "calliope": "cap_method = integer + integer_dispatch (approximation)"
+          }
+        },
+        "start_up_cost": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Cost per start-up event.",
+          "x-go": "Operation.StartUpCost",
+          "x-map": {
+            "adopt-net0": null,
+            "pypsa": "start_up_cost",
+            "calliope": null
+          }
+        },
+        "shut_down_cost": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Cost per shut-down event.",
+          "x-go": "Operation.ShutDownCost",
+          "x-map": {
+            "adopt-net0": null,
+            "pypsa": "shut_down_cost",
+            "calliope": null
+          }
+        },
+        "min_uptime": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Minimum consecutive on-time (hours; converted to timesteps by emitters).",
+          "x-go": "Operation.MinUptime",
+          "x-map": {
+            "adopt-net0": "min_uptime (timesteps)",
+            "pypsa": "min_up_time (snapshots)",
+            "calliope": null
+          }
+        },
+        "min_downtime": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Minimum consecutive off-time (hours; converted to timesteps by emitters).",
+          "x-go": "Operation.MinDowntime",
+          "x-map": {
+            "adopt-net0": "min_downtime (timesteps)",
+            "pypsa": "min_down_time (snapshots)",
+            "calliope": null
+          }
+        },
+        "max_startups": {
+          "$ref": "#/$defs/NumberOrInf",
+          "description": "maximum number of start-ups over the horizon.",
+          "x-go": "Operation.MaxStartups (adopt-net0 Performance.max_startups; rejected elsewhere)",
+          "x-map": {
+            "adopt-net0": "max_startups",
+            "pypsa": null,
+            "calliope": null
+          }
+        },
+        "standby_power": {
+          "type": "number",
+          "minimum": 0,
+          "description": "consumption while committed but idle, fraction of capacity.",
+          "x-go": "Operation.StandbyPower (adopt-net0 Performance.standby_power; rejected elsewhere)",
+          "x-map": {
+            "adopt-net0": "standby_power",
+            "pypsa": "stand_by_cost prices the idle state (energy standby needs native)",
+            "calliope": null
+          }
+        }
+      }
+    },
+    "Storage": {
+      "title": "Storage specification",
+      "type": "object",
+      "description": "State-of-charge behaviour of a storage technology. The technology's `capacity` bounds charge/discharge POWER (MW); `energy_capacity` bounds stored ENERGY (MWh). Setting max_hours couples the two at a fixed ratio (PyPSA StorageUnit / AdOpT fixedratio); leaving it unset with an expandable energy_capacity optimizes them independently (PyPSA Store + links / AdOpT flexratio / Calliope default).",
+      "additionalProperties": false,
+      "properties": {
+        "energy_capacity": {
+          "$ref": "#/$defs/Capacity",
+          "description": "Stored-energy capacity bounds (MWh). Its investment cost is CostClass.investment_per_energy_capacity.",
+          "x-go": "Storage.EnergyCapacity",
+          "x-map": {
+            "adopt-net0": "STOR size bounds (MWh)",
+            "pypsa": "stores e_nom* / storage_units p_nom * max_hours",
+            "calliope": "storage_cap_min/max"
+          }
+        },
+        "max_hours": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "description": "Fixed energy-to-power ratio in hours: energy capacity = max_hours * power capacity.",
+          "x-go": "Storage.MaxHours",
+          "x-map": {
+            "adopt-net0": "Flexibility.charge_rate = 1 / max_hours (fixedratio)",
+            "pypsa": "storage_units.<id>.max_hours",
+            "calliope": "flow_cap_per_storage_cap_min = flow_cap_per_storage_cap_max = 1 / max_hours"
+          }
+        },
+        "max_charge_rate": {
+          "$ref": "#/$defs/NumberOrInf",
+          "description": "maximum charging power as a fraction of energy capacity per hour (independent power/energy sizing).",
+          "x-go": "Storage.MaxChargeRate",
+          "x-map": {
+            "adopt-net0": "Flexibility.charge_rate (flexratio)",
+            "pypsa": "charger link p_nom_max relative to e_nom",
+            "calliope": "flow_cap_per_storage_cap_max"
+          }
+        },
+        "max_discharge_rate": {
+          "$ref": "#/$defs/NumberOrInf",
+          "description": "maximum discharging power as a fraction of energy capacity per hour.",
+          "x-go": "Storage.MaxDischargeRate",
+          "x-map": {
+            "adopt-net0": "Flexibility.discharge_rate (flexratio)",
+            "pypsa": "discharger link p_nom_max relative to e_nom",
+            "calliope": "flow_cap_per_storage_cap_max"
+          }
+        },
+        "charge_eff": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 1,
+          "description": "Charging efficiency (fraction).",
+          "x-go": "Storage.ChargeEff",
+          "x-map": {
+            "adopt-net0": "performance.eta_in",
+            "pypsa": "efficiency_store",
+            "calliope": "flow_in_eff"
+          }
+        },
+        "discharge_eff": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 1,
+          "description": "Discharging efficiency (fraction).",
+          "x-go": "Storage.DischargeEff",
+          "x-map": {
+            "adopt-net0": "performance.eta_out",
+            "pypsa": "efficiency_dispatch",
+            "calliope": "flow_out_eff"
+          }
+        },
+        "self_discharge": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Self-discharge per hour as a fraction of the state of charge.",
+          "x-go": "Storage.SelfDischarge",
+          "x-map": {
+            "adopt-net0": "performance.lambda",
+            "pypsa": "standing_loss",
+            "calliope": "storage_loss"
+          }
+        },
+        "depth_of_discharge": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "minimum state of charge as a fraction of energy capacity.",
+          "x-go": "Storage.DepthOfDischarge",
+          "x-map": {
+            "adopt-net0": null,
+            "pypsa": "stores e_min_pu",
+            "calliope": "storage_discharge_depth"
+          }
+        },
+        "inflow": {
+          "$ref": "#/$defs/Value",
+          "description": "Exogenous inflow into the storage (MW), e.g. hydro reservoir inflow (scalar or series).",
+          "x-go": "Storage.Inflow",
+          "x-map": {
+            "adopt-net0": "ClimateData TECHNOLOGYNAME_hydro_inflow",
+            "pypsa": "storage_units.<id>.inflow",
+            "calliope": "source feeding the storage tech"
+          }
+        },
+        "spill_cost": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Cost per MWh of spilled inflow.",
+          "x-go": "Storage.SpillCost",
+          "x-map": {
+            "adopt-net0": null,
+            "pypsa": "storage_units.<id>.spill_cost",
+            "calliope": null
+          }
+        },
+        "initial_soc": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "State of charge at the first timestep as a fraction of energy capacity; omitted = optimizer's choice (subject to `cyclic`).",
+          "x-go": "Storage.InitialSOC",
+          "x-map": {
+            "adopt-net0": "STOR performance keys",
+            "pypsa": "state_of_charge_initial (absolute) / e_initial",
+            "calliope": "storage_initial"
+          }
+        },
+        "cyclic": {
+          "type": "boolean",
+          "default": false,
+          "description": "Force the final state of charge to equal the initial one.",
+          "x-go": "Storage.Cyclic",
+          "x-map": {
+            "adopt-net0": "implicit in the STOR formulation",
+            "pypsa": "cyclic_state_of_charge / e_cyclic",
+            "calliope": "cyclic_storage"
+          }
+        },
+        "no_simultaneous_charge_discharge": {
+          "type": "boolean",
+          "default": false,
+          "description": "forbid charging and discharging in the same timestep (binary formulation).",
+          "x-go": "Storage.NoSimultaneousChargeDischarge",
+          "x-map": {
+            "adopt-net0": "allow_only_one_direction = 1",
+            "pypsa": null,
+            "calliope": "force_async_flow"
+          }
+        }
+      },
+      "allOf": [
+        {
+          "not": {
+            "required": [
+              "max_hours",
+              "max_charge_rate"
+            ]
+          },
+          "$comment": "max_hours (fixed power/energy ratio) and independent rate bounds are mutually exclusive (Go validateStorage)."
+        },
+        {
+          "not": {
+            "required": [
+              "max_hours",
+              "max_discharge_rate"
+            ]
+          },
+          "$comment": "See above."
+        }
+      ]
+    },
+    "CostClass": {
+      "title": "Cost class",
+      "type": "object",
+      "description": "Costs of a component within one cost class (map key on the parent; 'monetary' is what every emitter reads). Investment figures follow the technology's cost_basis (overnight vs annualized). fixed_om and fixed_om_fraction are mutually exclusive conventions.",
+      "additionalProperties": false,
+      "properties": {
+        "investment_per_capacity": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Investment cost per unit of (power) capacity (currency/MW; basis per cost_basis).",
+          "x-go": "CostClass.InvestmentPerCapacity",
+          "x-map": {
+            "adopt-net0": "Economics.unit_CAPEX",
+            "pypsa": "overnight_cost or capital_cost (per cost_basis)",
+            "calliope": "cost_flow_cap"
+          }
+        },
+        "investment_per_energy_capacity": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Investment cost per unit of storage ENERGY capacity (currency/MWh).",
+          "x-go": "CostClass.InvestmentPerEnergyCapacity",
+          "x-map": {
+            "adopt-net0": "STOR unit_CAPEX (size unit MWh)",
+            "pypsa": "stores capital_cost / storage_units capital_cost via max_hours",
+            "calliope": "cost_storage_cap"
+          }
+        },
+        "investment_per_capacity_distance": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Transmission-only: investment cost per unit capacity AND km (currency/MW/km).",
+          "x-go": "CostClass.InvestmentPerCapacityDistance (calliope cost_flow_cap_per_distance; warned elsewhere)",
+          "x-map": {
+            "adopt-net0": "NetworkDataFile.Economics.gamma4",
+            "pypsa": "folded into capital_cost as value * length",
+            "calliope": "cost_flow_cap_per_distance"
+          }
+        },
+        "fixed_om": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Fixed O&M per unit of installed capacity and year (currency/MW/a).",
+          "x-go": "CostClass.FixedOM",
+          "x-map": {
+            "adopt-net0": "OPEX_fixed = fixed_om / unit_CAPEX",
+            "pypsa": "fom_cost",
+            "calliope": "cost_om_annual"
+          }
+        },
+        "fixed_om_fraction": {
+          "type": "number",
+          "minimum": 0,
+          "description": "fixed annual O&M as a fraction of upfront investment (AdOpT-NET0's native convention). Mutually exclusive with fixed_om.",
+          "x-go": "CostClass.FixedOMFraction (adopt-net0 OPEX_fixed; calliope cost_om_annual_investment_fraction; pypsa folds into capital_cost)",
+          "x-map": {
+            "adopt-net0": "Economics.OPEX_fixed",
+            "pypsa": "fom_cost = fraction * overnight_cost",
+            "calliope": "cost_om_annual_investment_fraction"
+          }
+        },
+        "variable_om": {
+          "$ref": "#/$defs/Value",
+          "description": "Variable operating cost per MWh of reference output (scalar or series).",
+          "x-go": "CostClass.VariableOM",
+          "x-map": {
+            "adopt-net0": "Economics.OPEX_variable (static)",
+            "pypsa": "marginal_cost",
+            "calliope": "cost_flow_out"
+          }
+        },
+        "fuel_cost": {
+          "$ref": "#/$defs/Value",
+          "description": "cost per MWh of carrier INPUT, distinct from variable_om on output.",
+          "x-go": "CostClass.FuelCost (calliope cost_flow_in; pypsa folds fuel/efficiency into marginal_cost; rejected by adopt-net0)",
+          "x-map": {
+            "adopt-net0": "import price of the input carrier",
+            "pypsa": "folded into marginal_cost as fuel_cost / efficiency",
+            "calliope": "cost_flow_in"
+          }
+        },
+        "purchase": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Fixed lump-sum cost incurred once when any capacity is built (currency); introduces a binary.",
+          "x-go": "CostClass.Purchase",
+          "x-map": {
+            "adopt-net0": "Economics.fix_CAPEX (CAPEX_model 2)",
+            "pypsa": null,
+            "calliope": "cost_purchase with cap_method = integer"
+          }
+        }
+      },
+      "not": {
+        "required": [
+          "fixed_om",
+          "fixed_om_fraction"
+        ]
+      }
+    },
+    "Transmission": {
+      "title": "Transmission link",
+      "type": "object",
+      "description": "Moves one carrier between two nodes.",
+      "required": [
+        "carrier",
+        "from",
+        "to"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "carrier": {
+          "type": "string",
+          "minLength": 1,
+          "x-go": "Transmission.Carrier",
+          "x-map": {
+            "adopt-net0": "NetworkDataFile.Performance.carrier",
+            "pypsa": "carrier of the bus0/bus1 buses",
+            "calliope": "carrier_in = carrier_out"
+          }
+        },
+        "from": {
+          "type": "string",
+          "minLength": 1,
+          "x-go": "Transmission.From",
+          "x-map": {
+            "adopt-net0": "row node of connection.csv",
+            "pypsa": "links.<id>.bus0",
+            "calliope": "link_from"
+          }
+        },
+        "to": {
+          "type": "string",
+          "minLength": 1,
+          "x-go": "Transmission.To",
+          "x-map": {
+            "adopt-net0": "column node of connection.csv",
+            "pypsa": "links.<id>.bus1",
+            "calliope": "link_to"
+          }
+        },
+        "bidirectional": {
+          "type": "boolean",
+          "default": false,
+          "description": "Whether flow may go both ways over the same capacity.",
+          "x-go": "Transmission.Bidirectional",
+          "x-map": {
+            "adopt-net0": "bidirectional_network",
+            "pypsa": "p_min_pu = -1",
+            "calliope": "one_way = !bidirectional"
+          }
+        },
+        "capacity": {
+          "$ref": "#/$defs/Capacity",
+          "description": "Transport capacity of the arc (MW of carrier flow).",
+          "x-go": "Transmission.Capacity"
+        },
+        "efficiency": {
+          "$ref": "#/$defs/Value",
+          "description": "Distance-independent transport efficiency (fraction delivered per unit sent). Accepts the Value shapes; every target renders it as a scalar today (series are rejected).",
+          "x-go": "Transmission.Efficiency (*Value; series rejected by ValidateFor)",
+          "x-map": {
+            "adopt-net0": "folded into Performance.loss over the distance",
+            "pypsa": "links.<id>.efficiency",
+            "calliope": "flow_out_eff"
+          }
+        },
+        "distance": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Arc length in km (drives per-distance costs and losses); derived from node coords when omitted.",
+          "x-go": "Transmission.Distance",
+          "x-map": {
+            "adopt-net0": "distance.csv entry",
+            "pypsa": "links.<id>.length",
+            "calliope": "distance"
+          }
+        },
+        "costs": {
+          "type": "object",
+          "propertyNames": {
+            "minLength": 1
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/CostClass"
+          },
+          "description": "Costs per cost class; distance-proportional investment goes into investment_per_capacity_distance.",
+          "x-go": "Transmission.Costs"
+        },
+        "loss_per_distance": {
+          "type": "number",
+          "minimum": 0,
+          "description": "transport loss per km as a fraction of flow. Composition differs per framework (adopt-net0 linear 1 - loss*distance, calliope multiplicative eff^distance); emitters match the total arc loss.",
+          "x-go": "Transmission.LossPerDistance",
+          "x-map": {
+            "adopt-net0": "NetworkDataFile.Performance.loss",
+            "pypsa": "folded into efficiency as (1 - loss_per_distance * length)",
+            "calliope": "flow_out_eff_per_distance = 1 - loss_per_distance"
+          }
+        },
+        "min_flow": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "minimum flow while the arc is used, fraction of arc capacity.",
+          "x-go": "Transmission.MinFlow",
+          "x-map": {
+            "adopt-net0": "min_transport",
+            "pypsa": "p_min_pu (one-way links)",
+            "calliope": "flow_out_min_relative"
+          }
+        },
+        "emission_factor": {
+          "type": "number",
+          "description": "emissions per MWh transported (t CO2-eq/MWh); leakage-loss emissions (loss2emissions) stay native.",
+          "x-go": "Transmission.EmissionFactor (calliope co2 cost class on the link flow; rejected elsewhere)",
+          "x-map": {
+            "adopt-net0": "Performance.emissionfactor",
+            "pypsa": "co2_emissions on a dedicated link carrier",
+            "calliope": "co2 cost class on the link tech"
+          }
+        },
+        "energy_consumption": {
+          "type": "object",
+          "description": "auxiliary energy consumed by transporting (e.g. compressor electricity), linear model. The thermodynamic compressor model (adopt-net0 cons_model 2) stays native.",
+          "required": [
+            "carrier"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "carrier": {
+              "type": "string",
+              "minLength": 1
+            },
+            "per_flow": {
+              "type": "number",
+              "minimum": 0,
+              "default": 0,
+              "description": "Consumption per MWh transported.",
+              "x-map": {
+                "adopt-net0": "energyconsumption.<carrier>.k_flow",
+                "pypsa": "multi-port link extra input bus (native)",
+                "calliope": "coupled conversion tech (custom math)"
+              }
+            },
+            "per_flow_distance": {
+              "type": "number",
+              "minimum": 0,
+              "default": 0,
+              "description": "Consumption per MWh transported and km.",
+              "x-map": {
+                "adopt-net0": "energyconsumption.<carrier>.k_flowDistance",
+                "pypsa": null,
+                "calliope": null
+              }
+            }
+          },
+          "x-go": "Transmission.EnergyConsumption (pypsa multi-port link, one-way arcs only; rejected elsewhere)"
+        },
+        "active": {
+          "type": "boolean",
+          "default": true,
+          "description": "Deactivate the arc without deleting it.",
+          "x-go": "Transmission.Active"
+        },
+        "native": {
+          "$ref": "#/$defs/NativeBlock",
+          "x-go": "Transmission.Native"
+        }
+      }
+    },
+    "Trade": {
+      "title": "Market trade",
+      "type": "object",
+      "description": "Import/export of a carrier at a node against an external market.",
+      "required": [
+        "node",
+        "carrier"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "node": {
+          "type": "string",
+          "minLength": 1,
+          "x-go": "Trade.Node"
+        },
+        "carrier": {
+          "type": "string",
+          "minLength": 1,
+          "x-go": "Trade.Carrier"
+        },
+        "import": {
+          "$ref": "#/$defs/TradeSide",
+          "description": "Purchases from outside into the node (price = cost per MWh).",
+          "x-go": "Trade.Import"
+        },
+        "export": {
+          "$ref": "#/$defs/TradeSide",
+          "description": "Sales from the node to outside (price = revenue per MWh).",
+          "x-go": "Trade.Export"
+        },
+        "native": {
+          "$ref": "#/$defs/NativeBlock",
+          "x-go": "Trade.Native"
+        }
+      },
+      "x-map": {
+        "adopt-net0": "<carrier>.csv Import/Export limit/price/emission-factor columns",
+        "pypsa": "boundary generators with marginal_cost = price",
+        "calliope": "boundary supply/demand techs with flow_export"
+      }
+    },
+    "TradeSide": {
+      "title": "One direction of trade",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "limit": {
+          "$ref": "#/$defs/Value",
+          "description": "Maximum exchanged power per timestep (MW), scalar or series (pypsa: fixed-p_nom generator with time-varying p_max_pu/p_min_pu; adopt-net0: per-timestep limit column; calliope: scalar only, series rejected).",
+          "x-go": "TradeSide.Limit (*Value: scalar or series)",
+          "x-map": {
+            "adopt-net0": "Import limit / Export limit column",
+            "pypsa": "p_nom (or p_max_pu series) of the boundary component",
+            "calliope": "flow_cap_max / source_use_max of the boundary tech"
+          }
+        },
+        "price": {
+          "$ref": "#/$defs/Value",
+          "description": "Price per MWh (scalar or series).",
+          "x-go": "TradeSide.Price",
+          "x-map": {
+            "adopt-net0": "Import price / Export price column",
+            "pypsa": "marginal_cost of the boundary component",
+            "calliope": "cost_flow_out / cost_flow_in of the boundary tech"
+          }
+        },
+        "emission_factor": {
+          "type": "number",
+          "description": "Emissions attributed per MWh exchanged (t CO2-eq/MWh), on either side (adopt-net0: Import/Export emission factor columns; calliope: co2 cost class on the market techs; pypsa: warns, set the carrier's co2_intensity instead).",
+          "x-go": "TradeSide.EmissionFactor",
+          "x-map": {
+            "adopt-net0": "Import/Export emission factor column",
+            "pypsa": "co2_emissions of the boundary carrier",
+            "calliope": "co2 cost class on the boundary tech"
+          }
+        }
+      }
+    },
+    "EmissionLimit": {
+      "title": "System-wide emission limit",
+      "type": "object",
+      "required": [
+        "sense",
+        "limit"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "x-go": "EmissionLimit.Name"
+        },
+        "carrier": {
+          "type": "string",
+          "description": "Emission attribute/species; default co2_emissions.",
+          "x-go": "EmissionLimit.Carrier"
+        },
+        "sense": {
+          "type": "string",
+          "enum": [
+            "<=",
+            ">=",
+            "=="
+          ],
+          "x-go": "EmissionLimit.Sense"
+        },
+        "limit": {
+          "type": "number",
+          "description": "Right-hand side (t CO2-eq over the weighted horizon).",
+          "x-go": "EmissionLimit.Limit"
+        },
+        "period": {
+          "type": "string",
+          "description": "Investment period the cap applies to; omitted = whole horizon.",
+          "x-go": "EmissionLimit.Period"
+        }
+      },
+      "x-map": {
+        "adopt-net0": "objective costs_emissionlimit + optimization.emission_limit",
+        "pypsa": "GlobalConstraint {type: primary_energy, carrier_attribute: co2_emissions}",
+        "calliope": "cost_max on a cost class / custom math"
+      }
+    },
+    "Constraint": {
+      "title": "Portable linear constraint",
+      "type": "object",
+      "description": "sum_i(coefficient_i * variable_i[scope_i]) sense bound. Rendered natively per target (PyPSA GlobalConstraint / extra_functionality, Calliope custom math, AdOpT constraints). Nonlinear constraints stay in native. Typed shortcuts of the first-revision schema (capacity/transmission expansion limits) are expressed as terms over the `capacity` variable; length-weighted transmission volume limits are not expressible and stay native.",
+      "required": [
+        "terms",
+        "sense",
+        "bound"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "x-go": "Constraint.Name"
+        },
+        "terms": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/Term"
+          },
+          "x-go": "Constraint.Terms"
+        },
+        "sense": {
+          "type": "string",
+          "enum": [
+            "<=",
+            ">=",
+            "=="
+          ],
+          "x-go": "Constraint.Sense"
+        },
+        "bound": {
+          "type": "number",
+          "description": "Right-hand-side constant.",
+          "x-go": "Constraint.Bound"
+        },
+        "period": {
+          "type": "string",
+          "description": "Investment period the constraint applies to (optional).",
+          "x-go": "Constraint.Period"
+        }
+      },
+      "x-map": {
+        "adopt-net0": null,
+        "pypsa": "_constraints.json sidecar (SidecarConstraint) applied via linopy",
+        "calliope": "custom math constraint (rendered when experiment.custom_math)"
+      }
+    },
+    "Term": {
+      "title": "Linear constraint term",
+      "type": "object",
+      "required": [
+        "coefficient",
+        "variable"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "coefficient": {
+          "type": "number",
+          "x-go": "Term.Coefficient"
+        },
+        "variable": {
+          "type": "string",
+          "enum": [
+            "capacity",
+            "flow_out",
+            "flow_in",
+            "storage_cap",
+            "emissions"
+          ],
+          "description": "Summed canonical quantity: installed capacity (flow_cap / p_nom), dispatched output, consumed input, storage energy capacity, or emitted quantity of a carrier.",
+          "x-go": "Term.Variable"
+        },
+        "techs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Scope: tech ids (empty = all in scope).",
+          "x-go": "Term.Techs"
+        },
+        "carriers": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Scope: carriers.",
+          "x-go": "Term.Carriers"
+        },
+        "nodes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Scope: nodes.",
+          "x-go": "Term.Nodes"
+        }
+      }
+    },
+    "Experiment": {
+      "title": "Experiment (run specification)",
+      "type": "object",
+      "description": "Everything about HOW to solve, kept separate from WHAT the physical system is. The typed per-mode blocks (operate/alternatives/pareto/monte_carlo) replace the legacy solver.options namespaces; emitters honor the legacy keys with first-class fields winning, and ValidateFor emits deprecation warnings.",
+      "additionalProperties": false,
+      "properties": {
+        "mode": {
+          "type": "string",
+          "enum": [
+            "plan",
+            "operate",
+            "alternatives",
+            "pareto",
+            "monte_carlo",
+            "stochastic"
+          ],
+          "default": "plan",
+          "description": "plan: single cost-optimal capacity+dispatch. operate: fixed capacities, receding-horizon dispatch. alternatives: near-optimal alternatives (SPORES/MGA). pareto: multi-objective front. monte_carlo: parametric uncertainty sampling. stochastic: scenario-weighted stochastic program. Per-target support is declared in the capability matrix (operate/alternatives -> Calliope, pareto/monte_carlo -> AdOpT-NET0, stochastic -> PyPSA; a sweep is N plan runs orchestrated by the service).",
+          "x-go": "Experiment.Mode",
+          "x-map": {
+            "adopt-net0": "objective pareto / monte_carlo.N > 0",
+            "pypsa": "n.set_scenarios two-stage stochastic (_scenarios.json)",
+            "calliope": "config.init.mode base|operate|spores ('alternatives' is emitted as 'spores')"
+          }
+        },
+        "objective": {
+          "type": "string",
+          "enum": [
+            "min_cost",
+            "min_emissions"
+          ],
+          "default": "min_cost",
+          "description": "System objective. A cost objective under an emission cap is min_cost plus a model.emission_limits entry (the cap is a constraint, not an objective). min_emissions is capability-gated (currently AdOpT-only).",
+          "x-go": "Experiment.Objective",
+          "x-map": {
+            "adopt-net0": "objective costs / emissions_net|emissions_pos (per emission_accounting)",
+            "pypsa": "implicit cost minimisation (min_emissions unsupported)",
+            "calliope": "config.build.objective min_cost_optimisation (min_emissions needs custom math)"
+          }
+        },
+        "emission_accounting": {
+          "type": "string",
+          "enum": [
+            "net",
+            "positive_only"
+          ],
+          "default": "net",
+          "description": "whether emission objectives/caps count net emissions (positive minus captured) or positive emissions only.",
+          "x-go": "Experiment.EmissionAccounting (adopt-net0 emissions_net/emissions_pos; rejected elsewhere)",
+          "x-map": {
+            "adopt-net0": "emissions_net vs emissions_pos",
+            "pypsa": "net by construction",
+            "calliope": "net by construction"
+          }
+        },
+        "foresight": {
+          "type": "string",
+          "enum": [
+            "perfect",
+            "myopic"
+          ],
+          "description": "Planning foresight over the horizon.",
+          "x-go": "Experiment.Foresight"
+        },
+        "time_aggregation": {
+          "type": "object",
+          "description": "Temporal complexity reduction before solving.",
+          "required": [
+            "method"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "method": {
+              "type": "string",
+              "enum": [
+                "typical_days",
+                "resample",
+                "cluster"
+              ],
+              "description": "typical_days: k-means/TSAM typical-day clustering (AdOpT native). resample: coarsen resolution (Calliope native). cluster: map each date to a representative date given by cluster_series (accepted by the model; no target claims it yet - every target rejects it).",
+              "x-go": "TimeAggregation.Method (typical_days | resample | cluster; no target claims cluster yet)"
+            },
+            "periods": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "Number of typical days (method typical_days).",
+              "x-go": "TimeAggregation.Periods",
+              "x-map": {
+                "adopt-net0": "typicaldays.N",
+                "pypsa": null,
+                "calliope": null
+              }
+            },
+            "resolution": {
+              "type": "string",
+              "description": "Target resolution as a pandas frequency alias (method resample), e.g. \"3H\".",
+              "x-go": "TimeAggregation.Resolution",
+              "x-map": {
+                "adopt-net0": null,
+                "pypsa": null,
+                "calliope": "config.init.resample.timesteps"
+              }
+            },
+            "cluster_series": {
+              "$ref": "#/$defs/SeriesRef",
+              "description": "series mapping each date to its representative date (method cluster).",
+              "x-go": "TimeAggregation.ClusterSeries",
+              "x-map": {
+                "adopt-net0": null,
+                "pypsa": null,
+                "calliope": "config.init.time_cluster"
+              }
+            },
+            "keep_full_resolution_for": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "technology ids or classes kept at full temporal resolution during typical-day clustering (should include all storage).",
+              "x-go": "TimeAggregation.KeepFullResolutionFor (adopt-net0 typicaldays.technologies_with_full_res)",
+              "x-map": {
+                "adopt-net0": "typicaldays.technologies_with_full_res (method 2)",
+                "pypsa": null,
+                "calliope": "storage_inter_cluster extra math"
+              }
+            }
+          },
+          "x-go": "Experiment.TimeAggregation"
+        },
+        "operate": {
+          "type": "object",
+          "description": "Rolling-horizon settings for mode 'operate'. First-class replacement for the deprecated solver.options.operate namespace (first-class wins; Calliope emitter defaults: window 12h, horizon 24h; the PyPSA runner consumes the horizon as whole hours).",
+          "additionalProperties": false,
+          "properties": {
+            "window": {
+              "type": "string",
+              "description": "Rolling window (pandas frequency string).",
+              "x-go": "OperateOptions.Window",
+              "x-map": {
+                "adopt-net0": null,
+                "pypsa": null,
+                "calliope": "config.build.operate.window"
+              }
+            },
+            "horizon": {
+              "type": "string",
+              "description": "Rolling horizon, >= window (pandas frequency string).",
+              "x-go": "OperateOptions.Horizon",
+              "x-map": {
+                "adopt-net0": null,
+                "pypsa": null,
+                "calliope": "config.build.operate.horizon"
+              }
+            }
+          },
+          "x-go": "Experiment.Operate (OperateOptions)"
+        },
+        "alternatives": {
+          "type": "object",
+          "description": "Near-optimal-alternatives settings for mode 'alternatives' (Calliope SPORES / PyPSA MGA). First-class replacement for the deprecated solver.options.spores/mga namespaces.",
+          "additionalProperties": false,
+          "properties": {
+            "number": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 3,
+              "description": "Iterations after the base run.",
+              "x-go": "AlternativesOptions.Number",
+              "x-map": {
+                "adopt-net0": null,
+                "pypsa": null,
+                "calliope": "config.solve.spores.number"
+              }
+            },
+            "slack": {
+              "type": "number",
+              "minimum": 0,
+              "default": 0.1,
+              "description": "Allowed cost slack over the baseline optimum (fraction).",
+              "x-go": "AlternativesOptions.Slack",
+              "x-map": {
+                "adopt-net0": null,
+                "pypsa": null,
+                "calliope": "data_definitions.spores_slack"
+              }
+            },
+            "scoring_algorithm": {
+              "type": "string",
+              "enum": [
+                "integer",
+                "relative_deployment",
+                "random",
+                "evolving_average"
+              ],
+              "default": "integer",
+              "x-go": "AlternativesOptions.ScoringAlgorithm",
+              "x-map": {
+                "adopt-net0": null,
+                "pypsa": null,
+                "calliope": "config.solve.spores.scoring_algorithm"
+              }
+            }
+          },
+          "x-go": "Experiment.Alternatives (AlternativesOptions)"
+        },
+        "pareto": {
+          "type": "object",
+          "description": "Multi-objective front settings for mode 'pareto'. First-class replacement for the deprecated solver.options.pareto namespace (emitter default 5 points).",
+          "additionalProperties": false,
+          "properties": {
+            "points": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 5,
+              "x-go": "ParetoOptions.Points",
+              "x-map": {
+                "adopt-net0": "optimization.pareto_points",
+                "pypsa": null,
+                "calliope": null
+              }
+            }
+          },
+          "x-go": "Experiment.Pareto (ParetoOptions)"
+        },
+        "monte_carlo": {
+          "type": "object",
+          "description": "Sampling settings for mode 'monte_carlo'. First-class replacement for the deprecated solver.options.monte_carlo namespace (emitter default 10 samples).",
+          "additionalProperties": false,
+          "properties": {
+            "samples": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 10,
+              "x-go": "MonteCarloOptions.Samples",
+              "x-map": {
+                "adopt-net0": "monte_carlo.N",
+                "pypsa": null,
+                "calliope": null
+              }
+            },
+            "standard_deviation": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "default": 0.2,
+              "description": "Relative standard deviation of the sampled parameters (normal distribution).",
+              "x-go": "MonteCarloOptions.StandardDeviation",
+              "x-map": {
+                "adopt-net0": "monte_carlo.sd (type normal_dis)",
+                "pypsa": null,
+                "calliope": null
+              }
+            },
+            "on": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": {
+                "type": "string",
+                "enum": [
+                  "technology_capex",
+                  "network_capex",
+                  "import_price",
+                  "export_price"
+                ]
+              },
+              "default": [
+                "technology_capex"
+              ],
+              "description": "Parameter classes to vary.",
+              "x-go": "MonteCarloOptions.On",
+              "x-map": {
+                "adopt-net0": "monte_carlo.on_what (Technologies | Networks | Import | Export)",
+                "pypsa": null,
+                "calliope": null
+              }
+            }
+          },
+          "x-go": "Experiment.MonteCarlo (MonteCarloOptions)"
+        },
+        "scenarios": {
+          "type": "array",
+          "description": "Branches of a stochastic run (or members of an ensemble). Override values are numbers everywhere; strings/booleans are accepted for deterministic expansion and rejected by the pypsa stochastic runner.",
+          "items": {
+            "$ref": "#/$defs/Scenario"
+          },
+          "x-go": "Experiment.Scenarios",
+          "x-map": {
+            "adopt-net0": "one emitted case folder per scenario",
+            "pypsa": "_scenarios.json StochasticScenario sets",
+            "calliope": "overrides.<name> + scenarios.<name>"
+          }
+        },
+        "sweep": {
+          "type": "array",
+          "description": "Parameter-sweep axes the orchestrator expands into the cartesian product of independent runs.",
+          "items": {
+            "type": "object",
+            "required": [
+              "parameter",
+              "values"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "parameter": {
+                "type": "string",
+                "minLength": 1,
+                "description": "Dotted path into the model.",
+                "x-go": "SweepAxis.Parameter"
+              },
+              "values": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "number"
+                },
+                "x-go": "SweepAxis.Values"
+              }
+            }
+          },
+          "x-go": "Experiment.Sweep"
+        },
+        "solver": {
+          "type": "object",
+          "description": "Solver selection. time_limit/mip_gap/threads are first-class and mapped onto each target's convention (AdOpT-NET0 solveroptions; linopy/pyomo option names per solver, with a warning for unmapped solvers). Options remains the free-form passthrough; the legacy operate/spores/mga/pareto/monte_carlo namespaces inside it are deprecated (ValidateFor warns).",
+          "required": [
+            "name"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "name": {
+              "type": "string",
+              "examples": [
+                "gurobi",
+                "glpk",
+                "cbc",
+                "highs",
+                "cplex"
+              ],
+              "description": "Solver name. Support differs: adopt-net0 accepts gurobi/gurobi_persistent/glpk; calliope any Pyomo solver; pypsa any linopy solver.",
+              "x-go": "Solver.Name"
+            },
+            "time_limit": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "description": "Wall-clock limit in SECONDS (adopt-net0 timelim configures hours: value / 3600; pypsa/calliope map onto the selected solver's option names).",
+              "x-go": "Solver.TimeLimit"
+            },
+            "mip_gap": {
+              "type": "number",
+              "minimum": 0,
+              "description": "Relative MIP optimality gap.",
+              "x-go": "Solver.MIPGap"
+            },
+            "threads": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Solver threads (0 = solver default).",
+              "x-go": "Solver.Threads"
+            },
+            "options": {
+              "type": "object",
+              "additionalProperties": true,
+              "description": "Solver-specific options passed through verbatim.",
+              "x-go": "Solver.Options"
+            }
+          },
+          "x-go": "Experiment.Solver"
+        },
+        "custom_math": {
+          "type": "boolean",
+          "description": "Calliope only: whether portable `constraints` and `emission_limits` are rendered into a Calliope 0.7 add_math file. Omitted or true renders them (default); false leaves them in the JSON sidecar.",
+          "x-go": "Experiment.CustomMath"
+        },
+        "allow_unmet_demand": {
+          "type": "object",
+          "description": "allow the energy balance to be violated at a penalty price instead of making the model infeasible.",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "default": false,
+              "x-go": "AllowUnmetDemand.Enabled"
+            },
+            "penalty_price": {
+              "type": "number",
+              "minimum": 0,
+              "description": "Cost per MWh of violated balance.",
+              "x-map": {
+                "adopt-net0": "energybalance.violation (-1 = disabled; emitter currently hardcodes -1)",
+                "pypsa": "high-marginal-cost slack generators",
+                "calliope": "config.build.ensure_feasibility (penalty is bigM)"
+              },
+              "x-go": "AllowUnmetDemand.PenaltyPrice"
+            }
+          },
+          "x-go": "Experiment.AllowUnmetDemand (adopt-net0 energybalance.violation; calliope ensure_feasibility with bigM penalty; rejected by pypsa)"
+        },
+        "copperplate": {
+          "type": "boolean",
+          "default": false,
+          "description": "ignore all inter-node transport constraints (single-bus equivalent; the AdOpT emitter currently hardcodes 0).",
+          "x-go": "Experiment.Copperplate (adopt-net0 energybalance.copperplate; rejected elsewhere)",
+          "x-map": {
+            "adopt-net0": "energybalance.copperplate",
+            "pypsa": "unconstrained lossless links / single bus",
+            "calliope": "unconstrained lossless transmission techs"
+          }
+        },
+        "reporting": {
+          "type": "object",
+          "description": "Result reporting where a target has native hooks (output locations stay service-managed).",
+          "additionalProperties": false,
+          "properties": {
+            "output_dir": {
+              "type": "string",
+              "description": "Directory for solved-model results.",
+              "x-map": {
+                "adopt-net0": "reporting.save_path + save_summary_path",
+                "pypsa": "run-script export path",
+                "calliope": "to_netcdf path"
+              },
+              "x-go": "Reporting.OutputDir (managed by the service layer; warned and ignored)"
+            },
+            "case_name": {
+              "type": "string",
+              "description": "Case label appended to result folder names.",
+              "x-map": {
+                "adopt-net0": "reporting.case_name",
+                "pypsa": null,
+                "calliope": null
+              },
+              "x-go": "Reporting.CaseName (adopt-net0 reporting.case_name)"
+            },
+            "save_logs": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "default": null,
+              "description": "Directory for solver logs (null = none).",
+              "x-map": {
+                "adopt-net0": null,
+                "pypsa": "solver log option",
+                "calliope": "config.solve.save_logs"
+              },
+              "x-go": "Reporting.SaveLogs (calliope config.solve.save_logs)"
+            },
+            "shadow_prices": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "Constraint groups whose duals should be reported.",
+              "x-map": {
+                "adopt-net0": "write_solution_diagnostics >= 1",
+                "pypsa": "duals always populated",
+                "calliope": "config.solve.shadow_prices"
+              },
+              "x-go": "Reporting.ShadowPrices (calliope config.solve.shadow_prices)"
+            }
+          },
+          "x-go": "Experiment.Reporting"
+        },
+        "native": {
+          "$ref": "#/$defs/NativeBlock",
+          "description": "Target-specific run configuration (solver heuristics, scaling, reporting details).",
+          "x-go": "Experiment.Native"
+        }
+      }
+    },
+    "Scenario": {
+      "title": "Scenario",
+      "type": "object",
+      "required": [
+        "name"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "x-go": "Scenario.Name"
+        },
+        "weight": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Probability weight (mode stochastic; normalized by emitters).",
+          "x-go": "Scenario.Weight"
+        },
+        "overrides": {
+          "type": "object",
+          "description": "Dotted parameter path -> value, applied over the base model (same addressing as sweep.parameter). Numeric values everywhere; string/boolean values are accepted for deterministic expansion and rejected by the pypsa stochastic runner.",
+          "additionalProperties": {
+            "type": [
+              "number",
+              "string",
+              "boolean"
+            ]
+          },
+          "x-go": "Scenario.Overrides map[string]any (pypsa stochastic requires numeric values)"
+        }
+      }
+    }
+  }
+}

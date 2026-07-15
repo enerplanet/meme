@@ -1,0 +1,2420 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/enerplanet/meme/docs/adopt_net0_schema.json",
+  "title": "AdOpT-NET0 configuration",
+  "description": "Exhaustive JSON Schema for the JSON configuration and input-data files of AdOpT-NET0 (Advanced Optimization Tool for Networks and Energy Technologies). Sourced from adopt_net0 0.1.10 \u2014 the version pinned in environment/requirements.txt of the meme repo \u2014 i.e. the PyPI distribution adopt_net0-0.1.10 (identical to GitHub UU-ER/AdOpT-NET0 tag v0.1.10, released 2025-04-17): adopt_net0/data_preprocessing/template_creation.py (initialize_configuration_templates, initialize_topology_templates, create_input_data_folder_template), adopt_net0/utilities.py, adopt_net0/data_management/handle_input_data.py and adopt_net0/database/templates/**, cross-checked against https://adopt-net0.readthedocs.io (Model Configuration page) and against the files emitted by meme's internal/target/adoptnet0. An input-data case folder contains: Topology.json, ConfigModel.json, NodeLocations.csv (semicolon-separated: node; lon; lat; alt), the meme-specific _meme_overrides.json sidecar, and per investment period <period>/: Networks.json, network_data/<network>.json, network_topology/{new/<network>/{connection,distance,size_max_arcs}.csv, existing/<network>/{connection,distance,size}.csv} (node-by-node matrices), and per node node_data/<node>/: Technologies.json, technology_data/<tech>.json, ClimateData.csv (columns: ghi; dni; dhi; temp_air; rh; ws10; TECHNOLOGYNAME_hydro_inflow), CarbonCost.csv (columns: price; subsidy) and carrier_data/: EnergybalanceOptions.json plus one <carrier>.csv per carrier (columns: Demand; Import limit; Export limit; Import price; Export price; Import emission factor; Export emission factor; Generic production), all CSVs semicolon-separated and indexed on the Topology date range. An optional MonteCarlo.csv (columns: type; name; parameter; min; ref; max) supports monte_carlo.type = uniform_dis_from_file. This schema covers every JSON file; the CSV files are documented in the descriptions.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "ConfigModel": {
+      "$ref": "#/$defs/ConfigModel",
+      "description": "The model configuration tree (ConfigModel.json)."
+    },
+    "Topology": {
+      "$ref": "#/$defs/Topology",
+      "description": "The system topology (Topology.json)."
+    },
+    "Technologies": {
+      "$ref": "#/$defs/Technologies",
+      "description": "A per-node technology list (<period>/node_data/<node>/Technologies.json)."
+    },
+    "Networks": {
+      "$ref": "#/$defs/Networks",
+      "description": "A per-period network list (<period>/Networks.json)."
+    },
+    "EnergybalanceOptions": {
+      "$ref": "#/$defs/EnergybalanceOptions",
+      "description": "Per-node, per-carrier energy balance options (<period>/node_data/<node>/carrier_data/EnergybalanceOptions.json)."
+    },
+    "TechnologyDataFile": {
+      "$ref": "#/$defs/TechnologyDataFile",
+      "description": "A technology database entry (technology_data/<name>.json)."
+    },
+    "NetworkDataFile": {
+      "$ref": "#/$defs/NetworkDataFile",
+      "description": "A network database entry (network_data/<name>.json)."
+    },
+    "MemeOverrides": {
+      "$ref": "#/$defs/MemeOverrides",
+      "description": "The meme-specific _meme_overrides.json sidecar."
+    }
+  },
+  "$defs": {
+    "ConfigModel": {
+      "type": "object",
+      "title": "ConfigModel.json",
+      "description": "AdOpT-NET0 model configuration (ConfigModel.json), as written by adopt_net0.create_optimization_templates / initialize_configuration_templates (adopt_net0 0.1.10, data_preprocessing/template_creation.py). Every entry is a {description, options, value} triplet of which the model reads only \"value\"; translators may therefore emit the compact {\"value\": ...} form (as the meme emitter does). Sections allow additional properties because meme's native.adopt-net0 passthrough may merge extra keys (e.g. solveroptions.nodetol).",
+      "required": [
+        "optimization",
+        "solveroptions",
+        "reporting",
+        "energybalance",
+        "economic",
+        "performance",
+        "scaling"
+      ],
+      "additionalProperties": true,
+      "properties": {
+        "optimization": {
+          "type": "object",
+          "description": "Options describing what is optimized and how the time series and horizon are treated (objective, Monte Carlo, Pareto, time staging, typical-day clustering, multi-year).",
+          "required": [
+            "objective",
+            "monte_carlo",
+            "timestaging",
+            "typicaldays"
+          ],
+          "additionalProperties": true,
+          "properties": {
+            "objective": {
+              "type": "object",
+              "description": "String specifying the objective/type of optimization. \"costs\": minimize total annualized system cost; \"emissions_pos\": minimize positive emissions; \"emissions_net\": minimize net emissions; \"emissions_minC\": minimize costs at minimal emissions; \"costs_emissionlimit\": minimize costs subject to the optimization.emission_limit bound; \"pareto\": compute a cost/emission Pareto front with optimization.pareto_points points.",
+              "required": [
+                "value"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "description": {
+                  "type": "string",
+                  "description": "Human-readable description carried by the upstream template. Informational only: adopt_net0 never reads this key."
+                },
+                "options": {
+                  "type": "array",
+                  "description": "List of allowed values carried by the upstream template. Informational only: adopt_net0 never reads this key; the enforceable constraint is expressed on \"value\" below."
+                },
+                "value": {
+                  "type": "string",
+                  "enum": [
+                    "costs",
+                    "emissions_pos",
+                    "emissions_net",
+                    "emissions_minC",
+                    "costs_emissionlimit",
+                    "pareto"
+                  ],
+                  "default": "costs",
+                  "description": "String specifying the objective/type of optimization. \"costs\": minimize total annualized system cost; \"emissions_pos\": minimize positive emissions; \"emissions_net\": minimize net emissions; \"emissions_minC\": minimize costs at minimal emissions; \"costs_emissionlimit\": minimize costs subject to the optimization.emission_limit bound; \"pareto\": compute a cost/emission Pareto front with optimization.pareto_points points."
+                }
+              }
+            },
+            "emission_limit": {
+              "type": "object",
+              "description": "Emission limit to be enforced if the objective function is costs_emissionlimit (net emissions bound, in the model's emission unit, typically t CO2-eq).",
+              "required": [
+                "value"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "description": {
+                  "type": "string",
+                  "description": "Human-readable description carried by the upstream template. Informational only: adopt_net0 never reads this key."
+                },
+                "options": {
+                  "type": "array",
+                  "description": "List of allowed values carried by the upstream template. Informational only: adopt_net0 never reads this key; the enforceable constraint is expressed on \"value\" below."
+                },
+                "value": {
+                  "type": "number",
+                  "default": 0,
+                  "description": "Emission limit to be enforced if the objective function is costs_emissionlimit (net emissions bound, in the model's emission unit, typically t CO2-eq)."
+                }
+              }
+            },
+            "monte_carlo": {
+              "type": "object",
+              "description": "Monte Carlo simulation settings. N > 0 turns the single solve into a sampling loop over economic parameters.",
+              "required": [
+                "N"
+              ],
+              "additionalProperties": true,
+              "properties": {
+                "N": {
+                  "type": "object",
+                  "description": "Number of Monte Carlo simulations (0 = off).",
+                  "required": [
+                    "value"
+                  ],
+                  "additionalProperties": false,
+                  "properties": {
+                    "description": {
+                      "type": "string",
+                      "description": "Human-readable description carried by the upstream template. Informational only: adopt_net0 never reads this key."
+                    },
+                    "options": {
+                      "type": "array",
+                      "description": "List of allowed values carried by the upstream template. Informational only: adopt_net0 never reads this key; the enforceable constraint is expressed on \"value\" below."
+                    },
+                    "value": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "default": 0,
+                      "description": "Number of Monte Carlo simulations (0 = off)."
+                    }
+                  }
+                },
+                "type": {
+                  "type": "object",
+                  "description": "Type of Monte Carlo simulation. For type \"normal_dis\" (type 1) the user defines the standard deviation (sd) and the components to vary (on_what). For \"uniform_dis_from_file\" (type 2) the user provides a MonteCarlo.csv file (semicolon-separated columns: type; name; parameter; min; ref; max, created by create_montecarlo_template_csv) with the parameters and their min, max and reference values.",
+                  "required": [
+                    "value"
+                  ],
+                  "additionalProperties": false,
+                  "properties": {
+                    "description": {
+                      "type": "string",
+                      "description": "Human-readable description carried by the upstream template. Informational only: adopt_net0 never reads this key."
+                    },
+                    "options": {
+                      "type": "array",
+                      "description": "List of allowed values carried by the upstream template. Informational only: adopt_net0 never reads this key; the enforceable constraint is expressed on \"value\" below."
+                    },
+                    "value": {
+                      "type": "string",
+                      "enum": [
+                        "normal_dis",
+                        "uniform_dis_from_file"
+                      ],
+                      "default": "normal_dis",
+                      "description": "Type of Monte Carlo simulation. For type \"normal_dis\" (type 1) the user defines the standard deviation (sd) and the components to vary (on_what). For \"uniform_dis_from_file\" (type 2) the user provides a MonteCarlo.csv file (semicolon-separated columns: type; name; parameter; min; ref; max, created by create_montecarlo_template_csv) with the parameters and their min, max and reference values."
+                    }
+                  }
+                },
+                "sd": {
+                  "type": "object",
+                  "description": "Value defining the range in which variables are varied in Monte Carlo simulations (defined as the standard deviation of the original value). Used with type \"normal_dis\".",
+                  "required": [
+                    "value"
+                  ],
+                  "additionalProperties": false,
+                  "properties": {
+                    "description": {
+                      "type": "string",
+                      "description": "Human-readable description carried by the upstream template. Informational only: adopt_net0 never reads this key."
+                    },
+                    "options": {
+                      "type": "array",
+                      "description": "List of allowed values carried by the upstream template. Informational only: adopt_net0 never reads this key; the enforceable constraint is expressed on \"value\" below."
+                    },
+                    "value": {
+                      "type": "number",
+                      "default": 0.2,
+                      "description": "Value defining the range in which variables are varied in Monte Carlo simulations (defined as the standard deviation of the original value). Used with type \"normal_dis\"."
+                    }
+                  }
+                },
+                "on_what": {
+                  "type": "object",
+                  "description": "List: defines which component class to vary in Monte Carlo simulations (technology CAPEX, network CAPEX, import/export prices). Used with type \"normal_dis\".",
+                  "required": [
+                    "value"
+                  ],
+                  "additionalProperties": false,
+                  "properties": {
+                    "description": {
+                      "type": "string",
+                      "description": "Human-readable description carried by the upstream template. Informational only: adopt_net0 never reads this key."
+                    },
+                    "options": {
+                      "type": "array",
+                      "description": "List of allowed values carried by the upstream template. Informational only: adopt_net0 never reads this key; the enforceable constraint is expressed on \"value\" below."
+                    },
+                    "value": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "enum": [
+                          "Technologies",
+                          "Networks",
+                          "Import",
+                          "Export"
+                        ],
+                        "description": "Component class to vary."
+                      },
+                      "default": [
+                        "Technologies"
+                      ],
+                      "description": "List: defines which component class to vary in Monte Carlo simulations (technology CAPEX, network CAPEX, import/export prices). Used with type \"normal_dis\"."
+                    }
+                  }
+                }
+              }
+            },
+            "pareto_points": {
+              "type": "object",
+              "description": "Number of Pareto points computed when the objective is \"pareto\".",
+              "required": [
+                "value"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "description": {
+                  "type": "string",
+                  "description": "Human-readable description carried by the upstream template. Informational only: adopt_net0 never reads this key."
+                },
+                "options": {
+                  "type": "array",
+                  "description": "List of allowed values carried by the upstream template. Informational only: adopt_net0 never reads this key; the enforceable constraint is expressed on \"value\" below."
+                },
+                "value": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "default": 5,
+                  "description": "Number of Pareto points computed when the objective is \"pareto\"."
+                }
+              }
+            },
+            "timestaging": {
+              "type": "object",
+              "description": "Defines the number of timesteps that are averaged for the first-stage solve of the two-stage time-averaging algorithm (0 = off).",
+              "required": [
+                "value"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "description": {
+                  "type": "string",
+                  "description": "Human-readable description carried by the upstream template. Informational only: adopt_net0 never reads this key."
+                },
+                "options": {
+                  "type": "array",
+                  "description": "List of allowed values carried by the upstream template. Informational only: adopt_net0 never reads this key; the enforceable constraint is expressed on \"value\" below."
+                },
+                "value": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "default": 0,
+                  "description": "Defines the number of timesteps that are averaged for the first-stage solve of the two-stage time-averaging algorithm (0 = off)."
+                }
+              }
+            },
+            "typicaldays": {
+              "type": "object",
+              "description": "Typical-day (k-means/TSAM) clustering of the input time series. N > 0 turns clustering on.",
+              "required": [
+                "N"
+              ],
+              "additionalProperties": true,
+              "properties": {
+                "N": {
+                  "type": "object",
+                  "description": "Determines the number of typical days (0 = off).",
+                  "required": [
+                    "value"
+                  ],
+                  "additionalProperties": false,
+                  "properties": {
+                    "description": {
+                      "type": "string",
+                      "description": "Human-readable description carried by the upstream template. Informational only: adopt_net0 never reads this key."
+                    },
+                    "options": {
+                      "type": "array",
+                      "description": "List of allowed values carried by the upstream template. Informational only: adopt_net0 never reads this key; the enforceable constraint is expressed on \"value\" below."
+                    },
+                    "value": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "default": 0,
+                      "description": "Determines the number of typical days (0 = off)."
+                    }
+                  }
+                },
+                "method": {
+                  "type": "object",
+                  "description": "Determines the method used for modeling technologies with typical days. Method 1 models all technologies on the clustered time index; method 2 keeps the technologies listed in technologies_with_full_res at full resolution.",
+                  "required": [
+                    "value"
+                  ],
+                  "additionalProperties": false,
+                  "properties": {
+                    "description": {
+                      "type": "string",
+                      "description": "Human-readable description carried by the upstream template. Informational only: adopt_net0 never reads this key."
+                    },
+                    "options": {
+                      "type": "array",
+                      "description": "List of allowed values carried by the upstream template. Informational only: adopt_net0 never reads this key; the enforceable constraint is expressed on \"value\" below."
+                    },
+                    "value": {
+                      "type": "integer",
+                      "enum": [
+                        1,
+                        2
+                      ],
+                      "default": 2,
+                      "description": "Determines the method used for modeling technologies with typical days. Method 1 models all technologies on the clustered time index; method 2 keeps the technologies listed in technologies_with_full_res at full resolution."
+                    }
+                  }
+                },
+                "technologies_with_full_res": {
+                  "type": "object",
+                  "description": "If method 2 is chosen, this list determines which technologies (technology types or names) are modelled at full resolution. Should be at least all storage technologies. Upstream default lists the technology types RES, STOR and Hydro_Open.",
+                  "required": [
+                    "value"
+                  ],
+                  "additionalProperties": false,
+                  "properties": {
+                    "description": {
+                      "type": "string",
+                      "description": "Human-readable description carried by the upstream template. Informational only: adopt_net0 never reads this key."
+                    },
+                    "options": {
+                      "type": "array",
+                      "description": "List of allowed values carried by the upstream template. Informational only: adopt_net0 never reads this key; the enforceable constraint is expressed on \"value\" below."
+                    },
+                    "value": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "description": "Technology type (e.g. RES, STOR, Hydro_Open) or technology name modelled at full resolution."
+                      },
+                      "default": [
+                        "RES",
+                        "STOR",
+                        "Hydro_Open"
+                      ],
+                      "description": "If method 2 is chosen, this list determines which technologies (technology types or names) are modelled at full resolution. Should be at least all storage technologies. Upstream default lists the technology types RES, STOR and Hydro_Open."
+                    }
+                  }
+                }
+              }
+            },
+            "multiyear": {
+              "type": "object",
+              "description": "Enable multiyear analysis; if turned off the maximum time horizon is 1 year. Present in the 0.1.10 template but not consumed by the 0.1.10 model code.",
+              "required": [
+                "value"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "description": {
+                  "type": "string",
+                  "description": "Human-readable description carried by the upstream template. Informational only: adopt_net0 never reads this key."
+                },
+                "options": {
+                  "type": "array",
+                  "description": "List of allowed values carried by the upstream template. Informational only: adopt_net0 never reads this key; the enforceable constraint is expressed on \"value\" below."
+                },
+                "value": {
+                  "type": "integer",
+                  "enum": [
+                    0,
+                    1
+                  ],
+                  "default": 0,
+                  "description": "Enable multiyear analysis; if turned off the maximum time horizon is 1 year. Present in the 0.1.10 template but not consumed by the 0.1.10 model code."
+                }
+              }
+            }
+          },
+          "allOf": [
+            {
+              "if": {
+                "required": [
+                  "objective"
+                ],
+                "properties": {
+                  "objective": {
+                    "required": [
+                      "value"
+                    ],
+                    "properties": {
+                      "value": {
+                        "const": "costs_emissionlimit"
+                      }
+                    }
+                  }
+                }
+              },
+              "then": {
+                "required": [
+                  "emission_limit"
+                ]
+              }
+            },
+            {
+              "if": {
+                "required": [
+                  "objective"
+                ],
+                "properties": {
+                  "objective": {
+                    "required": [
+                      "value"
+                    ],
+                    "properties": {
+                      "value": {
+                        "const": "pareto"
+                      }
+                    }
+                  }
+                }
+              },
+              "then": {
+                "required": [
+                  "pareto_points"
+                ]
+              }
+            }
+          ]
+        },
+        "solveroptions": {
+          "type": "object",
+          "description": "Solver selection and solver parameters. adopt_net0 0.1.10 supports \"gurobi\", \"gurobi_persistent\" and \"glpk\"; every option other than \"solver\" is forwarded to Gurobi only (get_gurobi_parameters); the GLPK path ignores them.",
+          "required": [
+            "solver"
+          ],
+          "additionalProperties": true,
+          "properties": {
+            "solver": {
+              "type": "object",
+              "description": "String specifying the solver used. adopt_net0 0.1.10 constructs a solver only for \"gurobi\", \"gurobi_persistent\" or \"glpk\"; any other value fails at solve time.",
+              "required": [
+                "value"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "description": {
+                  "type": "string",
+                  "description": "Human-readable description carried by the upstream template. Informational only: adopt_net0 never reads this key."
+                },
+                "options": {
+                  "type": "array",
+                  "description": "List of allowed values carried by the upstream template. Informational only: adopt_net0 never reads this key; the enforceable constraint is expressed on \"value\" below."
+                },
+                "value": {
+                  "type": "string",
+                  "enum": [
+                    "gurobi",
+                    "gurobi_persistent",
+                    "glpk"
+                  ],
+                  "default": "gurobi",
+                  "description": "String specifying the solver used. adopt_net0 0.1.10 constructs a solver only for \"gurobi\", \"gurobi_persistent\" or \"glpk\"; any other value fails at solve time."
+                }
+              }
+            },
+            "mipgap": {
+              "type": "object",
+              "description": "Value to define the MIP gap (relative optimality gap; Gurobi MIPGap).",
+              "required": [
+                "value"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "description": {
+                  "type": "string",
+                  "description": "Human-readable description carried by the upstream template. Informational only: adopt_net0 never reads this key."
+                },
+                "options": {
+                  "type": "array",
+                  "description": "List of allowed values carried by the upstream template. Informational only: adopt_net0 never reads this key; the enforceable constraint is expressed on \"value\" below."
+                },
+                "value": {
+                  "type": "number",
+                  "minimum": 0,
+                  "default": 0.001,
+                  "description": "Value to define the MIP gap (relative optimality gap; Gurobi MIPGap)."
+                }
+              }
+            },
+            "timelim": {
+              "type": "object",
+              "description": "Value to define the time limit in hours (converted to seconds for Gurobi TimeLimit).",
+              "required": [
+                "value"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "description": {
+                  "type": "string",
+                  "description": "Human-readable description carried by the upstream template. Informational only: adopt_net0 never reads this key."
+                },
+                "options": {
+                  "type": "array",
+                  "description": "List of allowed values carried by the upstream template. Informational only: adopt_net0 never reads this key; the enforceable constraint is expressed on \"value\" below."
+                },
+                "value": {
+                  "type": "number",
+                  "minimum": 0,
+                  "default": 10,
+                  "description": "Value to define the time limit in hours (converted to seconds for Gurobi TimeLimit)."
+                }
+              }
+            },
+            "threads": {
+              "type": "object",
+              "description": "Value to define the number of threads (default 0 is the maximum available; Gurobi Threads).",
+              "required": [
+                "value"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "description": {
+                  "type": "string",
+                  "description": "Human-readable description carried by the upstream template. Informational only: adopt_net0 never reads this key."
+                },
+                "options": {
+                  "type": "array",
+                  "description": "List of allowed values carried by the upstream template. Informational only: adopt_net0 never reads this key; the enforceable constraint is expressed on \"value\" below."
+                },
+                "value": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "default": 0,
+                  "description": "Value to define the number of threads (default 0 is the maximum available; Gurobi Threads)."
+                }
+              }
+            },
+            "mipfocus": {
+              "type": "object",
+              "description": "Modifies the high-level solution strategy (Gurobi MIPFocus: 0 balanced, 1 feasible solutions, 2 optimality, 3 bound).",
+              "required": [
+                "value"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "description": {
+                  "type": "string",
+                  "description": "Human-readable description carried by the upstream template. Informational only: adopt_net0 never reads this key."
+                },
+                "options": {
+                  "type": "array",
+                  "description": "List of allowed values carried by the upstream template. Informational only: adopt_net0 never reads this key; the enforceable constraint is expressed on \"value\" below."
+                },
+                "value": {
+                  "type": "integer",
+                  "enum": [
+                    0,
+                    1,
+                    2,
+                    3
+                  ],
+                  "default": 0,
+                  "description": "Modifies the high-level solution strategy (Gurobi MIPFocus: 0 balanced, 1 feasible solutions, 2 optimality, 3 bound)."
+                }
+              }
+            },
+            "nodefilestart": {
+              "type": "object",
+              "description": "Parameter to decide when branch-and-cut nodes are compressed and written to disk (Gurobi NodefileStart, in GB).",
+              "required": [
+                "value"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "description": {
+                  "type": "string",
+                  "description": "Human-readable description carried by the upstream template. Informational only: adopt_net0 never reads this key."
+                },
+                "options": {
+                  "type": "array",
+                  "description": "List of allowed values carried by the upstream template. Informational only: adopt_net0 never reads this key; the enforceable constraint is expressed on \"value\" below."
+                },
+                "value": {
+                  "type": "number",
+                  "minimum": 0,
+                  "default": 60,
+                  "description": "Parameter to decide when branch-and-cut nodes are compressed and written to disk (Gurobi NodefileStart, in GB)."
+                }
+              }
+            },
+            "method": {
+              "type": "object",
+              "description": "Defines the algorithm used to solve continuous models (Gurobi Method: -1 automatic, 0 primal simplex, 1 dual simplex, 2 barrier, 3 concurrent, 4 deterministic concurrent, 5 deterministic concurrent simplex).",
+              "required": [
+                "value"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "description": {
+                  "type": "string",
+                  "description": "Human-readable description carried by the upstream template. Informational only: adopt_net0 never reads this key."
+                },
+                "options": {
+                  "type": "array",
+                  "description": "List of allowed values carried by the upstream template. Informational only: adopt_net0 never reads this key; the enforceable constraint is expressed on \"value\" below."
+                },
+                "value": {
+                  "type": "integer",
+                  "enum": [
+                    -1,
+                    0,
+                    1,
+                    2,
+                    3,
+                    4,
+                    5
+                  ],
+                  "default": -1,
+                  "description": "Defines the algorithm used to solve continuous models (Gurobi Method: -1 automatic, 0 primal simplex, 1 dual simplex, 2 barrier, 3 concurrent, 4 deterministic concurrent, 5 deterministic concurrent simplex)."
+                }
+              }
+            },
+            "heuristics": {
+              "type": "object",
+              "description": "Parameter to determine the amount of time spent in MIP heuristics (Gurobi Heuristics, fraction of runtime).",
+              "required": [
+                "value"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "description": {
+                  "type": "string",
+                  "description": "Human-readable description carried by the upstream template. Informational only: adopt_net0 never reads this key."
+                },
+                "options": {
+                  "type": "array",
+                  "description": "List of allowed values carried by the upstream template. Informational only: adopt_net0 never reads this key; the enforceable constraint is expressed on \"value\" below."
+                },
+                "value": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1,
+                  "default": 0.05,
+                  "description": "Parameter to determine the amount of time spent in MIP heuristics (Gurobi Heuristics, fraction of runtime)."
+                }
+              }
+            },
+            "presolve": {
+              "type": "object",
+              "description": "Controls the presolve level (Gurobi Presolve: -1 automatic, 0 off, 1 conservative, 2 aggressive).",
+              "required": [
+                "value"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "description": {
+                  "type": "string",
+                  "description": "Human-readable description carried by the upstream template. Informational only: adopt_net0 never reads this key."
+                },
+                "options": {
+                  "type": "array",
+                  "description": "List of allowed values carried by the upstream template. Informational only: adopt_net0 never reads this key; the enforceable constraint is expressed on \"value\" below."
+                },
+                "value": {
+                  "type": "integer",
+                  "enum": [
+                    -1,
+                    0,
+                    1,
+                    2
+                  ],
+                  "default": -1,
+                  "description": "Controls the presolve level (Gurobi Presolve: -1 automatic, 0 off, 1 conservative, 2 aggressive)."
+                }
+              }
+            },
+            "branchdir": {
+              "type": "object",
+              "description": "Determines which child node is explored first in the branch-and-cut (Gurobi BranchDir: -1 down, 0 automatic, 1 up).",
+              "required": [
+                "value"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "description": {
+                  "type": "string",
+                  "description": "Human-readable description carried by the upstream template. Informational only: adopt_net0 never reads this key."
+                },
+                "options": {
+                  "type": "array",
+                  "description": "List of allowed values carried by the upstream template. Informational only: adopt_net0 never reads this key; the enforceable constraint is expressed on \"value\" below."
+                },
+                "value": {
+                  "type": "integer",
+                  "enum": [
+                    -1,
+                    0,
+                    1
+                  ],
+                  "default": 0,
+                  "description": "Determines which child node is explored first in the branch-and-cut (Gurobi BranchDir: -1 down, 0 automatic, 1 up)."
+                }
+              }
+            },
+            "lpwarmstart": {
+              "type": "object",
+              "description": "Controls whether and how warm-start information is used for LP (Gurobi LPWarmStart: 0 off, 1 use basis, 2 use basis and presolve).",
+              "required": [
+                "value"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "description": {
+                  "type": "string",
+                  "description": "Human-readable description carried by the upstream template. Informational only: adopt_net0 never reads this key."
+                },
+                "options": {
+                  "type": "array",
+                  "description": "List of allowed values carried by the upstream template. Informational only: adopt_net0 never reads this key; the enforceable constraint is expressed on \"value\" below."
+                },
+                "value": {
+                  "type": "integer",
+                  "enum": [
+                    0,
+                    1,
+                    2
+                  ],
+                  "default": 0,
+                  "description": "Controls whether and how warm-start information is used for LP (Gurobi LPWarmStart: 0 off, 1 use basis, 2 use basis and presolve)."
+                }
+              }
+            },
+            "intfeastol": {
+              "type": "object",
+              "description": "Value that determines the integer feasibility tolerance (Gurobi IntFeasTol).",
+              "required": [
+                "value"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "description": {
+                  "type": "string",
+                  "description": "Human-readable description carried by the upstream template. Informational only: adopt_net0 never reads this key."
+                },
+                "options": {
+                  "type": "array",
+                  "description": "List of allowed values carried by the upstream template. Informational only: adopt_net0 never reads this key; the enforceable constraint is expressed on \"value\" below."
+                },
+                "value": {
+                  "type": "number",
+                  "exclusiveMinimum": 0,
+                  "default": 1e-05,
+                  "description": "Value that determines the integer feasibility tolerance (Gurobi IntFeasTol)."
+                }
+              }
+            },
+            "feastol": {
+              "type": "object",
+              "description": "Value that determines feasibility for all constraints (Gurobi FeasibilityTol).",
+              "required": [
+                "value"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "description": {
+                  "type": "string",
+                  "description": "Human-readable description carried by the upstream template. Informational only: adopt_net0 never reads this key."
+                },
+                "options": {
+                  "type": "array",
+                  "description": "List of allowed values carried by the upstream template. Informational only: adopt_net0 never reads this key; the enforceable constraint is expressed on \"value\" below."
+                },
+                "value": {
+                  "type": "number",
+                  "exclusiveMinimum": 0,
+                  "default": 1e-06,
+                  "description": "Value that determines feasibility for all constraints (Gurobi FeasibilityTol)."
+                }
+              }
+            },
+            "numericfocus": {
+              "type": "object",
+              "description": "Degree to which Gurobi tries to detect and manage numeric issues (Gurobi NumericFocus: 0 automatic to 3 most careful).",
+              "required": [
+                "value"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "description": {
+                  "type": "string",
+                  "description": "Human-readable description carried by the upstream template. Informational only: adopt_net0 never reads this key."
+                },
+                "options": {
+                  "type": "array",
+                  "description": "List of allowed values carried by the upstream template. Informational only: adopt_net0 never reads this key; the enforceable constraint is expressed on \"value\" below."
+                },
+                "value": {
+                  "type": "integer",
+                  "enum": [
+                    0,
+                    1,
+                    2,
+                    3
+                  ],
+                  "default": 0,
+                  "description": "Degree to which Gurobi tries to detect and manage numeric issues (Gurobi NumericFocus: 0 automatic to 3 most careful)."
+                }
+              }
+            },
+            "cuts": {
+              "type": "object",
+              "description": "Setting defining the aggressiveness of the global cut generation (Gurobi Cuts: -1 automatic, 0 off, 1 moderate, 2 aggressive, 3 very aggressive).",
+              "required": [
+                "value"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "description": {
+                  "type": "string",
+                  "description": "Human-readable description carried by the upstream template. Informational only: adopt_net0 never reads this key."
+                },
+                "options": {
+                  "type": "array",
+                  "description": "List of allowed values carried by the upstream template. Informational only: adopt_net0 never reads this key; the enforceable constraint is expressed on \"value\" below."
+                },
+                "value": {
+                  "type": "integer",
+                  "enum": [
+                    -1,
+                    0,
+                    1,
+                    2,
+                    3
+                  ],
+                  "default": -1,
+                  "description": "Setting defining the aggressiveness of the global cut generation (Gurobi Cuts: -1 automatic, 0 off, 1 moderate, 2 aggressive, 3 very aggressive)."
+                }
+              }
+            },
+            "nodetol": {
+              "type": "object",
+              "description": "Node tolerance. Extension key written by the meme emitter (internal/target/adoptnet0/emitter.go) alongside the upstream options; NOT part of the adopt_net0 0.1.10 template and ignored by adopt_net0 0.1.10 (the GLPK path sets no solver options).",
+              "required": [
+                "value"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "description": {
+                  "type": "string",
+                  "description": "Human-readable description carried by the upstream template. Informational only: adopt_net0 never reads this key."
+                },
+                "options": {
+                  "type": "array",
+                  "description": "List of allowed values carried by the upstream template. Informational only: adopt_net0 never reads this key; the enforceable constraint is expressed on \"value\" below."
+                },
+                "value": {
+                  "type": "number",
+                  "default": 1e-09,
+                  "description": "Node tolerance. Extension key written by the meme emitter (internal/target/adoptnet0/emitter.go) alongside the upstream options; NOT part of the adopt_net0 0.1.10 template and ignored by adopt_net0 0.1.10 (the GLPK path sets no solver options)."
+                }
+              }
+            }
+          },
+          "allOf": [
+            {
+              "if": {
+                "required": [
+                  "solver"
+                ],
+                "properties": {
+                  "solver": {
+                    "required": [
+                      "value"
+                    ],
+                    "properties": {
+                      "value": {
+                        "enum": [
+                          "gurobi",
+                          "gurobi_persistent"
+                        ]
+                      }
+                    }
+                  }
+                }
+              },
+              "then": {
+                "required": [
+                  "mipgap",
+                  "timelim",
+                  "threads",
+                  "mipfocus",
+                  "nodefilestart",
+                  "method",
+                  "heuristics",
+                  "presolve",
+                  "branchdir",
+                  "lpwarmstart",
+                  "intfeastol",
+                  "feastol",
+                  "numericfocus",
+                  "cuts"
+                ]
+              }
+            }
+          ]
+        },
+        "reporting": {
+          "type": "object",
+          "description": "Options describing what is written to disk after the optimization and where.",
+          "required": [
+            "write_results",
+            "save_summary_path",
+            "save_path",
+            "case_name",
+            "write_solution_diagnostics"
+          ],
+          "additionalProperties": true,
+          "properties": {
+            "write_results": {
+              "type": "object",
+              "description": "Write results (an HDF5 file and Summary.xlsx) directly after the optimization (0 = off, 1 = on). Monte Carlo runs require 1 because add_values_to_summary reads Summary.xlsx.",
+              "required": [
+                "value"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "description": {
+                  "type": "string",
+                  "description": "Human-readable description carried by the upstream template. Informational only: adopt_net0 never reads this key."
+                },
+                "options": {
+                  "type": "array",
+                  "description": "List of allowed values carried by the upstream template. Informational only: adopt_net0 never reads this key; the enforceable constraint is expressed on \"value\" below."
+                },
+                "value": {
+                  "type": "integer",
+                  "enum": [
+                    0,
+                    1
+                  ],
+                  "default": 1,
+                  "description": "Write results (an HDF5 file and Summary.xlsx) directly after the optimization (0 = off, 1 = on). Monte Carlo runs require 1 because add_values_to_summary reads Summary.xlsx."
+                }
+              }
+            },
+            "save_summary_path": {
+              "type": "object",
+              "description": "Path to save the summary file (Summary.xlsx) to. The directory must exist.",
+              "required": [
+                "value"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "description": {
+                  "type": "string",
+                  "description": "Human-readable description carried by the upstream template. Informational only: adopt_net0 never reads this key."
+                },
+                "options": {
+                  "type": "array",
+                  "description": "List of allowed values carried by the upstream template. Informational only: adopt_net0 never reads this key; the enforceable constraint is expressed on \"value\" below."
+                },
+                "value": {
+                  "type": "string",
+                  "default": "./userData/",
+                  "description": "Path to save the summary file (Summary.xlsx) to. The directory must exist."
+                }
+              }
+            },
+            "save_path": {
+              "type": "object",
+              "description": "Option to define the save path for the result folder (HDF5 results). The directory must exist.",
+              "required": [
+                "value"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "description": {
+                  "type": "string",
+                  "description": "Human-readable description carried by the upstream template. Informational only: adopt_net0 never reads this key."
+                },
+                "options": {
+                  "type": "array",
+                  "description": "List of allowed values carried by the upstream template. Informational only: adopt_net0 never reads this key; the enforceable constraint is expressed on \"value\" below."
+                },
+                "value": {
+                  "type": "string",
+                  "default": "./userData/",
+                  "description": "Option to define the save path for the result folder (HDF5 results). The directory must exist."
+                }
+              }
+            },
+            "case_name": {
+              "type": "object",
+              "description": "Option to define a case study name that is added to the results folder name. -1 (the default) means no case name, i.e. the results folder is named by timestamp only.",
+              "required": [
+                "value"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "description": {
+                  "type": "string",
+                  "description": "Human-readable description carried by the upstream template. Informational only: adopt_net0 never reads this key."
+                },
+                "options": {
+                  "type": "array",
+                  "description": "List of allowed values carried by the upstream template. Informational only: adopt_net0 never reads this key; the enforceable constraint is expressed on \"value\" below."
+                },
+                "value": {
+                  "type": [
+                    "string",
+                    "integer"
+                  ],
+                  "default": -1,
+                  "description": "Option to define a case study name that is added to the results folder name. -1 (the default) means no case name, i.e. the results folder is named by timestamp only."
+                }
+              }
+            },
+            "write_solution_diagnostics": {
+              "type": "object",
+              "description": "If 1, writes solution quality; if 2, also writes the pyomo to Gurobi variable map and constraint map to file. 0 = off.",
+              "required": [
+                "value"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "description": {
+                  "type": "string",
+                  "description": "Human-readable description carried by the upstream template. Informational only: adopt_net0 never reads this key."
+                },
+                "options": {
+                  "type": "array",
+                  "description": "List of allowed values carried by the upstream template. Informational only: adopt_net0 never reads this key; the enforceable constraint is expressed on \"value\" below."
+                },
+                "value": {
+                  "type": "integer",
+                  "enum": [
+                    0,
+                    1,
+                    2
+                  ],
+                  "default": 0,
+                  "description": "If 1, writes solution quality; if 2, also writes the pyomo to Gurobi variable map and constraint map to file. 0 = off."
+                }
+              }
+            }
+          }
+        },
+        "energybalance": {
+          "type": "object",
+          "description": "Options determining how the nodal energy balances are constructed.",
+          "required": [
+            "violation",
+            "copperplate"
+          ],
+          "additionalProperties": true,
+          "properties": {
+            "violation": {
+              "type": "object",
+              "description": "Determines the energy balance violation price (cost per unit of violated energy). -1 means no violation is allowed; a value >= 0 allows the balance to be violated at that price.",
+              "required": [
+                "value"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "description": {
+                  "type": "string",
+                  "description": "Human-readable description carried by the upstream template. Informational only: adopt_net0 never reads this key."
+                },
+                "options": {
+                  "type": "array",
+                  "description": "List of allowed values carried by the upstream template. Informational only: adopt_net0 never reads this key; the enforceable constraint is expressed on \"value\" below."
+                },
+                "value": {
+                  "type": "number",
+                  "default": -1,
+                  "description": "Determines the energy balance violation price (cost per unit of violated energy). -1 means no violation is allowed; a value >= 0 allows the balance to be violated at that price."
+                }
+              }
+            },
+            "copperplate": {
+              "type": "object",
+              "description": "Determines if a copperplate approach (no network constraints between nodes) is used (0 = off, 1 = on).",
+              "required": [
+                "value"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "description": {
+                  "type": "string",
+                  "description": "Human-readable description carried by the upstream template. Informational only: adopt_net0 never reads this key."
+                },
+                "options": {
+                  "type": "array",
+                  "description": "List of allowed values carried by the upstream template. Informational only: adopt_net0 never reads this key; the enforceable constraint is expressed on \"value\" below."
+                },
+                "value": {
+                  "type": "integer",
+                  "enum": [
+                    0,
+                    1
+                  ],
+                  "default": 0,
+                  "description": "Determines if a copperplate approach (no network constraints between nodes) is used (0 = off, 1 = on)."
+                }
+              }
+            }
+          }
+        },
+        "economic": {
+          "type": "object",
+          "description": "Global economic settings overriding component-level economics.",
+          "required": [
+            "global_discountrate",
+            "global_simple_capex_model"
+          ],
+          "additionalProperties": true,
+          "properties": {
+            "global_discountrate": {
+              "type": "object",
+              "description": "Determines if and which global discount rate is used. This holds for the CAPEX of all technologies and networks. -1 disables the global rate (component-specific discount rates apply); a value >= 0 (fraction, e.g. 0.1) is applied to all components.",
+              "required": [
+                "value"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "description": {
+                  "type": "string",
+                  "description": "Human-readable description carried by the upstream template. Informational only: adopt_net0 never reads this key."
+                },
+                "options": {
+                  "type": "array",
+                  "description": "List of allowed values carried by the upstream template. Informational only: adopt_net0 never reads this key; the enforceable constraint is expressed on \"value\" below."
+                },
+                "value": {
+                  "type": "number",
+                  "default": -1,
+                  "description": "Determines if and which global discount rate is used. This holds for the CAPEX of all technologies and networks. -1 disables the global rate (component-specific discount rates apply); a value >= 0 (fraction, e.g. 0.1) is applied to all components."
+                }
+              }
+            },
+            "global_simple_capex_model": {
+              "type": "object",
+              "description": "Determines if the CAPEX model of technologies is set to 1 (simple, linear unit CAPEX) for all technologies (0 = off, 1 = on).",
+              "required": [
+                "value"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "description": {
+                  "type": "string",
+                  "description": "Human-readable description carried by the upstream template. Informational only: adopt_net0 never reads this key."
+                },
+                "options": {
+                  "type": "array",
+                  "description": "List of allowed values carried by the upstream template. Informational only: adopt_net0 never reads this key; the enforceable constraint is expressed on \"value\" below."
+                },
+                "value": {
+                  "type": "integer",
+                  "enum": [
+                    0,
+                    1
+                  ],
+                  "default": 0,
+                  "description": "Determines if the CAPEX model of technologies is set to 1 (simple, linear unit CAPEX) for all technologies (0 = off, 1 = on)."
+                }
+              }
+            }
+          }
+        },
+        "performance": {
+          "type": "object",
+          "description": "Options determining the level of detail of technology performance modelling.",
+          "required": [
+            "dynamics"
+          ],
+          "additionalProperties": true,
+          "properties": {
+            "dynamics": {
+              "type": "object",
+              "description": "Determines if technology dynamics (ramping, start-up/shut-down behaviour) are used (0 = off, 1 = on).",
+              "required": [
+                "value"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "description": {
+                  "type": "string",
+                  "description": "Human-readable description carried by the upstream template. Informational only: adopt_net0 never reads this key."
+                },
+                "options": {
+                  "type": "array",
+                  "description": "List of allowed values carried by the upstream template. Informational only: adopt_net0 never reads this key; the enforceable constraint is expressed on \"value\" below."
+                },
+                "value": {
+                  "type": "integer",
+                  "enum": [
+                    0,
+                    1
+                  ],
+                  "default": 0,
+                  "description": "Determines if technology dynamics (ramping, start-up/shut-down behaviour) are used (0 = off, 1 = on)."
+                }
+              }
+            }
+          }
+        },
+        "scaling": {
+          "type": "object",
+          "description": "Numerical scaling of the model to improve solver performance.",
+          "required": [
+            "scaling_on"
+          ],
+          "additionalProperties": true,
+          "properties": {
+            "scaling_on": {
+              "type": "object",
+              "description": "Determines if the model is scaled. If 1, it uses global and component-specific scaling factors (0 = off, 1 = on).",
+              "required": [
+                "value"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "description": {
+                  "type": "string",
+                  "description": "Human-readable description carried by the upstream template. Informational only: adopt_net0 never reads this key."
+                },
+                "options": {
+                  "type": "array",
+                  "description": "List of allowed values carried by the upstream template. Informational only: adopt_net0 never reads this key; the enforceable constraint is expressed on \"value\" below."
+                },
+                "value": {
+                  "type": "integer",
+                  "enum": [
+                    0,
+                    1
+                  ],
+                  "default": 0,
+                  "description": "Determines if the model is scaled. If 1, it uses global and component-specific scaling factors (0 = off, 1 = on)."
+                }
+              }
+            },
+            "scaling_factors": {
+              "type": "object",
+              "description": "Global scaling factors applied when scaling_on is 1.",
+              "additionalProperties": true,
+              "properties": {
+                "energy_vars": {
+                  "type": "object",
+                  "description": "Scaling factor used for all energy variables.",
+                  "required": [
+                    "value"
+                  ],
+                  "additionalProperties": false,
+                  "properties": {
+                    "description": {
+                      "type": "string",
+                      "description": "Human-readable description carried by the upstream template. Informational only: adopt_net0 never reads this key."
+                    },
+                    "options": {
+                      "type": "array",
+                      "description": "List of allowed values carried by the upstream template. Informational only: adopt_net0 never reads this key; the enforceable constraint is expressed on \"value\" below."
+                    },
+                    "value": {
+                      "type": "number",
+                      "default": 0.001,
+                      "description": "Scaling factor used for all energy variables."
+                    }
+                  }
+                },
+                "cost_vars": {
+                  "type": "object",
+                  "description": "Scaling factor used for all cost variables.",
+                  "required": [
+                    "value"
+                  ],
+                  "additionalProperties": false,
+                  "properties": {
+                    "description": {
+                      "type": "string",
+                      "description": "Human-readable description carried by the upstream template. Informational only: adopt_net0 never reads this key."
+                    },
+                    "options": {
+                      "type": "array",
+                      "description": "List of allowed values carried by the upstream template. Informational only: adopt_net0 never reads this key; the enforceable constraint is expressed on \"value\" below."
+                    },
+                    "value": {
+                      "type": "number",
+                      "default": 0.001,
+                      "description": "Scaling factor used for all cost variables."
+                    }
+                  }
+                },
+                "objective": {
+                  "type": "object",
+                  "description": "Scaling factor used for the objective function.",
+                  "required": [
+                    "value"
+                  ],
+                  "additionalProperties": false,
+                  "properties": {
+                    "description": {
+                      "type": "string",
+                      "description": "Human-readable description carried by the upstream template. Informational only: adopt_net0 never reads this key."
+                    },
+                    "options": {
+                      "type": "array",
+                      "description": "List of allowed values carried by the upstream template. Informational only: adopt_net0 never reads this key; the enforceable constraint is expressed on \"value\" below."
+                    },
+                    "value": {
+                      "type": "number",
+                      "default": 1,
+                      "description": "Scaling factor used for the objective function."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "allOf": [
+            {
+              "if": {
+                "required": [
+                  "scaling_on"
+                ],
+                "properties": {
+                  "scaling_on": {
+                    "required": [
+                      "value"
+                    ],
+                    "properties": {
+                      "value": {
+                        "const": 1
+                      }
+                    }
+                  }
+                }
+              },
+              "then": {
+                "required": [
+                  "scaling_factors"
+                ]
+              }
+            }
+          ]
+        }
+      }
+    },
+    "Topology": {
+      "type": "object",
+      "title": "Topology.json",
+      "description": "AdOpT-NET0 system topology (Topology.json), as written by adopt_net0.create_optimization_templates / initialize_topology_templates (adopt_net0 0.1.10). Defines nodes, carriers, investment periods and the time index. The keys resolution_in_h, time_index, fraction_of_year_modelled and hours_per_day that appear on the in-memory topology dict are derived at load time and are NOT part of this file.",
+      "required": [
+        "nodes",
+        "carriers",
+        "investment_periods",
+        "start_date",
+        "end_date",
+        "resolution"
+      ],
+      "additionalProperties": true,
+      "properties": {
+        "nodes": {
+          "type": "array",
+          "description": "List of node names. Each name becomes a folder under <period>/node_data/<node>/ and a row in NodeLocations.csv (semicolon-separated columns: lon; lat; alt). Upstream template default: [\"node1\", \"node2\"].",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Node name (used as a directory name)."
+          },
+          "minItems": 1,
+          "uniqueItems": true,
+          "default": [
+            "node1",
+            "node2"
+          ]
+        },
+        "carriers": {
+          "type": "array",
+          "description": "List of energy/material carrier names. Each carrier needs a <carrier>.csv time-series file (semicolon-separated columns: Demand; Import limit; Export limit; Import price; Export price; Import emission factor; Export emission factor; Generic production) and an entry in EnergybalanceOptions.json under every node. Upstream template default: [\"electricity\", \"hydrogen\"].",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Carrier name (used as a CSV file name)."
+          },
+          "minItems": 1,
+          "uniqueItems": true,
+          "default": [
+            "electricity",
+            "hydrogen"
+          ]
+        },
+        "investment_periods": {
+          "type": "array",
+          "description": "List of investment period names, in order. Each name becomes a top-level folder in the input data directory holding Networks.json, network_data/, network_topology/ and node_data/. Upstream template default: [\"period1\"].",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Investment period name (used as a directory name)."
+          },
+          "minItems": 1,
+          "uniqueItems": true,
+          "default": [
+            "period1"
+          ]
+        },
+        "start_date": {
+          "type": "string",
+          "description": "First timestep of the model horizon, parsed by pandas.date_range (format \"YYYY-MM-DD HH:MM\"). Upstream template default: \"2022-01-01 00:00\".",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}([ T]\\d{2}:\\d{2}(:\\d{2})?)?$",
+          "default": "2022-01-01 00:00"
+        },
+        "end_date": {
+          "type": "string",
+          "description": "Last timestep of the model horizon (inclusive), parsed by pandas.date_range (format \"YYYY-MM-DD HH:MM\"). Upstream template default: \"2022-12-31 23:00\".",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}([ T]\\d{2}:\\d{2}(:\\d{2})?)?$",
+          "default": "2022-12-31 23:00"
+        },
+        "resolution": {
+          "type": "string",
+          "description": "Temporal resolution as a pandas frequency/offset alias (e.g. \"1h\"), passed to pandas.date_range(freq=...). All time-series CSVs must be indexed on the resulting date range.",
+          "default": "1h"
+        },
+        "investment_period_length": {
+          "type": "number",
+          "description": "Length of one investment period in years. Present in the 0.1.10 template (default 1) but not consumed by the 0.1.10 model code (reserved for multi-year analysis).",
+          "default": 1
+        }
+      }
+    },
+    "Technologies": {
+      "type": "object",
+      "title": "Technologies.json",
+      "description": "Per-node technology list (<period>/node_data/<node>/Technologies.json). Names must match technology JSON files in the adopt_net0 technology database (copied into node_data/<node>/technology_data/ by adopt_net0.copy_technology_data), e.g. Photovoltaic, WindTurbine_Onshore_1500, HeatPump_AirSourced, Storage_Battery. Additional properties are tolerated (meme merges node-level native.adopt-net0 keys into this file).",
+      "required": [
+        "existing",
+        "new"
+      ],
+      "additionalProperties": true,
+      "properties": {
+        "existing": {
+          "type": "object",
+          "description": "Existing technologies at the node: a mapping of database technology name to installed size (loaded as size_initial; the technology is renamed <name>_existing and its size fixed or bounded by the decommission setting). Upstream template default: {}.",
+          "additionalProperties": {
+            "type": "number",
+            "minimum": 0,
+            "description": "Installed size of the existing technology (size_initial), in the size unit of the technology (e.g. MW or MWh)."
+          },
+          "default": {}
+        },
+        "new": {
+          "type": "array",
+          "description": "New (candidate) technologies whose size is optimized: a list of database technology names. Upstream template default: [].",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Database technology name (must match a <name>.json in the technology database)."
+          },
+          "uniqueItems": true,
+          "default": []
+        }
+      }
+    },
+    "Networks": {
+      "type": "object",
+      "title": "Networks.json",
+      "description": "Per-investment-period network list (<period>/Networks.json). Names must match network JSON files in the adopt_net0 network database (copied into <period>/network_data/ by adopt_net0.copy_network_data), e.g. electricityOnshore, hydrogenPipelineOnshore. Each listed network additionally needs connection.csv and distance.csv (new networks also optionally size_max_arcs.csv, existing networks also size.csv) node-by-node matrices under <period>/network_topology/{new,existing}/<network>/.",
+      "required": [
+        "existing",
+        "new"
+      ],
+      "additionalProperties": true,
+      "properties": {
+        "existing": {
+          "description": "Existing networks in the period. The upstream 0.1.10 template writes an array of database network names (their sizes come from network_topology/existing/<network>/size.csv); the meme emitter writes an (empty) object, which adopt_net0 0.1.10 also accepts when empty because it only iterates the container. Upstream template default: [].",
+          "oneOf": [
+            {
+              "type": "array",
+              "description": "List of database network names.",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "description": "Database network name (must match a <name>.json in the network database)."
+              },
+              "uniqueItems": true
+            },
+            {
+              "type": "object",
+              "description": "Mapping form (keys are database network names; iteration order is what adopt_net0 consumes). The meme emitter emits {} here.",
+              "additionalProperties": {
+                "description": "Ignored by adopt_net0 0.1.10 (sizes are read from network_topology/existing/<network>/size.csv)."
+              }
+            }
+          ],
+          "default": []
+        },
+        "new": {
+          "type": "array",
+          "description": "New (candidate) networks whose arc sizes are optimized: a list of database network names. Upstream template default: [].",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Database network name (must match a <name>.json in the network database)."
+          },
+          "uniqueItems": true,
+          "default": []
+        }
+      }
+    },
+    "EnergybalanceOptions": {
+      "type": "object",
+      "title": "EnergybalanceOptions.json",
+      "description": "Per-node, per-carrier energy balance options (<period>/node_data/<node>/carrier_data/EnergybalanceOptions.json). One entry per carrier defined in Topology.json (the upstream template writes {\"curtailment_possible\": 0} for every carrier).",
+      "additionalProperties": {
+        "type": "object",
+        "description": "Options for one carrier (the property name is the carrier name from Topology.json carriers).",
+        "required": [
+          "curtailment_possible"
+        ],
+        "additionalProperties": true,
+        "properties": {
+          "curtailment_possible": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "default": 0,
+            "description": "Whether generic production of this carrier can be curtailed at the node: 0 = generic production is fixed to the profile, 1 = production can be curtailed (output <= profile)."
+          }
+        }
+      }
+    },
+    "TechnologyDataFile": {
+      "type": "object",
+      "title": "technology_data/<name>.json",
+      "description": "An adopt_net0 technology database entry (adopt_net0/database/templates/technology_data/**/<name>.json), copied to <period>/node_data/<node>/technology_data/ by copy_technology_data for every technology listed in Technologies.json. The meme run step (internal/scripts/adoptnet0_run.py) patches these files with the _meme_overrides.json sidecar after copying. The Performance block is technology-type specific; only keys common across the 0.1.10 database are enumerated here and additional keys are allowed.",
+      "required": [
+        "size_min",
+        "size_max",
+        "size_is_int",
+        "decommission",
+        "Economics",
+        "Performance",
+        "Units"
+      ],
+      "additionalProperties": true,
+      "properties": {
+        "tec_type": {
+          "type": "string",
+          "description": "Technology model type selecting the pyomo formulation, e.g. RES (renewable with climate-driven profile), STOR (storage), CONV1/CONV2/CONV3/CONV4 (generic conversion with different input-output coupling), SINK, DAC_Adsorption, Hydro_Open, HeatPump_AirSourced, HeatPump_GroundSourced, HeatPump_WaterSourced, GasTurbine_* or CCPP (technology-specific models).",
+          "examples": [
+            "RES",
+            "STOR",
+            "CONV1",
+            "CONV2",
+            "CONV3",
+            "CONV4",
+            "SINK",
+            "DAC_Adsorption",
+            "Hydro_Open",
+            "HeatPump_AirSourced",
+            "CCPP"
+          ]
+        },
+        "comment": {
+          "type": "string",
+          "description": "Free-text comment (informational only)."
+        },
+        "DOI": {
+          "type": [
+            "string",
+            "array"
+          ],
+          "description": "Literature reference(s) (DOI) for the dataset (informational only)."
+        },
+        "size_min": {
+          "type": "number",
+          "description": "Minimum size of the technology (in the unit given in Units.size)."
+        },
+        "size_max": {
+          "type": "number",
+          "description": "Maximum size of the technology (in the unit given in Units.size). Patched by meme from capacity.max via _meme_overrides.json."
+        },
+        "size_is_int": {
+          "type": "integer",
+          "enum": [
+            0,
+            1
+          ],
+          "description": "Whether the size is an integer variable (1) or continuous (0)."
+        },
+        "size_based_on": {
+          "type": "string",
+          "description": "For conversion technologies: whether the size refers to \"input\" or \"output\" capacity.",
+          "enum": [
+            "input",
+            "output"
+          ]
+        },
+        "ccs_type": {
+          "type": "string",
+          "description": "Name of the carbon-capture add-on dataset that can be attached to this technology (only present on CCS-capable technologies)."
+        },
+        "decommission": {
+          "description": "Decommissioning behaviour of existing capacity: \"impossible\" fixes existing size, \"continuous\" allows any size between minimum and initial size, \"only_complete\" allows full decommissioning only. A few 0.1.10 database files (CO2_Compressor, HeatPump_SeaWaterSourced) carry the legacy integer 0 instead of \"impossible\".",
+          "oneOf": [
+            {
+              "type": "string",
+              "enum": [
+                "impossible",
+                "continuous",
+                "only_complete"
+              ],
+              "description": "Decommissioning behaviour."
+            },
+            {
+              "type": "integer",
+              "enum": [
+                0
+              ],
+              "description": "Legacy encoding of \"impossible\" found in some 0.1.10 database files."
+            }
+          ]
+        },
+        "Economics": {
+          "type": "object",
+          "description": "Economic parameters of the technology. CAPEX in EUR per unit size (or as a piecewise function), OPEX_variable in EUR/MWh of output, OPEX_fixed as a fraction of up-front CAPEX per year.",
+          "required": [
+            "CAPEX_model",
+            "unit_CAPEX",
+            "OPEX_variable",
+            "OPEX_fixed",
+            "discount_rate",
+            "lifetime",
+            "decommission_cost"
+          ],
+          "additionalProperties": true,
+          "properties": {
+            "comment": {
+              "type": "string",
+              "description": "Free-text comment on units/assumptions (informational only)."
+            },
+            "CAPEX_model": {
+              "type": "integer",
+              "enum": [
+                1,
+                2,
+                3,
+                4
+              ],
+              "description": "CAPEX model used: 1 = linear (unit_CAPEX * size), 2 = linear with fixed cost component (unit_CAPEX * size + fix_CAPEX), 3 = piecewise linear (piecewise_CAPEX), 4 = technology-specific (e.g. storage/DAC using CAPEX_kappa/CAPEX_lambda/CAPEX_zeta)."
+            },
+            "unit_CAPEX": {
+              "type": "number",
+              "description": "Investment cost per unit size (EUR per size unit), used by CAPEX models 1 and 2."
+            },
+            "fix_CAPEX": {
+              "type": "number",
+              "description": "Fixed CAPEX component (EUR) added when the technology is built, used by CAPEX model 2."
+            },
+            "piecewise_CAPEX": {
+              "type": "object",
+              "description": "Piecewise-linear CAPEX definition, used by CAPEX model 3. \"not defined\" placeholders mark unused entries.",
+              "additionalProperties": true,
+              "properties": {
+                "bp_x": {
+                  "type": [
+                    "array",
+                    "string"
+                  ],
+                  "description": "Breakpoints on the size axis (array of numbers), or the string \"not defined\"."
+                },
+                "bp_y": {
+                  "type": [
+                    "array",
+                    "string"
+                  ],
+                  "description": "CAPEX at each size breakpoint (array of numbers), or the string \"not defined\"."
+                }
+              }
+            },
+            "CAPEX_kappa": {
+              "type": "number",
+              "description": "Technology-specific CAPEX coefficient kappa (CAPEX model 4, e.g. DAC/storage)."
+            },
+            "CAPEX_lambda": {
+              "type": "number",
+              "description": "Technology-specific CAPEX coefficient lambda (CAPEX model 4, e.g. DAC/storage)."
+            },
+            "CAPEX_zeta": {
+              "type": "number",
+              "description": "Technology-specific CAPEX coefficient zeta (CAPEX model 4, e.g. DAC/storage)."
+            },
+            "OPEX_variable": {
+              "type": "number",
+              "description": "Variable operational cost (EUR/MWh of total output)."
+            },
+            "OPEX_fixed": {
+              "type": "number",
+              "description": "Fixed annual operational cost as a fraction of up-front CAPEX (e.g. 0.04 = 4 % per year)."
+            },
+            "discount_rate": {
+              "type": "number",
+              "description": "Component discount rate (fraction) used to annualize CAPEX; overridden by economic.global_discountrate when that is not -1."
+            },
+            "lifetime": {
+              "type": "number",
+              "description": "Technical/economic lifetime in years, used to annualize CAPEX."
+            },
+            "decommission_cost": {
+              "type": "number",
+              "description": "Cost of decommissioning the technology (EUR per unit size)."
+            }
+          }
+        },
+        "Performance": {
+          "type": "object",
+          "description": "Technology performance data; the exact keys depend on tec_type (fitting data on the unit of input, technology types and input/output carriers). All keys occurring in the 0.1.10 database are enumerated below; further technology-specific keys are allowed as additional properties.",
+          "additionalProperties": true,
+          "properties": {
+            "comment": {
+              "type": "string",
+              "description": "Free-text comment (informational only)."
+            },
+            "input_carrier": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "description": "Input carrier name."
+              },
+              "description": "Input carriers consumed by the technology."
+            },
+            "output_carrier": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "description": "Output carrier name."
+              },
+              "description": "Output carriers produced by the technology."
+            },
+            "main_input_carrier": {
+              "type": "string",
+              "description": "Main input carrier (reference carrier for sizing and performance ratios)."
+            },
+            "main_output_carrier": {
+              "type": "string",
+              "description": "Main output carrier (reference carrier for sizing, where applicable)."
+            },
+            "emission_factor": {
+              "type": "number",
+              "description": "Emissions per unit of main carrier (t CO2/MWh); negative values model negative-emission technologies."
+            },
+            "performance": {
+              "type": "object",
+              "description": "Fitted performance coefficients; shape depends on tec_type (e.g. {in: [...], out: {carrier: [...]}} coefficients for conversion technologies, or {eta_in, eta_out, lambda, theta} for storage).",
+              "additionalProperties": true
+            },
+            "performance_function_type": {
+              "type": "integer",
+              "enum": [
+                1,
+                2,
+                3,
+                4
+              ],
+              "description": "Type of the input-output performance function for conversion technologies: 1 = linear through the origin, 2 = linear with minimal part-load, 3 = piecewise linear, 4 = piecewise with slow start-up/shut-down dynamics."
+            },
+            "min_part_load": {
+              "type": "number",
+              "description": "Minimal part-load as a fraction of capacity (used with performance_function_type >= 2)."
+            },
+            "curtailment": {
+              "type": "integer",
+              "enum": [
+                0,
+                1,
+                2
+              ],
+              "description": "For RES technologies: 0 = no curtailment possible, 1 = continuous curtailment, 2 = discrete curtailment (switching off whole modules)."
+            },
+            "allow_only_one_direction": {
+              "type": "integer",
+              "enum": [
+                0,
+                1
+              ],
+              "description": "For storage: if 1, charging and discharging cannot happen in the same timestep."
+            },
+            "input_ratios": {
+              "type": "object",
+              "description": "For CONV1/CONV2 technologies with multiple inputs: fixed ratio of each input carrier relative to the main input carrier.",
+              "additionalProperties": {
+                "type": "number",
+                "description": "Ratio of this carrier's input to the main input carrier."
+              }
+            },
+            "ramping_time": {
+              "type": "number",
+              "description": "Time (h) to ramp from 0 to full load; used when performance.dynamics is on (-1 = off)."
+            },
+            "ramping_rate": {
+              "type": "number",
+              "description": "Maximum change of input/output per timestep (absolute); -1 = off."
+            },
+            "ref_size": {
+              "type": "number",
+              "description": "Reference size used for dynamic constraints when the size variable is continuous."
+            },
+            "ramping_const_int": {
+              "type": "number",
+              "description": "Ramping constraint formulation used with integer sizing (dynamics)."
+            },
+            "standby_power": {
+              "type": "number",
+              "description": "Standby power consumption as a fraction of size (-1 = off; dynamics)."
+            },
+            "min_uptime": {
+              "type": "number",
+              "description": "Minimum number of timesteps the technology stays on after start-up (dynamics; -1 = off)."
+            },
+            "min_downtime": {
+              "type": "number",
+              "description": "Minimum number of timesteps the technology stays off after shut-down (dynamics; -1 = off)."
+            },
+            "SU_time": {
+              "type": "number",
+              "description": "Start-up time in timesteps (dynamics; -1 = off)."
+            },
+            "SD_time": {
+              "type": "number",
+              "description": "Shut-down time in timesteps (dynamics; -1 = off)."
+            },
+            "SU_load": {
+              "type": "number",
+              "description": "Load during start-up as a fraction of capacity (dynamics; -1 = off)."
+            },
+            "SD_load": {
+              "type": "number",
+              "description": "Load during shut-down as a fraction of capacity (dynamics; -1 = off)."
+            },
+            "max_startups": {
+              "type": "number",
+              "description": "Maximum number of start-ups over the horizon (dynamics; -1 = off)."
+            },
+            "ccs": {
+              "type": "object",
+              "description": "Carbon capture add-on options for CCS-capable technologies.",
+              "additionalProperties": true,
+              "properties": {
+                "possible": {
+                  "type": "integer",
+                  "enum": [
+                    0,
+                    1
+                  ],
+                  "description": "Whether a CCS add-on can be attached to this technology."
+                },
+                "co2_concentration": {
+                  "type": "number",
+                  "description": "CO2 concentration in the flue gas (fraction), input to CCS sizing."
+                },
+                "ccs_type": {
+                  "type": "string",
+                  "description": "Name of the CCS dataset applied (e.g. MEA_medium; see technology_data/CCSTechnologies)."
+                }
+              }
+            },
+            "capture_rate": {
+              "type": "number",
+              "description": "CO2 capture rate of the capture unit (fraction; DAC/CCS technologies)."
+            },
+            "plant_size": {
+              "type": "string",
+              "description": "Plant size class of the DAC dataset (e.g. small/medium/large)."
+            },
+            "eta": {
+              "type": [
+                "number",
+                "object"
+              ],
+              "description": "Efficiency parameter; for DAC an object mapping consumed carrier (electricity, heat) to efficiency.",
+              "additionalProperties": {
+                "type": "number",
+                "description": "Efficiency for this carrier."
+              }
+            },
+            "omega": {
+              "type": [
+                "number",
+                "object"
+              ],
+              "description": "Energy demand parameter; for DAC an object mapping consumed carrier (electricity, heat) to specific consumption.",
+              "additionalProperties": {
+                "type": "number",
+                "description": "Specific consumption for this carrier."
+              }
+            },
+            "application": {
+              "type": "string",
+              "description": "For heat pumps: heating application the COP curve is fitted for (e.g. radiator_heating, floor_heating, hot_water_heating)."
+            },
+            "T_out": {
+              "type": "number",
+              "description": "For heat pumps: supply (output) temperature in degree Celsius used in the COP calculation."
+            },
+            "can_pump": {
+              "type": "integer",
+              "enum": [
+                0,
+                1
+              ],
+              "description": "For open hydro: whether pumping (storing energy by pumping water up) is allowed."
+            },
+            "maximum_discharge_time_discrete": {
+              "type": "number",
+              "description": "For open hydro: maximum discharge time in hours (discrete formulation)."
+            },
+            "max_input": {
+              "type": "object",
+              "description": "Maximum input per carrier (e.g. hydrogen admixture bound for gas turbines), as a fraction of total input.",
+              "additionalProperties": {
+                "type": "number",
+                "description": "Maximum input fraction for this carrier."
+              }
+            },
+            "rated_power": {
+              "type": "number",
+              "description": "For gas turbines: rated power of one turbine unit (MW); sizes are multiples of it."
+            },
+            "in_min": {
+              "type": "number",
+              "description": "For gas turbines: minimal input per unit (fraction of rated input)."
+            },
+            "in_max": {
+              "type": "number",
+              "description": "For gas turbines: maximal input per unit (fraction of rated input)."
+            },
+            "alpha": {
+              "type": "number",
+              "description": "For gas turbines: performance coefficient alpha of the input-output curve."
+            },
+            "beta": {
+              "type": "number",
+              "description": "For gas turbines: performance coefficient beta of the input-output curve."
+            },
+            "gamma": {
+              "type": [
+                "array",
+                "number"
+              ],
+              "description": "For gas turbines: temperature-correction coefficient(s) gamma.",
+              "items": {
+                "type": "number",
+                "description": "Coefficient value."
+              }
+            },
+            "delta": {
+              "type": [
+                "array",
+                "number"
+              ],
+              "description": "For gas turbines: temperature-correction coefficient(s) delta.",
+              "items": {
+                "type": "number",
+                "description": "Coefficient value."
+              }
+            },
+            "epsilon": {
+              "type": "number",
+              "description": "For gas turbines: performance coefficient epsilon (heat output relation)."
+            },
+            "T_iso": {
+              "type": "number",
+              "description": "For gas turbines: ISO reference temperature (degree Celsius) for performance correction."
+            },
+            "max_H2_admixture": {
+              "type": "number",
+              "description": "For natural-gas turbines: maximum hydrogen admixture as a fraction of fuel input."
+            },
+            "nr_segments": {
+              "type": "integer",
+              "description": "Number of segments of the piecewise performance function."
+            },
+            "ohmic_heating": {
+              "type": "integer",
+              "enum": [
+                0,
+                1
+              ],
+              "description": "For steam crackers: whether ohmic (electric) heating is available."
+            },
+            "steam_production": {
+              "type": "string",
+              "description": "For CCPP: steam production configuration of the plant dataset."
+            },
+            "component": {
+              "type": "string",
+              "description": "For CCPP: component/configuration identifier of the plant dataset."
+            },
+            "steam_turbine_generator_efficiency": {
+              "type": "number",
+              "description": "For CCPP: efficiency of the steam turbine generator (fraction)."
+            },
+            "size_db": {
+              "type": "number",
+              "description": "For CCPP: size of the duct burner."
+            },
+            "size_ohb": {
+              "type": "number",
+              "description": "For CCPP: size of the ohmic boiler."
+            },
+            "max_h2_in": {
+              "type": "number",
+              "description": "For CCPP: maximum hydrogen input."
+            },
+            "max_h2_in_gt": {
+              "type": "number",
+              "description": "For CCPP: maximum hydrogen input to the gas turbine (fraction)."
+            }
+          }
+        },
+        "Flexibility": {
+          "type": "object",
+          "description": "For storage technologies: determines the flexibility of the power (charging/discharging) capacity compared to the energy capacity.",
+          "additionalProperties": true,
+          "properties": {
+            "comment": {
+              "type": "string",
+              "description": "Free-text comment (informational only)."
+            },
+            "power_energy_ratio": {
+              "type": "string",
+              "enum": [
+                "fixedratio",
+                "flexratio"
+              ],
+              "description": "\"fixedratio\": charging/discharging power is a fixed ratio (charge_rate/discharge_rate) of the energy capacity; \"flexratio\": power capacity is optimized independently (with capex_charging_power/capex_discharging_power)."
+            },
+            "charge_rate": {
+              "type": "number",
+              "description": "Maximum charging power as a fraction of energy capacity per hour."
+            },
+            "discharge_rate": {
+              "type": "number",
+              "description": "Maximum discharging power as a fraction of energy capacity per hour."
+            },
+            "capex_charging_power": {
+              "type": "number",
+              "description": "CAPEX per unit of charging power capacity (EUR/MW; used with flexible power/energy ratio)."
+            },
+            "capex_discharging_power": {
+              "type": "number",
+              "description": "CAPEX per unit of discharging power capacity (EUR/MW; used with flexible power/energy ratio)."
+            },
+            "injection_rate_max": {
+              "type": "number",
+              "description": "For storage with injection (e.g. gas storage): maximum injection rate as a fraction of energy capacity per hour."
+            },
+            "capex_injection_cap": {
+              "type": "number",
+              "description": "CAPEX per unit of injection capacity (used when injection capacity is a decision variable)."
+            },
+            "injection_capacity_is_decision_var": {
+              "type": "integer",
+              "enum": [
+                0,
+                1
+              ],
+              "description": "Whether the injection capacity is an optimization decision variable (1) or fixed (0)."
+            }
+          }
+        },
+        "Units": {
+          "type": "object",
+          "description": "Units of the size variable and of each input/output carrier (informational; used in reporting).",
+          "additionalProperties": true,
+          "properties": {
+            "size": {
+              "type": "string",
+              "description": "Unit of the size variable (e.g. MW, MWh, t/h)."
+            },
+            "input_carrier": {
+              "type": "object",
+              "description": "Unit per input carrier.",
+              "additionalProperties": {
+                "type": "string",
+                "description": "Unit of this input carrier (e.g. MW)."
+              }
+            },
+            "output_carrier": {
+              "type": "object",
+              "description": "Unit per output carrier.",
+              "additionalProperties": {
+                "type": "string",
+                "description": "Unit of this output carrier (e.g. MW)."
+              }
+            }
+          }
+        },
+        "ScalingFactors": {
+          "type": "object",
+          "description": "Component-specific scaling factors applied when ConfigModel scaling.scaling_on is 1 (keys such as const_opex_variable, const_opex_fixed, const_capex_aux, var_capex_aux and other constraint/variable scaling factors).",
+          "additionalProperties": {
+            "type": "number",
+            "description": "Scaling factor for the named constraint or variable group."
+          }
+        }
+      }
+    },
+    "NetworkDataFile": {
+      "type": "object",
+      "title": "network_data/<name>.json",
+      "description": "An adopt_net0 network database entry (adopt_net0/database/templates/network_data/<name>.json), copied to <period>/network_data/ by copy_network_data for every network listed in Networks.json (e.g. electricityOnshore, electricityOffshore, electricitySimple, hydrogenPipelineOnshore/Offshore, hydrogenSimple, hydrogenTruck/Ship/Railway, CO2_Pipeline, CO2Truck/Ship/Railway, heat).",
+      "required": [
+        "network_type",
+        "size_is_int",
+        "decommission",
+        "size_min",
+        "size_max",
+        "Economics",
+        "Performance",
+        "Units"
+      ],
+      "additionalProperties": true,
+      "properties": {
+        "network_type": {
+          "type": "string",
+          "enum": [
+            "fluid",
+            "electricity"
+          ],
+          "description": "Type of network: \"fluid\" (pipelines/transport of hydrogen, CO2, heat; energy consumption from compression possible) or \"electricity\" (electric lines)."
+        },
+        "size_is_int": {
+          "type": "integer",
+          "enum": [
+            0,
+            1
+          ],
+          "description": "Whether arc sizes are integer variables (1) or continuous (0)."
+        },
+        "decommission": {
+          "type": "string",
+          "enum": [
+            "impossible",
+            "continuous",
+            "only_complete"
+          ],
+          "description": "Decommissioning behaviour of existing arcs: \"impossible\" fixes existing size, \"continuous\" allows any size between minimum and initial size, \"only_complete\" allows full decommissioning only."
+        },
+        "size_min": {
+          "type": "number",
+          "description": "Minimum size of an arc (in the unit given in Units.size)."
+        },
+        "size_max": {
+          "type": "number",
+          "description": "Maximum size of an arc (in the unit given in Units.size); can be overridden per arc via network_topology/new/<network>/size_max_arcs.csv."
+        },
+        "Economics": {
+          "type": "object",
+          "description": "Economic parameters of the network. Arc CAPEX = gamma1 + gamma2 * size + gamma3 * distance + gamma4 * size * distance (coefficients in EUR, EUR/MW, EUR/km and EUR/MW/km); OPEX_variable in EUR/MWh transported, OPEX_fixed as a fraction of up-front CAPEX per year.",
+          "required": [
+            "gamma1",
+            "gamma2",
+            "gamma3",
+            "gamma4",
+            "OPEX_variable",
+            "OPEX_fixed",
+            "discount_rate",
+            "lifetime",
+            "decommission_cost"
+          ],
+          "additionalProperties": true,
+          "properties": {
+            "comment": {
+              "type": "string",
+              "description": "Free-text comment on units/assumptions (informational only)."
+            },
+            "gamma1": {
+              "type": "number",
+              "description": "CAPEX coefficient independent of size and distance (EUR per arc)."
+            },
+            "gamma2": {
+              "type": "number",
+              "description": "CAPEX coefficient per unit size (EUR/MW or EUR/(t/h))."
+            },
+            "gamma3": {
+              "type": "number",
+              "description": "CAPEX coefficient per unit distance (EUR/km)."
+            },
+            "gamma4": {
+              "type": "number",
+              "description": "CAPEX coefficient per unit size and distance (EUR/MW/km)."
+            },
+            "OPEX_variable": {
+              "type": "number",
+              "description": "Variable operational cost (EUR/MWh transported)."
+            },
+            "OPEX_fixed": {
+              "type": "number",
+              "description": "Fixed annual operational cost as a fraction of up-front CAPEX."
+            },
+            "discount_rate": {
+              "type": "number",
+              "description": "Component discount rate (fraction) used to annualize CAPEX; overridden by economic.global_discountrate when that is not -1."
+            },
+            "lifetime": {
+              "type": "number",
+              "description": "Technical/economic lifetime in years, used to annualize CAPEX."
+            },
+            "decommission_cost": {
+              "type": "number",
+              "description": "Cost of decommissioning an arc (EUR per unit size)."
+            }
+          }
+        },
+        "Performance": {
+          "type": "object",
+          "description": "Network performance data.",
+          "required": [
+            "carrier",
+            "loss",
+            "min_transport"
+          ],
+          "additionalProperties": true,
+          "properties": {
+            "carrier": {
+              "type": "string",
+              "description": "Carrier transported by the network (must be a carrier from Topology.json)."
+            },
+            "bidirectional_network": {
+              "type": "integer",
+              "enum": [
+                0,
+                1
+              ],
+              "description": "If 1, each arc can transport in both directions (sizes of the two directions are coupled)."
+            },
+            "bidirectional_network_precise": {
+              "type": "integer",
+              "enum": [
+                0,
+                1
+              ],
+              "description": "If 1, enforces one flow direction per timestep with binary variables (more precise, more expensive). Optional; not present in all 0.1.10 database files."
+            },
+            "loss": {
+              "type": "number",
+              "description": "Transport loss per unit flow and distance (fraction per km)."
+            },
+            "min_transport": {
+              "type": "number",
+              "description": "Minimal transport as a fraction of arc size (when the arc is used)."
+            },
+            "loss2emissions": {
+              "type": "number",
+              "description": "Emissions per unit of transport loss (t CO2/MWh lost), e.g. for methane/hydrogen leakage."
+            },
+            "emissionfactor": {
+              "type": "number",
+              "description": "Emissions per unit of carrier transported (t CO2/MWh)."
+            },
+            "energyconsumption": {
+              "type": [
+                "object",
+                "array"
+              ],
+              "description": "Energy consumption of transport per consuming carrier (e.g. electricity for compression). Networks that consume no energy carry an empty container; several 0.1.10 database files (e.g. electricityOnshore, heat, hydrogenSimple) use an empty array [] instead of an empty object {}.",
+              "maxItems": 0,
+              "additionalProperties": {
+                "type": "object",
+                "description": "Consumption model for one consuming carrier.",
+                "additionalProperties": true,
+                "properties": {
+                  "cons_model": {
+                    "type": "integer",
+                    "enum": [
+                      1,
+                      2
+                    ],
+                    "description": "Consumption model: 1 = linear in flow and distance (uses k_flow, k_flowDistance), 2 = compressor energy model (uses p, c, T, eta, gam, LHV)."
+                  },
+                  "k_flow": {
+                    "type": "number",
+                    "description": "Model 1: consumption per unit flow."
+                  },
+                  "k_flowDistance": {
+                    "type": "number",
+                    "description": "Model 1: consumption per unit flow and distance."
+                  },
+                  "p": {
+                    "type": "number",
+                    "description": "Model 2: pipeline pressure (bar)."
+                  },
+                  "c": {
+                    "type": "number",
+                    "description": "Model 2: specific compression coefficient."
+                  },
+                  "T": {
+                    "type": "number",
+                    "description": "Model 2: inlet temperature (K)."
+                  },
+                  "eta": {
+                    "type": "number",
+                    "description": "Model 2: compressor efficiency (fraction)."
+                  },
+                  "gam": {
+                    "type": "number",
+                    "description": "Model 2: isentropic exponent (heat capacity ratio) of the fluid."
+                  },
+                  "LHV": {
+                    "type": "number",
+                    "description": "Model 2: lower heating value of the transported fluid."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "Units": {
+          "type": "object",
+          "description": "Units of the arc size variable and of the transported carrier (informational; used in reporting).",
+          "additionalProperties": true,
+          "properties": {
+            "size": {
+              "type": "string",
+              "description": "Unit of the arc size variable (e.g. MW)."
+            },
+            "transport_carrier": {
+              "type": "object",
+              "description": "Unit per transported carrier.",
+              "additionalProperties": {
+                "type": "string",
+                "description": "Unit of this transported carrier (e.g. MW)."
+              }
+            }
+          }
+        }
+      }
+    },
+    "MemeOverrides": {
+      "type": "object",
+      "title": "_meme_overrides.json",
+      "description": "meme-specific sidecar written next to Topology.json by the meme emitter (NOT an adopt_net0 file): a node -> database-technology -> patch mapping. The generated run.py applies each patch onto the copied technology_data/<tech>.json after adopt_net0.copy_technology_data (dict values merge one level deep, everything else replaces). Arbitrary extra keys can appear via meme's tech-level native.adopt-net0 passthrough; the properties below are the ones the emitter itself writes.",
+      "additionalProperties": {
+        "type": "object",
+        "description": "Patches for one node (the property name is the node name from Topology.json nodes).",
+        "additionalProperties": {
+          "type": "object",
+          "description": "Patch applied onto the copied technology_data/<name>.json of this database technology (the property name is the database technology name from Technologies.json).",
+          "additionalProperties": true,
+          "properties": {
+            "size_max": {
+              "type": "number",
+              "description": "Overrides the technology's maximum size (from meme capacity.max)."
+            },
+            "Economics": {
+              "type": "object",
+              "description": "Merged into the technology's Economics block (keys not listed here pass through unchanged).",
+              "additionalProperties": true,
+              "properties": {
+                "unit_CAPEX": {
+                  "type": "number",
+                  "description": "Overrides investment cost per unit size (from meme investment_per_capacity)."
+                },
+                "OPEX_fixed": {
+                  "type": "number",
+                  "description": "Overrides fixed annual OPEX fraction (from meme fixed_om)."
+                },
+                "OPEX_variable": {
+                  "type": "number",
+                  "description": "Overrides variable OPEX (from meme variable_om)."
+                },
+                "lifetime": {
+                  "type": "number",
+                  "description": "Overrides lifetime in years (from meme lifetime)."
+                },
+                "discount_rate": {
+                  "type": "number",
+                  "description": "Overrides the component discount rate (from meme interest_rate)."
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

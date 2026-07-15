@@ -1,0 +1,2868 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/enerplanet/meme/docs/calliope_schema.json",
+  "title": "Calliope 0.7 model definition",
+  "description": "JSON Schema (draft 2020-12) for the complete Calliope v0.7 YAML model definition and run configuration: `import`, `config` (init/build/solve), `data_definitions` (formerly `parameters`), `techs`, `nodes`, `templates`, `data_tables`, `overrides`, `scenarios` and custom math. Converted from the machine-readable schemas shipped with Calliope v0.7.0.dev7 (github.com/calliope-project/calliope, tag v0.7.0.dev7, commit 2c8fc10db7abbd13014e591856dce6f9573ba2ab): src/calliope/schemas/{config_schema,model_def_schema,dimension_data_schema,data_table_schema,math_schema}.py, src/calliope/math/{base,milp,operate,spores,storage_inter_cluster}.yaml (all base-math parameter/lookup definitions, defaults and units), src/calliope/config/protected_parameters.yaml, src/calliope/io.py (`import` key resolution) and src/calliope/preprocess/model_definition.py (`templates`/`overrides`/`scenarios` handling). Cross-checked against the official documentation at https://calliope.readthedocs.io/en/latest/ (built from v0.7.0.dev7). Parameter titles, descriptions and units are additionally sourced from the earlier machine-readable YAML JSON-Schemas at tags v0.7.0.dev5/v0.7.0.dev6 (src/calliope/config/{model_def_schema,config_schema,data_table_schema}.yaml). Properties flagged `deprecated: true` are earlier v0.7.0-dev spellings (dev5/dev6 era, e.g. `config.build.mode`, `config.init.time_subset`, top-level `parameters`) kept for backwards compatibility and documentation completeness; v0.7.0.dev7 itself rejects them in favour of the replacement named in each description. Where an upstream default is an IEEE special value, the YAML float literal ('.inf', '-.inf' or '.nan') is given as the default, and the affected properties additionally accept that string spelling (see $defs/nonFiniteFloat), so defaults validate against their own subschema and JSON carriers can express the value — JSON itself cannot represent Infinity/NaN. In real YAML models the literals are written unquoted and parse to genuine floats. Keys of user-named entries (techs, nodes, templates, overrides, scenarios, data tables, parameters, math components, dimensions) must match the upstream identifier pattern ^[^_^\\d][\\w]*$ (a single snake_case word not starting with an underscore or digit). The `$defs/mathDefinition` subschema also describes standalone custom math YAML files referenced from `config.init.math_paths`. Keys containing dots are Calliope dot-notation shorthand for nested mappings (expanded by the rich-YAML reader before validation) and are accepted throughout via the `$defs/dotNotationEntry` pattern.",
+  "type": "object",
+  "additionalProperties": false,
+  "$defs": {
+    "dataValue": {
+      "type": [
+        "string",
+        "boolean",
+        "number",
+        "null"
+      ],
+      "description": "Zero-dimensional (i.e. un-indexed) data value for a parameter or lookup. Numbers may be integer or float (YAML `.inf`/`.nan` literals are allowed by Calliope)."
+    },
+    "dotNotationEntry": {
+      "description": "Dot-notation flattened key-value pair. Calliope's rich-YAML reader (`AttrDict`) expands keys containing dots into nested mappings before validation (e.g. `boiler.cost_flow_cap.data: 43.1` is equivalent to `boiler: {cost_flow_cap: {data: 43.1}}`), so such keys are legal anywhere in the model definition YAML and carry any value that would be legal at the expanded location."
+    },
+    "indexedParamData": {
+      "description": "Parameter / lookup value(s). If data is one value, it will be applied to all dimension members (requires `config.init.broadcast_input_data: true` when the number of values does not match the number of index items). If a list, it must be the same length as the index array.",
+      "oneOf": [
+        {
+          "$ref": "#/$defs/dataValue"
+        },
+        {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/dataValue"
+          }
+        }
+      ]
+    },
+    "indexedParamIndex": {
+      "description": "Model dimension members to apply the data value(s) to. If an array of arrays, sub-arrays must have the same length as the number of `dims`.",
+      "oneOf": [
+        {
+          "type": [
+            "string",
+            "integer",
+            "number"
+          ]
+        },
+        {
+          "type": "array",
+          "uniqueItems": true,
+          "minItems": 1,
+          "items": {
+            "oneOf": [
+              {
+                "type": [
+                  "string",
+                  "integer",
+                  "number"
+                ]
+              },
+              {
+                "type": "array",
+                "uniqueItems": true,
+                "minItems": 1,
+                "items": {
+                  "type": [
+                    "string",
+                    "integer",
+                    "number"
+                  ]
+                }
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "indexedParamDims": {
+      "description": "Model dimension(s) over which the data is indexed. Must be the same length as the sub-arrays of `index`; if `index` does not have any sub-arrays or is simply a single value, `dims` must be of length 1.",
+      "oneOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "array",
+          "uniqueItems": true,
+          "minItems": 1,
+          "items": {
+            "type": "string"
+          }
+        }
+      ]
+    },
+    "indexedParam": {
+      "type": "object",
+      "title": "Indexed data definition",
+      "description": "Indexed (dimensioned) parameter or lookup definition in `data`/`index`/`dims` form (upstream `IndexedData`).",
+      "additionalProperties": false,
+      "required": [
+        "data",
+        "index",
+        "dims"
+      ],
+      "properties": {
+        "data": {
+          "$ref": "#/$defs/indexedParamData"
+        },
+        "index": {
+          "$ref": "#/$defs/indexedParamIndex"
+        },
+        "dims": {
+          "$ref": "#/$defs/indexedParamDims"
+        }
+      }
+    },
+    "techDims": {
+      "description": "Model dimension(s) over which a tech-/node-level parameter is indexed. Must be the same length as the sub-arrays of `index` (if `index` does not have any sub-arrays or is simply a single value, `dims` must be of length 1). Cannot include `techs` or `nodes` as these are added automatically in preprocessing (upstream `IndexedTechNodeParam.check_dims`).",
+      "oneOf": [
+        {
+          "type": "string",
+          "not": {
+            "enum": [
+              "techs",
+              "nodes"
+            ]
+          }
+        },
+        {
+          "type": "array",
+          "uniqueItems": true,
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "not": {
+              "enum": [
+                "techs",
+                "nodes"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "techCostDims": {
+      "description": "Model dimension(s) over which a tech-level cost parameter is indexed. Must be the same length as the sub-arrays of `index`. Cannot include `techs` or `nodes` (added automatically in preprocessing) and must include `costs`, either as the string itself or as an element of the array (upstream `TechCostDims`).",
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": [
+            "costs"
+          ]
+        },
+        {
+          "type": "array",
+          "uniqueItems": true,
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "not": {
+              "enum": [
+                "techs",
+                "nodes"
+              ]
+            }
+          },
+          "contains": {
+            "const": "costs"
+          }
+        }
+      ]
+    },
+    "techIndexedParam": {
+      "type": "object",
+      "title": "Indexed techs/nodes data definition",
+      "description": "Indexed tech-/node-level data with any dtype. Same as `indexedParam` but `dims` may not contain `techs` or `nodes` (upstream `IndexedTechNodeParam`).",
+      "additionalProperties": false,
+      "required": [
+        "data",
+        "index",
+        "dims"
+      ],
+      "properties": {
+        "data": {
+          "$ref": "#/$defs/indexedParamData"
+        },
+        "index": {
+          "$ref": "#/$defs/indexedParamIndex"
+        },
+        "dims": {
+          "$ref": "#/$defs/techDims"
+        }
+      }
+    },
+    "techParamValue": {
+      "description": "Any user-defined or built-in tech-/node-level entry: an un-indexed scalar value, a non-empty list of scalar values, or an indexed `data`/`index`/`dims` definition (upstream `DimensionData.__pydantic_extra__`: `IndexedTechNodeParam | DataValue | NonEmptyList[DataValue]`).",
+      "oneOf": [
+        {
+          "$ref": "#/$defs/dataValue"
+        },
+        {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/dataValue"
+          }
+        },
+        {
+          "$ref": "#/$defs/techIndexedParam"
+        }
+      ]
+    },
+    "techParamNullNumber": {
+      "description": "Numeric tech-/node-level parameter: null, a number, or an indexed definition with null/numeric data whose `dims` exclude `techs`/`nodes` (upstream dev5/dev6 `TechParamNullNumber`; permissive extra-field in the dev7 pydantic schema).",
+      "oneOf": [
+        {
+          "type": [
+            "null",
+            "number"
+          ]
+        },
+        {
+          "type": "object",
+          "description": "Indexed tech-level parameter with null/numeric dtype.",
+          "additionalProperties": false,
+          "required": [
+            "data",
+            "index",
+            "dims"
+          ],
+          "properties": {
+            "data": {
+              "description": "Parameter value(s). If data is one value, it will be applied to all dimension members. If a list, it must be the same length as the index array.",
+              "oneOf": [
+                {
+                  "type": [
+                    "null",
+                    "number"
+                  ]
+                },
+                {
+                  "type": "array",
+                  "minItems": 1,
+                  "items": {
+                    "type": [
+                      "null",
+                      "number"
+                    ]
+                  }
+                }
+              ]
+            },
+            "index": {
+              "$ref": "#/$defs/indexedParamIndex"
+            },
+            "dims": {
+              "$ref": "#/$defs/techDims"
+            }
+          }
+        }
+      ]
+    },
+    "techCostParam": {
+      "description": "Cost parameter: null, a plain number, or an indexed definition with null/numeric data whose `dims` must include `costs` and exclude `techs`/`nodes` (upstream dev5/dev6 `TechCostNullNumber`). The cost class (e.g. `monetary`, `co2`) is given via `index` when the `costs` dimension is used.",
+      "x-type": "float",
+      "oneOf": [
+        {
+          "type": [
+            "null",
+            "number"
+          ]
+        },
+        {
+          "type": "object",
+          "description": "Indexed tech-level cost.",
+          "additionalProperties": false,
+          "required": [
+            "data",
+            "index",
+            "dims"
+          ],
+          "properties": {
+            "data": {
+              "description": "Cost value(s). If data is one value, it will be applied to all dimension members. If a list, it must be the same length as the index array.",
+              "oneOf": [
+                {
+                  "type": [
+                    "null",
+                    "number"
+                  ]
+                },
+                {
+                  "type": "array",
+                  "minItems": 1,
+                  "items": {
+                    "type": [
+                      "null",
+                      "number"
+                    ]
+                  }
+                }
+              ]
+            },
+            "index": {
+              "$ref": "#/$defs/indexedParamIndex"
+            },
+            "dims": {
+              "$ref": "#/$defs/techCostDims"
+            }
+          }
+        }
+      ]
+    },
+    "activeDef": {
+      "type": "boolean",
+      "title": "Activated component.",
+      "description": "If false, the model component (tech/node/link) will not make its way through to preprocessing. If a node, links between this node and others, via transmission technologies, will also be deactivated. `active` is protected: it can only be set in the YAML model definition, not loaded from file via `data_tables`.",
+      "default": true
+    },
+    "templateCall": {
+      "type": "string",
+      "pattern": "^[^_^\\d][\\w]*$",
+      "title": "Template call.",
+      "description": "Name of an entry in the top-level `templates` section from which this component inherits all keys (local keys take precedence over inherited ones). Resolved and removed by the preprocessor (`TemplateSolver`) before schema validation. Templates may themselves contain a `template` key to inherit from another template (circular references are rejected). `template` is protected: it can only be used in the YAML model definition, not loaded from file via `data_tables`."
+    },
+    "carrierList": {
+      "description": "A single carrier name, or a list of two or more unique carrier names.",
+      "oneOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "array",
+          "uniqueItems": true,
+          "minItems": 2,
+          "items": {
+            "type": "string"
+          }
+        }
+      ]
+    },
+    "techDef": {
+      "type": "object",
+      "title": "Technology dimension data",
+      "description": "A named technology (upstream `CalliopeTech`). All base-math parameters and lookups from src/calliope/math/{base,milp,operate,spores}.yaml are enumerated explicitly; any other key is accepted as a user-defined parameter/lookup (scalar, list, or indexed `data`/`index`/`dims` form). Per the base math: `conversion` techs require `carrier_in` and `carrier_out`; `demand` techs require `carrier_in`; `storage` techs require `carrier_in` and `carrier_out`; `supply` techs require `carrier_out`; `transmission` techs require `carrier_in`, `carrier_out`, `link_from` and `link_to` (links with missing/deactivated `link_from`/`link_to` nodes are deactivated with a warning).",
+      "properties": {
+        "active": {
+          "$ref": "#/$defs/activeDef"
+        },
+        "template": {
+          "$ref": "#/$defs/templateCall"
+        },
+        "base_tech": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "conversion",
+            "demand",
+            "storage",
+            "supply",
+            "transmission",
+            null
+          ],
+          "default": null,
+          "x-type": "str",
+          "title": "Abstract base technology name.",
+          "description": "One of the abstract base classes, from which some initial parameter defaults will be derived and with which certain base math will be triggered."
+        },
+        "name": {
+          "type": [
+            "null",
+            "string"
+          ],
+          "default": ".nan",
+          "x-resample_method": "first",
+          "x-type": "str",
+          "title": "Technology long-name.",
+          "description": "Long name of technology, which can be used in post-processing (e.g., plotting)."
+        },
+        "color": {
+          "type": [
+            "null",
+            "string"
+          ],
+          "default": ".nan",
+          "x-type": "str",
+          "title": "Technology color.",
+          "description": "Color that can be used when plotting results. If not provided (or only partially provided across techs), Calliope fills missing values from a default palette."
+        },
+        "carrier_in": {
+          "$ref": "#/$defs/carrierList",
+          "title": "Consumed carrier(s).",
+          "description": "Carrier(s) consumed by this technology. Only `transmission`, `conversion`, `storage`, and `demand` technologies can define this parameter. Internally a boolean lookup pivoted onto the `carriers` dimension (default false).",
+          "x-lookup-dtype": "bool"
+        },
+        "carrier_out": {
+          "$ref": "#/$defs/carrierList",
+          "title": "Produced carrier(s).",
+          "description": "Carrier(s) produced by this technology. Only `transmission`, `conversion`, `storage`, and `supply` technologies can define this parameter. Internally a boolean lookup pivoted onto the `carriers` dimension (default false).",
+          "x-lookup-dtype": "bool"
+        },
+        "carrier_export": {
+          "$ref": "#/$defs/carrierList",
+          "title": "Exportable carrier(s).",
+          "description": "Carrier(s) produced by this technology that can be exported out of the system boundaries without having to go to a pre-defined `sink` (i.e., via a `demand` technology). Must be a subset of `carrier_out`. Internally a boolean lookup pivoted onto the `carriers` dimension (default false).",
+          "x-lookup-dtype": "bool"
+        },
+        "link_from": {
+          "type": "string",
+          "title": "Starting node.",
+          "description": "For `transmission` technologies only: name of the node at which the link starts. The resulting link technology will have `flow_out` == `import` and `flow_in` == `export` at this node. (Named `from` in v0.7.0.dev5 and earlier.)"
+        },
+        "link_to": {
+          "type": "string",
+          "title": "Ending node.",
+          "description": "For `transmission` technologies only: name of the node at which the link ends. The resulting link technology will have `flow_out` == `import` and `flow_in` == `export` at this node. (Named `to` in v0.7.0.dev5 and earlier.)"
+        },
+        "cap_method": {
+          "type": "string",
+          "enum": [
+            "continuous",
+            "integer"
+          ],
+          "default": "continuous",
+          "x-resample_method": "first",
+          "x-type": "str",
+          "title": "Capacity method switch.",
+          "description": "One of 'continuous' (LP model) or 'integer' (integer/binary unit capacity). Setting to `integer` triggers the MILP math (`config.init.extra_math: [milp]` or automatic inclusion, depending on model configuration)."
+        },
+        "integer_dispatch": {
+          "type": "boolean",
+          "default": false,
+          "x-resample_method": "first",
+          "title": "Integer dispatch switch.",
+          "description": "When true, will limit per-timestep out/inflows relative to the number of units of a technology that are in operation. Requires `cap_method=integer`."
+        },
+        "include_storage": {
+          "type": "boolean",
+          "default": false,
+          "x-resample_method": "first",
+          "title": "Storage method switch.",
+          "description": "When true, math will be triggered to allow discontinuous carrier inflow and outflows across timesteps."
+        },
+        "force_async_flow": {
+          "type": "boolean",
+          "default": false,
+          "x-resample_method": "first",
+          "title": "Force asynchronous out/inflow.",
+          "description": "If True, non-zero `flow_out` and `flow_in` cannot both occur in the same timestep."
+        },
+        "cyclic_storage": {
+          "type": "boolean",
+          "default": true,
+          "title": "Cyclic storage switch.",
+          "description": "If true, link storage levels in the last model timestep with the first model timestep. `storage_inter_cluster` custom math must be included if using time clustering and setting this to `true`. This must be set to `false` if using `operate` mode."
+        },
+        "one_way": {
+          "type": "boolean",
+          "default": false,
+          "x-resample_method": "first",
+          "title": "One way transmission.",
+          "description": "Forces a transmission technology to only move flow in one direction on the link, i.e. from `link_from` to `link_to`."
+        },
+        "distance": {
+          "type": [
+            "null",
+            "number"
+          ],
+          "default": 1.0,
+          "x-resample_method": "mean",
+          "x-unit": "distance",
+          "title": "Distance spanned by link.",
+          "description": "Used for `..._per_distance` constraints. If not defined, it will be automatically derived from latitude/longitude of nodes in a link, in the unit given by `config.init.distance_unit`."
+        },
+        "lifetime": {
+          "oneOf": [
+            {
+              "type": [
+                "null",
+                "number"
+              ]
+            },
+            {
+              "$ref": "#/$defs/nonFiniteFloat"
+            }
+          ],
+          "default": ".inf",
+          "x-resample_method": "mean",
+          "x-unit": "years",
+          "title": "Technology lifetime",
+          "description": "Must be defined if fixed capital costs are defined. A reasonable value for many technologies is around 20-25 years."
+        },
+        "flow_cap": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/techParamNullNumber"
+            },
+            {
+              "$ref": "#/$defs/nonFiniteFloat"
+            }
+          ],
+          "default": ".inf",
+          "x-operate-param": true,
+          "x-unit": "power",
+          "title": "Rated flow capacity.",
+          "description": "Sets `flow_cap` to a parameter in operate mode. NOTE: this parameter cannot be used in `base` mode as it clashes with the decision variable of the same name."
+        },
+        "link_flow_cap": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/techParamNullNumber"
+            },
+            {
+              "$ref": "#/$defs/nonFiniteFloat"
+            }
+          ],
+          "default": ".inf",
+          "x-operate-param": true,
+          "x-unit": "power",
+          "title": "Rated link flow capacity.",
+          "description": "Sets `link_flow_cap` to a parameter in operate mode. NOTE: this parameter cannot be used in `base` mode as it clashes with the decision variable of the same name."
+        },
+        "flow_cap_max": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/techParamNullNumber"
+            },
+            {
+              "$ref": "#/$defs/nonFiniteFloat"
+            }
+          ],
+          "default": ".inf",
+          "x-unit": "power",
+          "title": "Maximum rated flow capacity.",
+          "description": "Limits `flow_cap` to a maximum."
+        },
+        "flow_cap_max_systemwide": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/techParamNullNumber"
+            },
+            {
+              "$ref": "#/$defs/nonFiniteFloat"
+            }
+          ],
+          "default": ".inf",
+          "x-unit": "power or power/unit",
+          "title": "System-wide maximum rated flow capacity.",
+          "description": "Limits the sum of `flow_cap` over all nodes in the model to a maximum. If `cap_method=integer`, this will be scaled by the number of integer units of a technology purchased."
+        },
+        "flow_cap_min": {
+          "$ref": "#/$defs/techParamNullNumber",
+          "default": 0,
+          "x-unit": "power or power/unit",
+          "title": "Minimum rated flow capacity.",
+          "description": "Limits `flow_cap` to a minimum. NOTE: this will _force_ `flow_cap` to a minimum value unless `cap_method` is set to `integer` (in which case the technology can still not be purchased at all). If `cap_method=integer`, this will be scaled by the number of integer units of a technology purchased."
+        },
+        "flow_cap_min_systemwide": {
+          "$ref": "#/$defs/techParamNullNumber",
+          "default": 0,
+          "x-unit": "power",
+          "title": "System-wide minimum rated flow capacity.",
+          "description": "Limits the sum of `flow_cap` over all nodes in the model to a minimum. NOTE: this will _force_ the sum of `flow_cap` to a minimum value unless `cap_method` is set to `integer`."
+        },
+        "flow_cap_per_unit": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/techParamNullNumber"
+            },
+            {
+              "$ref": "#/$defs/nonFiniteFloat"
+            }
+          ],
+          "default": ".inf",
+          "x-unit": "power/unit",
+          "title": "Flow capacity per purchased unit",
+          "description": "Set the capacity of each integer unit of a technology purchased, if `cap_method` is `integer`. (Default was `.nan` in v0.7.0.dev6 and earlier.)"
+        },
+        "flow_cap_per_storage_cap_min": {
+          "$ref": "#/$defs/techParamNullNumber",
+          "default": 0,
+          "x-unit": "hour^-1",
+          "title": "Minimum flow capacity per storage capacity",
+          "description": "Ratio of minimum charge/discharge (kW) for a given storage capacity (kWh)."
+        },
+        "flow_cap_per_storage_cap_max": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/techParamNullNumber"
+            },
+            {
+              "$ref": "#/$defs/nonFiniteFloat"
+            }
+          ],
+          "default": ".inf",
+          "x-unit": "hour^-1",
+          "title": "Maximum flow capacity per storage capacity",
+          "description": "Ratio of maximum charge/discharge (kW) for a given storage capacity (kWh)."
+        },
+        "flow_out_min_relative": {
+          "$ref": "#/$defs/techParamNullNumber",
+          "default": 0,
+          "x-resample_method": "mean",
+          "x-unit": "fraction",
+          "title": "Minimum outflow",
+          "description": "Set to a value between 0 and 1 to force minimum `flow_out` as a fraction of the technology rated capacity. If non-zero and `cap_method` is `continuous`, this will force the technology to operate above its minimum value at every timestep."
+        },
+        "flow_in_eff": {
+          "$ref": "#/$defs/techParamNullNumber",
+          "default": 1.0,
+          "x-resample_method": "mean",
+          "x-unit": "fraction",
+          "title": "Inflow efficiency",
+          "description": "Conversion efficiency from `source`/`flow_in` (tech dependent) into the technology. Set as value between 1 (no loss) and 0 (all lost)."
+        },
+        "flow_in_eff_per_distance": {
+          "$ref": "#/$defs/techParamNullNumber",
+          "default": 1.0,
+          "x-resample_method": "mean",
+          "x-unit": "distance^-1",
+          "title": "Inflow (i.e., export from node) efficiency per distance of transmission links.",
+          "description": "Total link efficiency will be calculated as flow_in_eff * flow_in_eff_per_distance^distance. Set as value between 1 (no loss) and 0 (all lost)."
+        },
+        "flow_out_eff": {
+          "$ref": "#/$defs/techParamNullNumber",
+          "default": 1.0,
+          "x-resample_method": "mean",
+          "x-unit": "fraction",
+          "title": "Outflow efficiency",
+          "description": "Conversion efficiency from the technology to `sink`/`flow_out` (tech dependent). Set as value between 1 (no loss) and 0 (all lost)."
+        },
+        "flow_out_eff_per_distance": {
+          "$ref": "#/$defs/techParamNullNumber",
+          "default": 1.0,
+          "x-resample_method": "mean",
+          "x-unit": "distance^-1",
+          "title": "Outflow (i.e., import from node) efficiency per distance of transmission links.",
+          "description": "Total link efficiency will be calculated as flow_out_eff * flow_out_eff_per_distance^distance. Set as value between 1 (no loss) and 0 (all lost)."
+        },
+        "flow_out_parasitic_eff": {
+          "$ref": "#/$defs/techParamNullNumber",
+          "default": 1.0,
+          "x-resample_method": "mean",
+          "x-unit": "fraction",
+          "title": "Plant parasitic efficiency",
+          "description": "Additional losses as flow gets transferred from the plant to the carrier, e.g. due to plant parasitic consumption. Set as value between 1 (no loss) and 0 (all lost)."
+        },
+        "flow_ramping": {
+          "$ref": "#/$defs/techParamNullNumber",
+          "default": 1.0,
+          "x-unit": "fraction/hour",
+          "title": "Ramping rate",
+          "description": "Limit maximum outflow / inflow / outflow - inflow (technology base class dependent) to a fraction of maximum capacity, which increases by that fraction at each timestep."
+        },
+        "export_max": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/techParamNullNumber"
+            },
+            {
+              "$ref": "#/$defs/nonFiniteFloat"
+            }
+          ],
+          "default": ".inf",
+          "x-unit": "power",
+          "title": "Maximum allowed carrier export",
+          "description": "If `carrier_export` is defined, limit the allowed export of produced carrier for a technology."
+        },
+        "export_min": {
+          "$ref": "#/$defs/techParamNullNumber",
+          "default": 0,
+          "x-unit": "power",
+          "title": "Minimum allowed carrier export",
+          "description": "If `carrier_export` is defined, set a lower bound on the amount of produced carrier that _must_ be exported for a technology."
+        },
+        "area_use": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/techParamNullNumber"
+            },
+            {
+              "$ref": "#/$defs/nonFiniteFloat"
+            }
+          ],
+          "default": ".inf",
+          "x-operate-param": true,
+          "x-unit": "area",
+          "title": "Area used.",
+          "description": "Sets `area_use` to a parameter in operate mode. NOTE: this parameter cannot be used in `base` mode as it clashes with the decision variable of the same name."
+        },
+        "area_use_max": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/techParamNullNumber"
+            },
+            {
+              "$ref": "#/$defs/nonFiniteFloat"
+            }
+          ],
+          "default": ".inf",
+          "x-unit": "area",
+          "title": "Maximum usable area.",
+          "description": "If set to a finite value, limits the upper bound of the `area_use` decision variable to this value."
+        },
+        "area_use_min": {
+          "$ref": "#/$defs/techParamNullNumber",
+          "default": 0,
+          "x-unit": "area",
+          "title": "Minimum usable area.",
+          "description": "Limits the lower bound of the `area_use` decision variable to this value."
+        },
+        "area_use_per_flow_cap": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/techParamNullNumber"
+            },
+            {
+              "$ref": "#/$defs/nonFiniteFloat"
+            }
+          ],
+          "default": ".nan",
+          "x-unit": "area/power",
+          "title": "Area use per flow capacity",
+          "description": "If set, forces `area_use` to follow `flow_cap` with the given numerical ratio (e.g. setting to 1.5 means that `area_use == 1.5 * flow_cap`)."
+        },
+        "storage_cap": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/techParamNullNumber"
+            },
+            {
+              "$ref": "#/$defs/nonFiniteFloat"
+            }
+          ],
+          "default": ".inf",
+          "x-operate-param": true,
+          "x-unit": "energy",
+          "title": "Rated storage capacity.",
+          "description": "Sets `storage_cap` to a parameter in operate mode. NOTE: this parameter cannot be used in `base` mode as it clashes with the decision variable of the same name."
+        },
+        "storage_cap_max": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/techParamNullNumber"
+            },
+            {
+              "$ref": "#/$defs/nonFiniteFloat"
+            }
+          ],
+          "default": ".inf",
+          "x-unit": "energy",
+          "title": "Maximum storage capacity.",
+          "description": "Limit upper bound of `storage_cap` decision variable."
+        },
+        "storage_cap_min": {
+          "$ref": "#/$defs/techParamNullNumber",
+          "default": 0,
+          "x-unit": "energy",
+          "title": "Minimum storage capacity.",
+          "description": "Limit lower bound of `storage_cap` decision variable."
+        },
+        "storage_cap_per_unit": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/techParamNullNumber"
+            },
+            {
+              "$ref": "#/$defs/nonFiniteFloat"
+            }
+          ],
+          "default": ".inf",
+          "x-unit": "energy/unit",
+          "title": "Storage capacity per purchased unit.",
+          "description": "Set the storage capacity of each integer unit of a technology purchased. (Default was `.nan` in v0.7.0.dev6 and earlier.)"
+        },
+        "storage_discharge_depth": {
+          "$ref": "#/$defs/techParamNullNumber",
+          "default": 0,
+          "x-resample_method": "mean",
+          "x-unit": "fraction",
+          "title": "Storage depth of discharge.",
+          "description": "Defines the minimum level of storage state of charge, as a fraction of total storage capacity."
+        },
+        "storage_initial": {
+          "$ref": "#/$defs/techParamNullNumber",
+          "default": 0,
+          "x-unit": "fraction",
+          "title": "Initial storage level.",
+          "description": "Set stored flow in device at the first timestep, as a fraction of total storage capacity."
+        },
+        "storage_loss": {
+          "$ref": "#/$defs/techParamNullNumber",
+          "default": 0,
+          "x-resample_method": "mean",
+          "x-unit": "fraction/hour",
+          "title": "Storage loss rate",
+          "description": "Rate of storage loss per hour, used to calculate lost stored flow as `(1 - storage_loss)^hours_per_timestep`."
+        },
+        "purchased_units": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/techParamNullNumber"
+            },
+            {
+              "$ref": "#/$defs/nonFiniteFloat"
+            }
+          ],
+          "default": ".inf",
+          "x-operate-param": true,
+          "x-unit": "integer",
+          "title": "Number of purchased units.",
+          "description": "Sets `purchased_units` to a parameter in operate mode. NOTE: this parameter cannot be used in `base` mode as it clashes with the decision variable of the same name."
+        },
+        "purchased_units_min": {
+          "$ref": "#/$defs/techParamNullNumber",
+          "default": 0,
+          "x-unit": "integer",
+          "title": "Minimum number of purchased units",
+          "description": "Limits the lower bound of units purchased if `cap_method` is `integer`."
+        },
+        "purchased_units_max": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/techParamNullNumber"
+            },
+            {
+              "$ref": "#/$defs/nonFiniteFloat"
+            }
+          ],
+          "default": ".inf",
+          "x-unit": "integer",
+          "title": "Maximum number of purchased units.",
+          "description": "Limits the upper bound of units purchased if `cap_method` is `integer`. If set to `1`, will effectively set the `purchased_units` to a binary decision variable."
+        },
+        "purchased_units_min_systemwide": {
+          "$ref": "#/$defs/techParamNullNumber",
+          "default": 0,
+          "x-unit": "integer",
+          "title": "System-wide minimum installed integer units of a technology.",
+          "description": "Sets the lower bound of the sum across all nodes of the decision variable `units` for a particular technology."
+        },
+        "purchased_units_max_systemwide": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/techParamNullNumber"
+            },
+            {
+              "$ref": "#/$defs/nonFiniteFloat"
+            }
+          ],
+          "default": ".inf",
+          "x-unit": "integer",
+          "title": "System-wide maximum installed integer units of a technology.",
+          "description": "Sets the upper bound of the sum across all nodes of the decision variable `units` for a particular technology."
+        },
+        "sink_unit": {
+          "type": "string",
+          "enum": [
+            "absolute",
+            "per_area",
+            "per_cap"
+          ],
+          "default": "absolute",
+          "x-resample_method": "first",
+          "x-type": "str",
+          "title": "Sink unit",
+          "description": "Sets the unit of `Sink` to either `absolute` (unit: `energy`), `per_area` (unit: `energy/area`), or `per_cap` (unit: `energy/power`). `per_area` uses the `area_use` decision variable to scale the sink while `per_cap` uses the `flow_cap` decision variable."
+        },
+        "sink_use_min": {
+          "$ref": "#/$defs/techParamNullNumber",
+          "default": 0,
+          "x-resample_method": "sum",
+          "x-unit": "energy | energy/power | energy/area",
+          "title": "Minimum bound on sink.",
+          "description": "Minimum sink use to remove a carrier from the system (e.g., electricity demand, transport distance). Unit dictated by `sink_unit`."
+        },
+        "sink_use_max": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/techParamNullNumber"
+            },
+            {
+              "$ref": "#/$defs/nonFiniteFloat"
+            }
+          ],
+          "default": ".inf",
+          "x-resample_method": "sum",
+          "x-unit": "energy | energy/power | energy/area",
+          "title": "Maximum bound on sink.",
+          "description": "Maximum sink use to remove a carrier from the system (e.g., electricity demand, transport distance). Unit dictated by `sink_unit`."
+        },
+        "sink_use_equals": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/techParamNullNumber"
+            },
+            {
+              "$ref": "#/$defs/nonFiniteFloat"
+            }
+          ],
+          "default": ".nan",
+          "x-resample_method": "sum",
+          "x-unit": "energy | energy/power | energy/area",
+          "title": "Required sink use.",
+          "description": "Required amount of carrier removal from the system (e.g., electricity demand, transport distance). Unit dictated by `sink_unit`."
+        },
+        "source_unit": {
+          "type": "string",
+          "enum": [
+            "absolute",
+            "per_area",
+            "per_cap"
+          ],
+          "default": "absolute",
+          "x-resample_method": "first",
+          "x-type": "str",
+          "title": "Source unit",
+          "description": "Sets the unit of `Source` to either `absolute` (unit: `energy`), `per_area` (unit: `energy/area`), or `per_cap` (unit: `energy/power`). `per_area` uses the `area_use` decision variable to scale the source while `per_cap` uses the `flow_cap` decision variable."
+        },
+        "source_cap_equals_flow_cap": {
+          "type": "boolean",
+          "default": false,
+          "x-resample_method": "first",
+          "title": "Source capacity equals flow capacity.",
+          "description": "If true, the decision variables `source_cap` and `flow_cap` are forced to equal one another."
+        },
+        "source_eff": {
+          "$ref": "#/$defs/techParamNullNumber",
+          "default": 1.0,
+          "x-resample_method": "mean",
+          "x-unit": "fraction",
+          "title": "Source inflow efficiency",
+          "description": "Conversion efficiency from the technology from `source`. Set as value between 1 (no loss) and 0 (all lost)."
+        },
+        "source_use_min": {
+          "$ref": "#/$defs/techParamNullNumber",
+          "default": 0,
+          "x-resample_method": "sum",
+          "x-unit": "energy | energy/power | energy/area",
+          "title": "Minimum bound on source.",
+          "description": "Minimum source use to add a carrier from the system (e.g., biofuel, coal, rainfall, wind flow). Unit dictated by `source_unit`."
+        },
+        "source_use_max": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/techParamNullNumber"
+            },
+            {
+              "$ref": "#/$defs/nonFiniteFloat"
+            }
+          ],
+          "default": ".inf",
+          "x-resample_method": "sum",
+          "x-unit": "energy | energy/power | energy/area",
+          "title": "Maximum bound on source.",
+          "description": "Maximum source use to add a carrier from the system (e.g., biofuel, coal, rainfall, wind flow). Unit dictated by `source_unit`."
+        },
+        "source_use_equals": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/techParamNullNumber"
+            },
+            {
+              "$ref": "#/$defs/nonFiniteFloat"
+            }
+          ],
+          "default": ".nan",
+          "x-resample_method": "sum",
+          "x-unit": "energy | energy/power | energy/area",
+          "title": "Required source use.",
+          "description": "Required amount of carrier addition to the system (e.g., biofuel, coal, rainfall, wind flow). Unit dictated by `source_unit`."
+        },
+        "source_cap": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/techParamNullNumber"
+            },
+            {
+              "$ref": "#/$defs/nonFiniteFloat"
+            }
+          ],
+          "default": ".inf",
+          "x-operate-param": true,
+          "x-unit": "power",
+          "title": "Installed source consumption capacity.",
+          "description": "Sets `source_cap` to a parameter in operate mode. NOTE: this parameter cannot be used in `base` mode as it clashes with the decision variable of the same name."
+        },
+        "source_cap_max": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/techParamNullNumber"
+            },
+            {
+              "$ref": "#/$defs/nonFiniteFloat"
+            }
+          ],
+          "default": ".inf",
+          "x-resample_method": "mean",
+          "x-unit": "power",
+          "title": "Maximum installed source consumption capacity.",
+          "description": "Upper limit on `source_cap` decision variable."
+        },
+        "source_cap_min": {
+          "$ref": "#/$defs/techParamNullNumber",
+          "default": 0,
+          "x-resample_method": "mean",
+          "x-unit": "power",
+          "title": "Minimum installed source consumption capacity",
+          "description": "Lower limit on `source_cap` decision variable."
+        },
+        "cost_flow_cap": {
+          "$ref": "#/$defs/techCostParam",
+          "default": 0,
+          "x-unit": "cost/power",
+          "title": "Cost of flow capacity.",
+          "description": "Cost per unit of the decision variable `flow_cap`."
+        },
+        "cost_flow_cap_per_distance": {
+          "$ref": "#/$defs/techCostParam",
+          "default": 0,
+          "x-unit": "cost/(power*distance)",
+          "title": "Cost of flow capacity, per unit distance",
+          "description": "Cost per unit of the decision variable `flow_cap` and per unit distance of a transmission link. Applied to transmission links only."
+        },
+        "cost_purchase": {
+          "$ref": "#/$defs/techCostParam",
+          "default": 0,
+          "x-unit": "cost/unit",
+          "title": "Purchase cost.",
+          "description": "Cost applied to the variable `purchased_units`. Requires the parameter `cap_method` to be `integer`."
+        },
+        "cost_purchase_per_distance": {
+          "$ref": "#/$defs/techCostParam",
+          "default": 0,
+          "x-unit": "cost/(unit*distance)",
+          "title": "Purchase cost per unit distance for transmission techs.",
+          "description": "Cost applied if the binary variable `purchased` is 1 or per unit of the integer variable `units`. Requires the parameter `cap_method` to be `integer`."
+        },
+        "cost_export": {
+          "$ref": "#/$defs/techCostParam",
+          "default": 0,
+          "x-resample_method": "mean",
+          "x-unit": "cost/energy",
+          "title": "Carrier export cost.",
+          "description": "Cost per unit of `flow_export` in each timestep. Usually used in the negative sense, as a subsidy."
+        },
+        "cost_interest_rate": {
+          "$ref": "#/$defs/techCostParam",
+          "default": 0,
+          "x-unit": "fraction",
+          "title": "Interest rate.",
+          "description": "Used when computing levelized costs and technology depreciation_rate (relative to lifetime)."
+        },
+        "cost_om_annual": {
+          "$ref": "#/$defs/techCostParam",
+          "default": 0,
+          "x-unit": "cost/power",
+          "title": "Annual O&M costs",
+          "description": "Annual costs applied per unit `flow_cap`. These costs are not subject to being recalculated relative to technology lifetime, only scaled to reflect the fraction of one year that the model represents (e.g., 7 days ~= 0.02 of a year)."
+        },
+        "cost_om_annual_investment_fraction": {
+          "$ref": "#/$defs/techCostParam",
+          "default": 0,
+          "x-unit": "fraction/total investment",
+          "title": "Fractional annual O&M costs.",
+          "description": "Add an additional cost to total investment costs (except `cost_om_annual`) that is a fraction of that total. Warning: the sum of all investment costs includes not just those associated with `flow_cap` but also others like those associated with `area_use`."
+        },
+        "cost_flow_in": {
+          "$ref": "#/$defs/techCostParam",
+          "default": 0,
+          "x-resample_method": "mean",
+          "x-unit": "cost/energy",
+          "title": "Carrier inflow cost.",
+          "description": "Cost per unit of `flow_in` in each timestep. Also used as the cost per unit of `source_use` in `supply` technologies."
+        },
+        "cost_flow_out": {
+          "$ref": "#/$defs/techCostParam",
+          "default": 0,
+          "x-resample_method": "mean",
+          "x-unit": "cost/energy",
+          "title": "Carrier outflow cost",
+          "description": "Cost per unit of `flow_out` in each timestep."
+        },
+        "cost_area_use": {
+          "$ref": "#/$defs/techCostParam",
+          "default": 0,
+          "x-unit": "cost/area",
+          "title": "Cost of area use.",
+          "description": "Cost per unit `area_use`."
+        },
+        "cost_source_cap": {
+          "$ref": "#/$defs/techCostParam",
+          "default": 0,
+          "x-unit": "cost/power",
+          "title": "Cost of source flow capacity.",
+          "description": "Cost per unit `source_cap`."
+        },
+        "cost_storage_cap": {
+          "$ref": "#/$defs/techCostParam",
+          "default": 0,
+          "x-unit": "cost/energy",
+          "title": "Cost of storage capacity.",
+          "description": "Cost per unit `storage_cap`, i.e., the maximum available capacity of the storage technology's \"reservoir\"."
+        },
+        "cost_depreciation_rate": {
+          "$ref": "#/$defs/techCostParam",
+          "default": 1,
+          "x-unit": "fraction",
+          "title": "Depreciation rate.",
+          "description": "Applied to \"annualise\" investment costs so they are comparable to variable costs. If not provided, this will be calculated using technology `lifetime` and `cost_interest_rate`."
+        }
+      },
+      "patternProperties": {
+        "^(cost_[\\w]+)$": {
+          "$ref": "#/$defs/techCostParam"
+        },
+        "^[^_^\\d][\\w]*(\\.[\\w]+)+$": {
+          "$ref": "#/$defs/dotNotationEntry"
+        }
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/techParamValue"
+      }
+    },
+    "nodeTechs": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "title": "Technologies at this node.",
+      "description": "Technologies present at this node, and optional node-specific overrides of any technology data (upstream `CalliopeNode.techs`: `None | dict[AttrStr, None | dict[AttrStr, DataValue | dict]]`). A null value means the tech is placed at the node with no overrides. Transmission technologies must NOT be listed here; they are assigned to nodes automatically based on their `link_from`/`link_to` keys.",
+      "patternProperties": {
+        "^[^_^\\d][\\w]*$": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/techDef"
+            }
+          ]
+        },
+        "^[^_^\\d][\\w]*(\\.[\\w]+)+$": {
+          "$ref": "#/$defs/dotNotationEntry"
+        }
+      },
+      "additionalProperties": false
+    },
+    "nodeDef": {
+      "type": "object",
+      "title": "Node dimension data",
+      "description": "A named node (upstream `CalliopeNode`). `latitude` and `longitude` must be defined together (types must match). Any key not enumerated here is accepted as a user-defined node-level parameter/lookup (scalar, list, or indexed `data`/`index`/`dims` form).",
+      "properties": {
+        "active": {
+          "$ref": "#/$defs/activeDef"
+        },
+        "template": {
+          "$ref": "#/$defs/templateCall"
+        },
+        "latitude": {
+          "type": [
+            "null",
+            "number"
+          ],
+          "minimum": -90,
+          "maximum": 90,
+          "default": null,
+          "x-resample_method": "mean",
+          "x-type": "float",
+          "title": "Latitude (WGS84 / EPSG4326).",
+          "description": "Latitude of the node (WGS84 / EPSG4326). Must be defined together with `longitude`."
+        },
+        "longitude": {
+          "type": [
+            "null",
+            "number"
+          ],
+          "minimum": -180,
+          "maximum": 180,
+          "default": null,
+          "x-resample_method": "mean",
+          "x-type": "float",
+          "title": "Longitude (WGS84 / EPSG4326).",
+          "description": "Longitude of the node (WGS84 / EPSG4326). Must be defined together with `latitude`."
+        },
+        "available_area": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/techParamNullNumber"
+            },
+            {
+              "$ref": "#/$defs/nonFiniteFloat"
+            }
+          ],
+          "default": ".inf",
+          "x-resample_method": "mean",
+          "x-unit": "area",
+          "title": "Available area at the given node.",
+          "description": "Available area for resource area use by all technologies at a node. Limits the total area that can be occupied by all technologies at the node which have the `area_use` decision variable activated."
+        },
+        "techs": {
+          "$ref": "#/$defs/nodeTechs"
+        }
+      },
+      "patternProperties": {
+        "^(cost_[\\w]+)$": {
+          "$ref": "#/$defs/techCostParam"
+        },
+        "^[^_^\\d][\\w]*(\\.[\\w]+)+$": {
+          "$ref": "#/$defs/dotNotationEntry"
+        }
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/techParamValue"
+      },
+      "dependentRequired": {
+        "latitude": [
+          "longitude"
+        ],
+        "longitude": [
+          "latitude"
+        ]
+      }
+    },
+    "dataDefinitionValue": {
+      "description": "A model-wide data definition: an un-indexed scalar value or an indexed `data`/`index`/`dims` definition (upstream `CalliopeDataDef`: `dict[AttrStr, DataValue | IndexedData]`).",
+      "oneOf": [
+        {
+          "$ref": "#/$defs/dataValue"
+        },
+        {
+          "$ref": "#/$defs/indexedParam"
+        }
+      ]
+    },
+    "dataDefinitions": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "title": "Model-wide data definitions",
+      "description": "All YAML-based model-wide (not tech-/node-specific) input data definitions (upstream `CalliopeDataDef`; the top-level `parameters` section in v0.7.0.dev6 and earlier). Any base-math or user-defined parameter/lookup may be set here, un-indexed or indexed via `data`/`index`/`dims` (e.g. indexed over `costs` or `timesteps`). Well-known model-wide parameters are enumerated; all other names matching ^[^_^\\d][\\w]*$ are accepted. The names `definition_matrix`, `active`, `template` and `templates` are protected and may not be user-defined.",
+      "properties": {
+        "bigM": {
+          "$ref": "#/$defs/dataDefinitionValue",
+          "default": 1000000,
+          "x-unit": "unitless",
+          "title": "Big M",
+          "description": "BigM is a large value used to define certain optimisation problems. See https://en.wikipedia.org/wiki/Big_M_method for more information. This value should be larger than the largest values that any decision variables can take, but should not be **too** large (i.e., do not set it greater than 3 orders of magnitude above the numeric range of the model). If too large, numerical problems may arise in the optimisation. (Default 1e6 in v0.7.0.dev7 base math; 1e9 in v0.7.0.dev5 and earlier.)"
+        },
+        "objective_cost_weights": {
+          "$ref": "#/$defs/dataDefinitionValue",
+          "default": 1,
+          "x-unit": "unitless",
+          "title": "Objective cost class weights.",
+          "description": "Weightings for cost classes to apply in the objective function. Usually indexed over the `costs` dimension."
+        },
+        "spores_baseline_cost": {
+          "$ref": "#/$defs/dataDefinitionValue",
+          "default": ".inf",
+          "x-unit": "cost",
+          "title": "SPORES baseline cost.",
+          "description": "The baseline optimal cost of the system used to set the maximum cost constraint when undertaking SPORES analysis. This usually only applies to `monetary` cost, but could be applied to other non-SPORES costs as necessary. (SPORES mode math parameter.)"
+        },
+        "spores_slack": {
+          "$ref": "#/$defs/dataDefinitionValue",
+          "default": 0,
+          "x-unit": "fraction",
+          "title": "SPORES cost slack.",
+          "description": "The amount of slack in the maximum cost constraint applied in SPORES mode. This is a fraction that is applied to the baseline cost, e.g., `0.1` would be used to set a maximum cost constraint of `spores_baseline_cost * 1.1`. (SPORES mode math parameter.)"
+        },
+        "spores_score": {
+          "$ref": "#/$defs/dataDefinitionValue",
+          "default": 0,
+          "x-unit": "unitless",
+          "title": "SPORES score.",
+          "description": "The per-tech & per-node SPORES score used to penalise technologies at nodes that have appeared in previous SPORES iterations. (SPORES mode math parameter.)"
+        },
+        "timestep_resolution": {
+          "$ref": "#/$defs/dataDefinitionValue",
+          "default": 1,
+          "x-resample_method": "sum",
+          "x-unit": "hours",
+          "title": "Resolution per timestep.",
+          "description": "Resolution of each timestep in hours. Usually derived automatically from the time index; can be overridden as an input parameter indexed over `timesteps`."
+        },
+        "timestep_weights": {
+          "$ref": "#/$defs/dataDefinitionValue",
+          "default": 1,
+          "x-resample_method": "mean",
+          "x-unit": "unitless",
+          "title": "Weight per timestep.",
+          "description": "Weight of each timestep in the objective function. Usually derived automatically (e.g. from time clustering); can be overridden as an input parameter indexed over `timesteps`."
+        }
+      },
+      "patternProperties": {
+        "^[^_^\\d][\\w]*$": {
+          "$ref": "#/$defs/dataDefinitionValue"
+        },
+        "^[^_^\\d][\\w]*(\\.[\\w]+)+$": {
+          "$ref": "#/$defs/dotNotationEntry"
+        }
+      },
+      "additionalProperties": false
+    },
+    "dataTable": {
+      "type": "object",
+      "title": "Data table schema",
+      "description": "Reference to a tabular file (e.g. CSV) from which to load parts (or all) of the model definition (upstream `CalliopeDataTable`). Loaded data will be overridden by any data provided in the YAML definitions. Either `rows` or `columns` must be defined (and not dropped), and rows and columns must not overlap. The parameters `active`, `template`, `templates` and `definition_matrix` are protected and may NOT be loaded via data tables (src/calliope/config/protected_parameters.yaml).",
+      "required": [
+        "data"
+      ],
+      "properties": {
+        "data": {
+          "type": "string",
+          "description": "Absolute or relative filepath. Relative paths are based on the model config file used to initialise the model."
+        },
+        "rows": {
+          "description": "Names of dimensions defined row-wise. Each name should correspond to a column in your data that contains index items. These columns must be to the left of the columns containing your data.",
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "string",
+              "pattern": "^[^_^\\d][\\w]*$"
+            },
+            {
+              "type": "array",
+              "uniqueItems": true,
+              "items": {
+                "type": "string",
+                "pattern": "^[^_^\\d][\\w]*$"
+              }
+            }
+          ],
+          "default": null
+        },
+        "columns": {
+          "description": "Names of dimensions defined column-wise. Each name should correspond to a row in your data that contains index items. These rows must be above the rows containing your data.",
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "string",
+              "pattern": "^[^_^\\d][\\w]*$"
+            },
+            {
+              "type": "array",
+              "uniqueItems": true,
+              "items": {
+                "type": "string",
+                "pattern": "^[^_^\\d][\\w]*$"
+              }
+            }
+          ],
+          "default": null
+        },
+        "select": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "default": null,
+          "description": "Select one or more index items from a dimension. Selection takes place before `drop` and `add_dims`, so you can select a single value from a data dimension and then drop the dimension so it doesn't find its way through to the final dataset.",
+          "patternProperties": {
+            "^[^_^\\d][\\w]*$": {
+              "oneOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "array",
+                  "uniqueItems": true,
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        "drop": {
+          "description": "Enables removing rows and/or columns that contain irrelevant data/metadata. These could include comments on the source of the data, the data license, or the parameter units. You can also drop a dimension and then reintroduce it in `add_dims`, but with different index items.",
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "string",
+              "pattern": "^[^_^\\d][\\w]*$"
+            },
+            {
+              "type": "array",
+              "uniqueItems": true,
+              "items": {
+                "type": "string",
+                "pattern": "^[^_^\\d][\\w]*$"
+              }
+            }
+          ],
+          "default": null
+        },
+        "add_dims": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "default": null,
+          "description": "Data dimensions to add after loading in the array. These allow you to use the same file to assign values to different parameters/dimension index items (e.g., setting `flow_cap_min` and `flow_cap_max` to the same value), or to add a dimension which would otherwise be a column containing the same information in each row (e.g., assigning the cost class to monetary for a file containing cost data). Keys are dimension names (must not be in `rows` or `columns`), values are index items of that dimension to add.",
+          "patternProperties": {
+            "^[^_^\\d][\\w]*$": {
+              "oneOf": [
+                {
+                  "type": "string",
+                  "pattern": "^[^_^\\d][\\w]*$"
+                },
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "pattern": "^[^_^\\d][\\w]*$"
+                  }
+                }
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        "rename_dims": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "default": null,
+          "description": "Mapping between dimension names in the data table being loaded to equivalent Calliope dimension names. For instance, the \"time\" column in the data table would need to be mapped to \"timesteps\": `{\"time\": \"timesteps\"}`. Renamed (target) dimensions must appear in either `rows` or `columns`.",
+          "patternProperties": {
+            "^[^_^\\d][\\w]*$": {
+              "type": "string",
+              "pattern": "^[^_^\\d][\\w]*$"
+            }
+          },
+          "additionalProperties": false
+        },
+        "template": {
+          "$ref": "#/$defs/templateCall"
+        }
+      },
+      "additionalProperties": false,
+      "patternProperties": {
+        "^[^_^\\d][\\w]*(\\.[\\w]+)+$": {
+          "$ref": "#/$defs/dotNotationEntry"
+        }
+      }
+    },
+    "template": {
+      "type": "object",
+      "title": "Template definition.",
+      "description": "An abstract, reusable YAML block from which techs / nodes / data tables (or any other model definition section carrying a `template` key) inherit key-value pairs. A template may itself contain a `template` key to inherit from another template; circular references are rejected. Templates are resolved and removed by the preprocessor before validation, so any content valid at the point of use is valid here.",
+      "properties": {
+        "template": {
+          "$ref": "#/$defs/templateCall"
+        }
+      },
+      "additionalProperties": true
+    },
+    "override": {
+      "type": "object",
+      "title": "Override definition.",
+      "description": "A named override: an arbitrary (possibly nested, dot-notation-flattened) subtree of the model definition / configuration which is merged over the base model when the override is selected via a scenario or the `scenario` argument. Overrides can touch _any_ part of the model YAML (config, data_definitions, techs, nodes, data_tables, templates, ...). Combining multiple overrides that set the same key is an error; the priority order is: initialisation kwargs > override_dict > scenarios > data section > template.",
+      "additionalProperties": true
+    },
+    "scenarioDef": {
+      "title": "Scenario definition.",
+      "description": "A named scenario: a reference to one or more override and/or other scenario names (scenario references are expanded recursively). Given as a single name, a comma-separated string of names, or a list of names.",
+      "oneOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      ]
+    },
+    "configInit": {
+      "type": "object",
+      "title": "Model initialisation configuration",
+      "description": "All configuration options used when initialising a Calliope model (upstream `config_schema.Init`).",
+      "properties": {
+        "name": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null,
+          "description": "Model name."
+        },
+        "calliope_version": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null,
+          "description": "Calliope framework version this model is intended for."
+        },
+        "broadcast_input_data": {
+          "type": "boolean",
+          "default": false,
+          "description": "If True, single data entries in YAML indexed data will be broadcast across all index items. Otherwise, the number of data entries needs to match the number of index items. Defaults to False to mitigate unexpected broadcasting when applying overrides. (Named `broadcast_param_data` in v0.7.0.dev5/dev6.)"
+        },
+        "subset": {
+          "type": "object",
+          "title": "Dimension subsets.",
+          "description": "Per-dimension subsets, keyed by dimension name (upstream `Subsets`: `dict[AttrStr, NonEmptyList[str | int | float] | None]`). For the `timesteps` dimension: a two-element list giving the **inclusive** range, e.g. `timesteps: [\"2005-01\", \"2005-04\"]` will create a time subset from \"2005-01-01 00:00:00\" to \"2005-04-31 23:59:59\". Strings must be ISO8601-compatible, i.e. of the form `YYYY-mm-dd HH:MM:SS` (e.g. '2005-01', '2005-01-01', '2005-01-01 00:00', ...). (Replaces `time_subset` from v0.7.0.dev5/dev6.)",
+          "patternProperties": {
+            "^[^_^\\d][\\w]*$": {
+              "oneOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "type": "array",
+                  "minItems": 1,
+                  "items": {
+                    "type": [
+                      "string",
+                      "integer",
+                      "number"
+                    ]
+                  }
+                }
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        "resample": {
+          "type": "object",
+          "title": "Dimension resampling settings.",
+          "description": "Per-dimension resampling settings, keyed by dimension name (upstream `Resamples`: `dict[AttrStr, str | None]`). Setting to adjust datetime dimension resolution, e.g. `timesteps: 2h` for 2-hourly resampling. (Replaces `time_resample` from v0.7.0.dev5/dev6.)",
+          "patternProperties": {
+            "^[^_^\\d][\\w]*$": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        "time_cluster": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[^_^\\d][\\w]*$",
+          "default": null,
+          "description": "Setting to cluster the timeseries. Must reference the name of an input data array (in v0.7.0.dev5: a path to a file where each date is linked to a representative date that also exists in the timeseries)."
+        },
+        "datetime_format": {
+          "type": "string",
+          "default": "ISO8601",
+          "description": "Timestamp format of all time series data with `datetime` dtype when read from file. 'ISO8601' means '%Y-%m-%d %H:%M:%S'."
+        },
+        "date_format": {
+          "type": "string",
+          "default": "ISO8601",
+          "description": "Datestamp format of all time series data with `date` dtype when read from file. 'ISO8601' means '%Y-%m-%d'."
+        },
+        "distance_unit": {
+          "type": "string",
+          "enum": [
+            "km",
+            "m"
+          ],
+          "default": "km",
+          "description": "Unit of transmission link `distance` (m - metres, km - kilometres). Automatically derived distances from lat/lon coordinates will be given in this unit."
+        },
+        "mode": {
+          "type": "string",
+          "enum": [
+            "base",
+            "operate",
+            "spores"
+          ],
+          "default": "base",
+          "description": "Mode in which to run the optimisation. Triggers additional processing and appends additional math formulations. Math order: base -> mode. (In v0.7.0.dev5/dev6 this lived at `config.build.mode` with the enum [plan, spores, operate]; `plan` is now called `base`.)"
+        },
+        "extra_math": {
+          "type": "array",
+          "uniqueItems": true,
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "description": "List of math entries to be applied on top of the `base` math and `mode` math. The list items must have been defined as keys in `math_paths` or be one of the pre-defined entries (`milp`, `storage_inter_cluster`, `operate`, `spores`). Math order: base -> mode -> extra."
+        },
+        "math_paths": {
+          "type": "object",
+          "title": "Math paths settings.",
+          "description": "Dictionary with the names and paths of additional math files to add to the available math entries (upstream `MathPaths`: `dict[AttrStr, Path]`). Some math entry names are linked to specific functionality, so re-defining them here will overwrite the pre-defined math: `base` replaces the pre-defined base math; `milp` replaces the mixed integer math; `spores`/`operate` replace the respective pre-defined mode math; `storage_inter_cluster` replaces the pre-defined storage inter-cluster math. Relative paths are resolved relative to the model definition file.",
+          "patternProperties": {
+            "^[^_^\\d][\\w]*$": {
+              "type": "string",
+              "description": "Path to a math YAML file (see $defs/mathDefinition for its structure)."
+            }
+          },
+          "additionalProperties": false
+        },
+        "pre_validate_math_strings": {
+          "type": "boolean",
+          "default": false,
+          "description": "If true, the Calliope math definition will be scanned for parsing errors at model initialisation, i.e., _before_ undertaking the much more expensive operation of building the optimisation problem. It is switched off by default to reduce overall build time. (In v0.7.0.dev5/dev6 this lived at `config.build.pre_validate_math_strings` with default true.)"
+        },
+        "time_subset": {
+          "deprecated": true,
+          "description": "DEPRECATED (v0.7.0.dev5/dev6 name; not accepted by v0.7.0.dev7): subset of timesteps as a two-element list giving the **inclusive** range, e.g. ['2005-01', '2005-04'] creates a time subset from '2005-01-01 00:00:00' to '2005-04-31 23:59:59'. Use `config.init.subset.timesteps` instead.",
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "array",
+              "minItems": 2,
+              "maxItems": 2,
+              "items": {
+                "type": "string",
+                "description": "ISO8601 format datetime strings of the form `YYYY-mm-dd HH:MM:SS` (e.g, '2005-01', '2005-01-01', '2005-01-01 00:00', ...)"
+              }
+            }
+          ],
+          "default": null
+        },
+        "time_resample": {
+          "deprecated": true,
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[0-9]+[a-zA-Z]",
+          "default": null,
+          "description": "DEPRECATED (v0.7.0.dev5/dev6 name; not accepted by v0.7.0.dev7): setting to adjust time resolution, e.g. \"2h\" for 2-hourly. Use `config.init.resample.timesteps` instead."
+        },
+        "time_format": {
+          "deprecated": true,
+          "type": "string",
+          "default": "ISO8601",
+          "description": "DEPRECATED (v0.7.0.dev5/dev6 name; not accepted by v0.7.0.dev7): timestamp format of all time series data when read from file. \"ISO8601\" means \"%Y-%m-%d %H:%M:%S\". Use `config.init.datetime_format` / `config.init.date_format` instead."
+        },
+        "broadcast_param_data": {
+          "deprecated": true,
+          "type": "boolean",
+          "default": false,
+          "description": "DEPRECATED (v0.7.0.dev5/dev6 name; not accepted by v0.7.0.dev7): if True, single data entries in YAML indexed parameters will be broadcast across all index items. Use `config.init.broadcast_input_data` instead."
+        }
+      },
+      "additionalProperties": false,
+      "patternProperties": {
+        "^[^_^\\d][\\w]*(\\.[\\w]+)+$": {
+          "$ref": "#/$defs/dotNotationEntry"
+        }
+      }
+    },
+    "configBuildOperate": {
+      "type": "object",
+      "title": "Model build operate mode configuration",
+      "description": "Operate mode configuration options used when building a Calliope optimisation problem (`calliope.Model.build`; upstream `config_schema.BuildOperate`). Upstream declares `window`/`horizon` as strings and forbids unknown keys; this schema additionally tolerates numeric values and extra keys (e.g. `overlap`) that model-generating tools pass through from user-supplied operate options.",
+      "properties": {
+        "window": {
+          "type": [
+            "string",
+            "number"
+          ],
+          "default": "24h",
+          "description": "Operate mode rolling `window`, given as a pandas frequency string (upstream type: string). See https://pandas.pydata.org/docs/user_guide/timeseries.html#offset-aliases for a list of frequency aliases."
+        },
+        "horizon": {
+          "type": [
+            "string",
+            "number"
+          ],
+          "default": "48h",
+          "description": "Operate mode rolling `horizon`, given as a pandas frequency string (upstream type: string). See https://pandas.pydata.org/docs/user_guide/timeseries.html#offset-aliases for a list of frequency aliases. Must be >= `window`."
+        }
+      },
+      "additionalProperties": true
+    },
+    "configBuild": {
+      "type": "object",
+      "title": "Model build configuration",
+      "description": "Base configuration options used when building a Calliope optimisation problem (`calliope.Model.build`; upstream `config_schema.Build`).",
+      "properties": {
+        "backend": {
+          "type": "string",
+          "enum": [
+            "pyomo",
+            "gurobi"
+          ],
+          "default": "pyomo",
+          "description": "Module with which to build the optimisation problem."
+        },
+        "ensure_feasibility": {
+          "type": "boolean",
+          "default": false,
+          "description": "Whether to include decision variables in the model which will meet unmet demand or consume unused supply in the model so that the optimisation solves successfully. This should only be used as a debugging option (as any unmet demand/unused supply is a sign of improper model formulation)."
+        },
+        "objective": {
+          "type": "string",
+          "default": "min_cost_optimisation",
+          "description": "Name of internal objective function to use, from those defined in the pre-defined math and any applied additional math."
+        },
+        "operate": {
+          "$ref": "#/$defs/configBuildOperate"
+        },
+        "mode": {
+          "deprecated": true,
+          "type": "string",
+          "enum": [
+            "plan",
+            "spores",
+            "operate",
+            "base"
+          ],
+          "default": "plan",
+          "description": "DEPRECATED (v0.7.0.dev5/dev6 location; not accepted by v0.7.0.dev7): mode in which to run the optimisation. Use `config.init.mode` instead (where `plan` is now called `base`)."
+        },
+        "add_math": {
+          "deprecated": true,
+          "type": "array",
+          "default": [],
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "description": "If referring to a pre-defined Calliope math file (see documentation for available files), do not append the reference with \".yaml\". If referring to your own math file, ensure the file type is given as a suffix (\".yaml\" or \".yml\"). Relative paths will be assumed to be relative to the model definition file given when creating a calliope Model (`calliope.Model(model_definition=...)`)."
+          },
+          "description": "DEPRECATED (v0.7.0.dev5/dev6 name; not accepted by v0.7.0.dev7): list of references to files which contain additional mathematical formulations to be applied on top of or instead of the base mode math. Use `config.init.math_paths` (to register named math files) plus `config.init.extra_math` (to apply them) instead."
+        },
+        "ignore_mode_math": {
+          "deprecated": true,
+          "type": "boolean",
+          "default": false,
+          "description": "DEPRECATED (v0.7.0.dev5/dev6 name; not accepted by v0.7.0.dev7): if True, do not initialise the mathematical formulation with the pre-defined math for the given run `mode`. This option could be used to completely re-define the Calliope mathematical formulation. In v0.7.0.dev7, override the pre-defined math by re-defining the reserved names (`base`, `milp`, `operate`, `spores`, `storage_inter_cluster`) in `config.init.math_paths`."
+        },
+        "operate_window": {
+          "deprecated": true,
+          "type": "string",
+          "description": "DEPRECATED (v0.7.0.dev5/dev6 name; not accepted by v0.7.0.dev7): operate mode rolling `window`, given as a pandas frequency string. Use `config.build.operate.window` instead."
+        },
+        "operate_horizon": {
+          "deprecated": true,
+          "type": "string",
+          "description": "DEPRECATED (v0.7.0.dev5/dev6 name; not accepted by v0.7.0.dev7): operate mode rolling `horizon`, given as a pandas frequency string. Must be >= `operate_window`. Use `config.build.operate.horizon` instead."
+        },
+        "operate_use_cap_results": {
+          "deprecated": true,
+          "type": "boolean",
+          "default": false,
+          "description": "DEPRECATED (v0.7.0.dev5/dev6 name; not accepted by v0.7.0.dev7): if the model already contains `plan` mode results, use those optimal capacities as input parameters to the `operate` mode run."
+        },
+        "pre_validate_math_strings": {
+          "deprecated": true,
+          "type": "boolean",
+          "default": true,
+          "description": "DEPRECATED (v0.7.0.dev5/dev6 location; not accepted by v0.7.0.dev7): if true, the Calliope math definition will be scanned for parsing errors _before_ undertaking the much more expensive operation of building the optimisation problem. Use `config.init.pre_validate_math_strings` instead."
+        }
+      },
+      "additionalProperties": false,
+      "patternProperties": {
+        "^[^_^\\d][\\w]*(\\.[\\w]+)+$": {
+          "$ref": "#/$defs/dotNotationEntry"
+        }
+      }
+    },
+    "configSolveSpores": {
+      "type": "object",
+      "title": "Model solve SPORES mode configuration",
+      "description": "SPORES configuration options used when solving a Calliope optimisation problem (`calliope.Model.solve`; upstream `config_schema.SolveSpores`).",
+      "properties": {
+        "scoring_algorithm": {
+          "type": "string",
+          "enum": [
+            "integer",
+            "relative_deployment",
+            "random",
+            "evolving_average"
+          ],
+          "default": "integer",
+          "description": "Algorithm to apply to update the SPORES score between iterations. For more information on each option, see Lombardi et al. (2023), https://doi.org/10.1016/j.apenergy.2023.121002."
+        },
+        "number": {
+          "type": "integer",
+          "default": 3,
+          "description": "SPORES mode number of iterations after the initial base run."
+        },
+        "save_per_spore_path": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null,
+          "description": "If None, the SPORES results will only be available in `calliope.Model.results` once all iterations (defined by `number`) have completed. If a path, as well as consolidating the SPORES results in `calliope.Model.results`, individual SPORES will be saved to file immediately after the iteration has completed."
+        },
+        "use_latest_results": {
+          "type": "boolean",
+          "default": false,
+          "description": "If the model already contains `base` mode results, use them as the baseline results and start with SPORES iterations immediately. If the model already contains `spores` mode results, use the most recent results and continue with the remaining SPORES iterations immediately."
+        },
+        "tracking_parameter": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null,
+          "description": "If given, an input parameter name with which to filter technologies for consideration in SPORES scoring."
+        },
+        "score_threshold_factor": {
+          "type": "number",
+          "minimum": 0,
+          "default": 0.1,
+          "description": "A factor to apply to flow capacities above which they will increment the SPORES score. E.g., if the previous iteration flow capacity was `100` then, with a threshold value of 0.1, only capacities above `10` in the current iteration will cause the SPORES score to increase for that technology at that node. If, say, the current iteration's capacity is `8` then the SPORES score will not change for that technology so it will not be further penalised on the next iteration."
+        }
+      },
+      "additionalProperties": false,
+      "patternProperties": {
+        "^[^_^\\d][\\w]*(\\.[\\w]+)+$": {
+          "$ref": "#/$defs/dotNotationEntry"
+        }
+      }
+    },
+    "configSolve": {
+      "type": "object",
+      "title": "Model solve configuration",
+      "description": "Base configuration options used when solving a Calliope optimisation problem (`calliope.Model.solve`; upstream `config_schema.Solve`).",
+      "properties": {
+        "postprocessing_active": {
+          "type": "boolean",
+          "default": true,
+          "description": "If enabled, all active postprocessing functions will be run after the model solves."
+        },
+        "save_logs": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null,
+          "description": "If given, should be a path to a directory in which to save optimisation logs."
+        },
+        "shadow_prices": {
+          "type": "array",
+          "uniqueItems": true,
+          "default": [],
+          "items": {
+            "type": "string",
+            "description": "Names of model constraints."
+          },
+          "description": "List of constraints for which to extract shadow prices. Shadow prices will be added as variables to the model results as `shadow_price_{constraintname}`."
+        },
+        "solver": {
+          "type": "string",
+          "default": "cbc",
+          "description": "Solver to use. Any solvers that have Pyomo interfaces can be used. Refer to the Pyomo documentation for the latest list."
+        },
+        "solver_io": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null,
+          "description": "Some solvers have different interfaces that perform differently. For instance, setting `solver_io=\"python\"` when using the solver `gurobi` tends to reduce the time to send the optimisation problem to the solver."
+        },
+        "solver_options": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "default": null,
+          "additionalProperties": true,
+          "description": "Any solver options, as key-value pairs, to pass to the chosen solver."
+        },
+        "spores": {
+          "$ref": "#/$defs/configSolveSpores"
+        },
+        "zero_threshold": {
+          "type": "number",
+          "default": 1e-10,
+          "description": "On postprocessing the optimisation results, values smaller than this threshold will be considered as optimisation artefacts and will be set to zero."
+        },
+        "spores_number": {
+          "deprecated": true,
+          "type": "integer",
+          "default": 3,
+          "description": "DEPRECATED (v0.7.0.dev5/dev6 name; not accepted by v0.7.0.dev7): SPORES mode number of iterations after the initial base run. Use `config.solve.spores.number` instead."
+        },
+        "spores_score_cost_class": {
+          "deprecated": true,
+          "type": "string",
+          "default": "spores_score",
+          "description": "DEPRECATED (v0.7.0.dev5/dev6 name; not accepted by v0.7.0.dev7): SPORES mode cost class to vary between iterations after the initial base run. In v0.7.0.dev7, SPORES scores are carried by the `spores_score` parameter."
+        },
+        "spores_slack_cost_group": {
+          "deprecated": true,
+          "type": "string",
+          "description": "DEPRECATED (v0.7.0.dev5/dev6 name; not accepted by v0.7.0.dev7): SPORES mode cost class to keep below the given `slack` (usually \"monetary\"). In v0.7.0.dev7, use the `spores_baseline_cost` and `spores_slack` parameters."
+        },
+        "spores_save_per_spore": {
+          "deprecated": true,
+          "type": "boolean",
+          "default": false,
+          "description": "DEPRECATED (v0.7.0.dev5/dev6 name; not accepted by v0.7.0.dev7): whether or not to save the result of each SPORES mode run between iterations. If False, will consolidate all iterations into one dataset after completion of N iterations (defined by `spores_number`) and save that one dataset. Use `config.solve.spores.save_per_spore_path` instead."
+        },
+        "spores_save_per_spore_path": {
+          "deprecated": true,
+          "type": "string",
+          "description": "DEPRECATED (v0.7.0.dev5/dev6 name; not accepted by v0.7.0.dev7): if saving per spore, the path to save to. Use `config.solve.spores.save_per_spore_path` instead."
+        },
+        "spores_skip_cost_op": {
+          "deprecated": true,
+          "type": "boolean",
+          "default": false,
+          "description": "DEPRECATED (v0.7.0.dev5/dev6 name; not accepted by v0.7.0.dev7): if the model already contains `plan` mode results, use those as the initial base run results and start with SPORES iterations immediately. Use `config.solve.spores.use_latest_results` instead."
+        }
+      },
+      "additionalProperties": false,
+      "patternProperties": {
+        "^[^_^\\d][\\w]*(\\.[\\w]+)+$": {
+          "$ref": "#/$defs/dotNotationEntry"
+        }
+      }
+    },
+    "config": {
+      "type": "object",
+      "title": "Model configuration schema",
+      "description": "All configuration options used for a Calliope model (upstream `config_schema.CalliopeConfig`): `init` (model initialisation), `build` (optimisation problem construction) and `solve` (optimisation run).",
+      "properties": {
+        "init": {
+          "$ref": "#/$defs/configInit"
+        },
+        "build": {
+          "$ref": "#/$defs/configBuild"
+        },
+        "solve": {
+          "$ref": "#/$defs/configSolve"
+        }
+      },
+      "additionalProperties": false,
+      "patternProperties": {
+        "^[^_^\\d][\\w]*(\\.[\\w]+)+$": {
+          "$ref": "#/$defs/dotNotationEntry"
+        }
+      }
+    },
+    "mathExpressionItem": {
+      "type": "object",
+      "title": "Math expression item",
+      "description": "Schema for equations, sub-expressions and slices (upstream `math_schema.ExpressionItem`).",
+      "required": [
+        "expression"
+      ],
+      "properties": {
+        "where": {
+          "type": "string",
+          "default": "True",
+          "description": "Condition to determine whether the accompanying expression is built."
+        },
+        "expression": {
+          "type": "string",
+          "description": "Expression for this component. Equations: LHS OPERATOR RHS, where LHS and RHS are math expressions and OPERATOR is one of [==, <=, >=]. Sub-expressions: one term or a combination of terms using the operators [+, -, *, /, **]. Slices: a list of set items or a call to a helper function."
+        }
+      },
+      "additionalProperties": false,
+      "patternProperties": {
+        "^[^_^\\d][\\w]*(\\.[\\w]+)+$": {
+          "$ref": "#/$defs/dotNotationEntry"
+        }
+      }
+    },
+    "mathEquations": {
+      "type": "array",
+      "description": "List of equation expression items (upstream `math_schema.Equations`).",
+      "items": {
+        "$ref": "#/$defs/mathExpressionItem"
+      }
+    },
+    "mathSubExpressions": {
+      "type": "object",
+      "description": "Named sub-expressions / named index slices: a mapping from name to a list of expression items (upstream `math_schema.SubExpressions`).",
+      "patternProperties": {
+        "^[^_^\\d][\\w]*$": {
+          "$ref": "#/$defs/mathEquations"
+        }
+      },
+      "additionalProperties": false
+    },
+    "mathDimension": {
+      "type": "object",
+      "title": "Math dimension",
+      "description": "A named model dimension (set) of the optimisation problem (upstream `math_schema.Dimension`).",
+      "properties": {
+        "title": {
+          "type": "string",
+          "default": "",
+          "description": "The component long name, for use in visualisation."
+        },
+        "description": {
+          "type": "string",
+          "default": "",
+          "description": "A verbose description of the component."
+        },
+        "active": {
+          "type": "boolean",
+          "default": true,
+          "description": "If False, this component will be ignored during the build phase."
+        },
+        "dtype": {
+          "type": "string",
+          "enum": [
+            "string",
+            "datetime",
+            "date",
+            "float",
+            "integer"
+          ],
+          "default": "string",
+          "description": "The data type of this dimension's items."
+        },
+        "ordered": {
+          "type": "boolean",
+          "default": false,
+          "description": "If True, the order of the dimension items is meaningful (e.g. chronological time)."
+        },
+        "iterator": {
+          "type": "string",
+          "default": "NEEDS_ITERATOR",
+          "description": "The name of the iterator to use in the LaTeX math formulation for this dimension."
+        }
+      },
+      "additionalProperties": false,
+      "patternProperties": {
+        "^[^_^\\d][\\w]*(\\.[\\w]+)+$": {
+          "$ref": "#/$defs/dotNotationEntry"
+        }
+      }
+    },
+    "mathParameter": {
+      "type": "object",
+      "title": "Math parameter",
+      "description": "A named numeric input parameter of the optimisation problem (upstream `math_schema.Parameter`). The base math (src/calliope/math/base.yaml) defines: area_use_max, area_use_min, area_use_per_flow_cap, available_area, bigM, cost_flow_cap_per_distance, cost_purchase_per_distance, cost_flow_cap, cost_export, cost_interest_rate, cost_om_annual, cost_om_annual_investment_fraction, cost_flow_in, cost_flow_out, cost_purchase, cost_area_use, cost_source_cap, cost_storage_cap, cost_depreciation_rate, distance, export_max, export_min, flow_cap_per_storage_cap_min, flow_cap_per_storage_cap_max, flow_cap_max, flow_cap_max_systemwide, flow_cap_min, flow_cap_min_systemwide, flow_out_min_relative, flow_cap_per_unit, flow_in_eff, flow_in_eff_per_distance, flow_out_eff, flow_out_eff_per_distance, flow_out_parasitic_eff, flow_ramping, lifetime, objective_cost_weights, purchased_units_min_systemwide, purchased_units_max_systemwide, purchased_units_min, purchased_units_max, sink_use_min, sink_use_max, sink_use_equals, source_eff, source_use_min, source_use_max, source_use_equals, source_cap_max, source_cap_min, storage_cap_max, storage_cap_min, storage_cap_per_unit, storage_discharge_depth, storage_initial, storage_loss, timestep_resolution and timestep_weights. The operate-mode math adds: area_use, storage_cap, purchased_units, source_cap, flow_cap and link_flow_cap. The SPORES-mode math adds: spores_baseline_cost, spores_slack and spores_score.",
+      "properties": {
+        "title": {
+          "type": "string",
+          "default": "",
+          "description": "The component long name, for use in visualisation."
+        },
+        "description": {
+          "type": "string",
+          "default": "",
+          "description": "A verbose description of the component."
+        },
+        "active": {
+          "type": "boolean",
+          "default": true,
+          "description": "If False, this component will be ignored during the build phase."
+        },
+        "default": {
+          "oneOf": [
+            {
+              "type": "number"
+            },
+            {
+              "$ref": "#/$defs/nonFiniteFloat"
+            }
+          ],
+          "default": ".nan",
+          "description": "The default value for the parameter, if not set in the data (YAML `.inf`/`.nan` literals allowed)."
+        },
+        "resample_method": {
+          "type": "string",
+          "enum": [
+            "mean",
+            "sum",
+            "first"
+          ],
+          "default": "first",
+          "description": "If resampling is applied over any of the parameter's dimensions, the method to use to aggregate the data."
+        },
+        "unit": {
+          "type": "string",
+          "default": "",
+          "description": "The unit of the parameter, e.g. 'kW', 'm', 'kg', 'energy', 'power', ..."
+        }
+      },
+      "additionalProperties": false,
+      "patternProperties": {
+        "^[^_^\\d][\\w]*(\\.[\\w]+)+$": {
+          "$ref": "#/$defs/dotNotationEntry"
+        }
+      }
+    },
+    "mathLookup": {
+      "type": "object",
+      "title": "Math lookup",
+      "description": "A named non-numeric (or boolean/categorical) input array of the optimisation problem (upstream `math_schema.Lookup`). The base math (src/calliope/math/base.yaml) defines: base_tech, carrier_in, carrier_out, carrier_export, cap_method, cluster_first_timestep, definition_matrix (protected, generated internally from `carrier_in`/`carrier_out`), integer_dispatch, include_storage, force_async_flow, cyclic_storage, sink_unit, source_unit, source_cap_equals_flow_cap, one_way, lookup_cluster_last_timestep, latitude and longitude. The storage_inter_cluster math adds: timestep_cluster, lookup_datestep_cluster and lookup_datestep_last_cluster_timestep.",
+      "properties": {
+        "title": {
+          "type": "string",
+          "default": "",
+          "description": "The component long name, for use in visualisation."
+        },
+        "description": {
+          "type": "string",
+          "default": "",
+          "description": "A verbose description of the component."
+        },
+        "active": {
+          "type": "boolean",
+          "default": true,
+          "description": "If False, this component will be ignored during the build phase."
+        },
+        "default": {
+          "type": [
+            "string",
+            "number",
+            "boolean"
+          ],
+          "default": ".nan",
+          "description": "The default value for the lookup, if not set in the data."
+        },
+        "dtype": {
+          "type": "string",
+          "enum": [
+            "float",
+            "string",
+            "bool",
+            "datetime",
+            "date"
+          ],
+          "default": "string",
+          "description": "The lookup data type."
+        },
+        "resample_method": {
+          "type": "string",
+          "enum": [
+            "mean",
+            "sum",
+            "first"
+          ],
+          "default": "first",
+          "description": "If resampling is applied over any of the lookup's dimensions, the method to use to aggregate the data."
+        },
+        "one_of": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "default": null,
+          "description": "If given, the lookup values must be one of these items."
+        },
+        "pivot_values_to_dim": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null,
+          "description": "If given, the lookup will be pivoted such that its values become the index of a new dimension and its new values are boolean, True where the index values match the old values. For instance, if the lookup starts out indexed over `techs` with values of `[electricity, gas]` and `pivot_values_to_dim: carriers`, then the lookup will be converted to a boolean array with the dimensions ['techs', 'carriers']."
+        }
+      },
+      "additionalProperties": false,
+      "patternProperties": {
+        "^[^_^\\d][\\w]*(\\.[\\w]+)+$": {
+          "$ref": "#/$defs/dotNotationEntry"
+        }
+      }
+    },
+    "mathVariableBounds": {
+      "type": "object",
+      "title": "Decision variable bounds",
+      "description": "Bounds of decision variables: either derived per-index item from a multi-dimensional input parameter (referenced by name), or given as a single value that is applied across all decision variable index items (upstream `math_schema.Bounds`).",
+      "properties": {
+        "max": {
+          "type": [
+            "string",
+            "number"
+          ],
+          "default": ".inf",
+          "description": "Decision variable upper bound, either as a reference to an input parameter (name matching ^[^_^\\d][\\w]*$) or as a number."
+        },
+        "min": {
+          "type": [
+            "string",
+            "number"
+          ],
+          "default": "-.inf",
+          "description": "Decision variable lower bound, either as a reference to an input parameter (name matching ^[^_^\\d][\\w]*$) or as a number."
+        }
+      },
+      "additionalProperties": false,
+      "patternProperties": {
+        "^[^_^\\d][\\w]*(\\.[\\w]+)+$": {
+          "$ref": "#/$defs/dotNotationEntry"
+        }
+      }
+    },
+    "mathVariable": {
+      "type": "object",
+      "title": "Math decision variable",
+      "description": "Schema for optimisation problem decision variables (upstream `math_schema.Variable`). A decision variable must be referenced in at least one constraint or in the objective for it to exist in the optimisation problem that is sent to the solver. Base-math variables include flow_cap, link_flow_cap, flow_out, flow_in, flow_export, area_use, source_use, source_cap, storage_cap, storage; the MILP math adds purchased_units, operating_units, available_flow_cap; the storage_inter_cluster math adds storage_inter_cluster.",
+      "properties": {
+        "title": {
+          "type": "string",
+          "default": "",
+          "description": "The component long name, for use in visualisation."
+        },
+        "description": {
+          "type": "string",
+          "default": "",
+          "description": "A verbose description of the component."
+        },
+        "active": {
+          "type": "boolean",
+          "default": true,
+          "description": "If False, this component will be ignored during the build phase."
+        },
+        "foreach": {
+          "type": "array",
+          "uniqueItems": true,
+          "default": [],
+          "items": {
+            "type": "string",
+            "pattern": "^[^_^\\d][\\w]*$"
+          },
+          "description": "Sets (a.k.a. dimensions) of the model over which the math formulation component will be built."
+        },
+        "where": {
+          "type": "string",
+          "default": "True",
+          "description": "Top-level condition to determine whether the component exists in this optimisation problem: at all if `foreach` is not given, or for specific index items within the product of the sets given by `foreach`."
+        },
+        "unit": {
+          "type": "string",
+          "default": "",
+          "description": "Generalised unit of the component (e.g., length, time, quantity_per_hour, ...)."
+        },
+        "default": {
+          "oneOf": [
+            {
+              "type": "number"
+            },
+            {
+              "$ref": "#/$defs/nonFiniteFloat"
+            }
+          ],
+          "default": ".nan",
+          "description": "If set, will be the default value for the variable."
+        },
+        "domain": {
+          "type": "string",
+          "enum": [
+            "real",
+            "integer"
+          ],
+          "default": "real",
+          "description": "Allowed values that the decision variable can take. Either real (a.k.a. continuous) or integer."
+        },
+        "bounds": {
+          "$ref": "#/$defs/mathVariableBounds"
+        }
+      },
+      "additionalProperties": false,
+      "patternProperties": {
+        "^[^_^\\d][\\w]*(\\.[\\w]+)+$": {
+          "$ref": "#/$defs/dotNotationEntry"
+        }
+      }
+    },
+    "mathGlobalExpression": {
+      "type": "object",
+      "title": "Math global expression",
+      "description": "Schema for named global expressions (upstream `math_schema.GlobalExpression`). Can be used to combine parameters and variables and then used in one or more expressions elsewhere in the math formulation (i.e., in constraints, objectives, and other global expressions). NOTE: if expecting to use global expression `A` in global expression `B`, `A` must be defined above `B`. Base-math global expressions include flow_out_inc_eff, flow_in_inc_eff, cost_var, cost_investment_flow_cap, cost_investment_storage_cap, cost_investment_source_cap, cost_investment_area_use, cost_investment_purchase, cost_investment, cost_investment_annualised, cost_operation_fixed, cost.",
+      "properties": {
+        "title": {
+          "type": "string",
+          "default": "",
+          "description": "The component long name, for use in visualisation."
+        },
+        "description": {
+          "type": "string",
+          "default": "",
+          "description": "A verbose description of the component."
+        },
+        "active": {
+          "type": "boolean",
+          "default": true,
+          "description": "If False, this component will be ignored during the build phase."
+        },
+        "foreach": {
+          "type": "array",
+          "uniqueItems": true,
+          "default": [],
+          "items": {
+            "type": "string",
+            "pattern": "^[^_^\\d][\\w]*$"
+          },
+          "description": "Sets (a.k.a. dimensions) of the model over which the math formulation component will be built."
+        },
+        "where": {
+          "type": "string",
+          "default": "True",
+          "description": "Top-level condition to determine whether the component exists in this optimisation problem: at all if `foreach` is not given, or for specific index items within the product of the sets given by `foreach`."
+        },
+        "unit": {
+          "type": "string",
+          "default": "",
+          "description": "Generalised unit of the component (e.g., length, time, quantity_per_hour, ...)."
+        },
+        "default": {
+          "oneOf": [
+            {
+              "type": "number"
+            },
+            {
+              "$ref": "#/$defs/nonFiniteFloat"
+            }
+          ],
+          "default": ".nan",
+          "description": "If set, will be the default value for the expression."
+        },
+        "order": {
+          "type": "integer",
+          "default": 0,
+          "description": "Order in which to apply this global expression relative to all others, if different to its definition order."
+        },
+        "equations": {
+          "$ref": "#/$defs/mathEquations"
+        },
+        "sub_expressions": {
+          "$ref": "#/$defs/mathSubExpressions"
+        },
+        "slices": {
+          "$ref": "#/$defs/mathSubExpressions"
+        }
+      },
+      "additionalProperties": false,
+      "patternProperties": {
+        "^[^_^\\d][\\w]*(\\.[\\w]+)+$": {
+          "$ref": "#/$defs/dotNotationEntry"
+        }
+      }
+    },
+    "mathConstraint": {
+      "type": "object",
+      "title": "Math constraint",
+      "description": "Schema for named constraints (upstream `math_schema.Constraint`). Must have `equations` defined if the component is active.",
+      "properties": {
+        "title": {
+          "type": "string",
+          "default": "",
+          "description": "The component long name, for use in visualisation."
+        },
+        "description": {
+          "type": "string",
+          "default": "",
+          "description": "A verbose description of the component."
+        },
+        "active": {
+          "type": "boolean",
+          "default": true,
+          "description": "If False, this component will be ignored during the build phase."
+        },
+        "foreach": {
+          "type": "array",
+          "uniqueItems": true,
+          "default": [],
+          "items": {
+            "type": "string",
+            "pattern": "^[^_^\\d][\\w]*$"
+          },
+          "description": "Sets (a.k.a. dimensions) of the model over which the math formulation component will be built."
+        },
+        "where": {
+          "type": "string",
+          "default": "True",
+          "description": "Top-level condition to determine whether the component exists in this optimisation problem: at all if `foreach` is not given, or for specific index items within the product of the sets given by `foreach`."
+        },
+        "equations": {
+          "$ref": "#/$defs/mathEquations"
+        },
+        "sub_expressions": {
+          "$ref": "#/$defs/mathSubExpressions"
+        },
+        "slices": {
+          "$ref": "#/$defs/mathSubExpressions"
+        }
+      },
+      "additionalProperties": false,
+      "patternProperties": {
+        "^[^_^\\d][\\w]*(\\.[\\w]+)+$": {
+          "$ref": "#/$defs/dotNotationEntry"
+        }
+      }
+    },
+    "mathPiecewiseConstraint": {
+      "type": "object",
+      "title": "Math piecewise constraint",
+      "description": "Schema for named piecewise constraints (upstream `math_schema.PiecewiseConstraint`). These link an `x`-axis decision variable with a `y`-axis decision variable with values at specified breakpoints (indexed over a `breakpoints` dimension).",
+      "required": [
+        "x_expression",
+        "y_expression",
+        "x_values",
+        "y_values"
+      ],
+      "properties": {
+        "title": {
+          "type": "string",
+          "default": "",
+          "description": "The component long name, for use in visualisation."
+        },
+        "description": {
+          "type": "string",
+          "default": "",
+          "description": "A verbose description of the component."
+        },
+        "active": {
+          "type": "boolean",
+          "default": true,
+          "description": "If False, this component will be ignored during the build phase."
+        },
+        "foreach": {
+          "type": "array",
+          "uniqueItems": true,
+          "default": [],
+          "items": {
+            "type": "string",
+            "pattern": "^[^_^\\d][\\w]*$"
+          },
+          "description": "Sets (a.k.a. dimensions) of the model over which the math formulation component will be built."
+        },
+        "where": {
+          "type": "string",
+          "default": "True",
+          "description": "Top-level condition to determine whether the component exists in this optimisation problem: at all if `foreach` is not given, or for specific index items within the product of the sets given by `foreach`."
+        },
+        "x_expression": {
+          "type": "string",
+          "description": "X variable name whose values are assigned at each breakpoint."
+        },
+        "y_expression": {
+          "type": "string",
+          "description": "Y variable name whose values are assigned at each breakpoint."
+        },
+        "x_values": {
+          "type": "string",
+          "description": "X parameter name containing data, indexed over the `breakpoints` dimension."
+        },
+        "y_values": {
+          "type": "string",
+          "description": "Y parameter name containing data, indexed over the `breakpoints` dimension."
+        }
+      },
+      "additionalProperties": false,
+      "patternProperties": {
+        "^[^_^\\d][\\w]*(\\.[\\w]+)+$": {
+          "$ref": "#/$defs/dotNotationEntry"
+        }
+      }
+    },
+    "mathObjective": {
+      "type": "object",
+      "title": "Math objective",
+      "description": "Schema for optimisation problem objectives (upstream `math_schema.Objective`). Only one objective, the one referenced in model configuration `build.objective` (default `min_cost_optimisation`), will be activated for the optimisation problem. Must have `equations` defined if the component is active.",
+      "required": [
+        "sense"
+      ],
+      "properties": {
+        "title": {
+          "type": "string",
+          "default": "",
+          "description": "The component long name, for use in visualisation."
+        },
+        "description": {
+          "type": "string",
+          "default": "",
+          "description": "A verbose description of the component."
+        },
+        "active": {
+          "type": "boolean",
+          "default": true,
+          "description": "If False, this component will be ignored during the build phase."
+        },
+        "sense": {
+          "type": "string",
+          "enum": [
+            "minimise",
+            "maximise",
+            "minimize",
+            "maximize"
+          ],
+          "description": "Whether the objective function should be minimised or maximised in the optimisation."
+        },
+        "equations": {
+          "$ref": "#/$defs/mathEquations"
+        },
+        "sub_expressions": {
+          "$ref": "#/$defs/mathSubExpressions"
+        },
+        "slices": {
+          "$ref": "#/$defs/mathSubExpressions"
+        }
+      },
+      "additionalProperties": false,
+      "patternProperties": {
+        "^[^_^\\d][\\w]*(\\.[\\w]+)+$": {
+          "$ref": "#/$defs/dotNotationEntry"
+        }
+      }
+    },
+    "mathCheck": {
+      "type": "object",
+      "title": "Math input data check",
+      "description": "Schema for input data checks applied before building the optimisation problem (upstream `math_schema.Check`).",
+      "required": [
+        "where",
+        "message"
+      ],
+      "properties": {
+        "where": {
+          "type": "string",
+          "description": "Top-level condition to check."
+        },
+        "message": {
+          "type": "string",
+          "description": "Message to display when the `where` array returns True, if raising or warning on error."
+        },
+        "errors": {
+          "type": "string",
+          "enum": [
+            "raise",
+            "warn"
+          ],
+          "default": "raise",
+          "description": "How to respond to any instances in which the `where` array returns True."
+        },
+        "active": {
+          "type": "boolean",
+          "default": true,
+          "description": "If False, this check will be ignored during the build phase."
+        }
+      },
+      "additionalProperties": false,
+      "patternProperties": {
+        "^[^_^\\d][\\w]*(\\.[\\w]+)+$": {
+          "$ref": "#/$defs/dotNotationEntry"
+        }
+      }
+    },
+    "mathDefinition": {
+      "type": "object",
+      "title": "Model math schema",
+      "description": "Mathematical definition of Calliope math (upstream `math_schema.CalliopeBuildMath`): the structure of a custom math YAML file registered via `config.init.math_paths` and applied via `config.init.extra_math`, and of the pre-defined math files (base, milp, operate, spores, storage_inter_cluster). Contains mathematical programming components available for optimising with Calliope. Can contain partial definitions if they are meant to be layered on top of another (e.g. layering 'base' and 'operate' math). Component names must be unique across all component groups.",
+      "properties": {
+        "dimensions": {
+          "type": "object",
+          "description": "All dimensions to include in the optimisation problem. The base math defines: carriers, costs, nodes, techs, timesteps, clusters, datesteps.",
+          "patternProperties": {
+            "^[^_^\\d][\\w]*$": {
+              "$ref": "#/$defs/mathDimension"
+            },
+            "^[^_^\\d][\\w]*(\\.[\\w]+)+$": {
+              "$ref": "#/$defs/dotNotationEntry"
+            }
+          },
+          "additionalProperties": false
+        },
+        "parameters": {
+          "type": "object",
+          "description": "All parameters to include in the optimisation problem.",
+          "patternProperties": {
+            "^[^_^\\d][\\w]*$": {
+              "$ref": "#/$defs/mathParameter"
+            },
+            "^[^_^\\d][\\w]*(\\.[\\w]+)+$": {
+              "$ref": "#/$defs/dotNotationEntry"
+            }
+          },
+          "additionalProperties": false
+        },
+        "lookups": {
+          "type": "object",
+          "description": "All lookups to include in the optimisation problem.",
+          "patternProperties": {
+            "^[^_^\\d][\\w]*$": {
+              "$ref": "#/$defs/mathLookup"
+            },
+            "^[^_^\\d][\\w]*(\\.[\\w]+)+$": {
+              "$ref": "#/$defs/dotNotationEntry"
+            }
+          },
+          "additionalProperties": false
+        },
+        "variables": {
+          "type": "object",
+          "description": "All decision variables to include in the optimisation problem.",
+          "patternProperties": {
+            "^[^_^\\d][\\w]*$": {
+              "$ref": "#/$defs/mathVariable"
+            },
+            "^[^_^\\d][\\w]*(\\.[\\w]+)+$": {
+              "$ref": "#/$defs/dotNotationEntry"
+            }
+          },
+          "additionalProperties": false
+        },
+        "global_expressions": {
+          "type": "object",
+          "description": "All global expressions that can be applied to the optimisation problem.",
+          "patternProperties": {
+            "^[^_^\\d][\\w]*$": {
+              "$ref": "#/$defs/mathGlobalExpression"
+            },
+            "^[^_^\\d][\\w]*(\\.[\\w]+)+$": {
+              "$ref": "#/$defs/dotNotationEntry"
+            }
+          },
+          "additionalProperties": false
+        },
+        "constraints": {
+          "type": "object",
+          "description": "All constraints to apply to the optimisation problem.",
+          "patternProperties": {
+            "^[^_^\\d][\\w]*$": {
+              "$ref": "#/$defs/mathConstraint"
+            },
+            "^[^_^\\d][\\w]*(\\.[\\w]+)+$": {
+              "$ref": "#/$defs/dotNotationEntry"
+            }
+          },
+          "additionalProperties": false
+        },
+        "piecewise_constraints": {
+          "type": "object",
+          "description": "All _piecewise_ constraints to apply to the optimisation problem.",
+          "patternProperties": {
+            "^[^_^\\d][\\w]*$": {
+              "$ref": "#/$defs/mathPiecewiseConstraint"
+            },
+            "^[^_^\\d][\\w]*(\\.[\\w]+)+$": {
+              "$ref": "#/$defs/dotNotationEntry"
+            }
+          },
+          "additionalProperties": false
+        },
+        "objectives": {
+          "type": "object",
+          "description": "Possible objectives to apply to the optimisation problem. The base math defines `min_cost_optimisation`; the SPORES math defines `min_spores`.",
+          "patternProperties": {
+            "^[^_^\\d][\\w]*$": {
+              "$ref": "#/$defs/mathObjective"
+            },
+            "^[^_^\\d][\\w]*(\\.[\\w]+)+$": {
+              "$ref": "#/$defs/dotNotationEntry"
+            }
+          },
+          "additionalProperties": false
+        },
+        "checks": {
+          "type": "object",
+          "description": "Checks to apply before building the optimisation problem.",
+          "patternProperties": {
+            "^[^_^\\d][\\w]*$": {
+              "$ref": "#/$defs/mathCheck"
+            },
+            "^[^_^\\d][\\w]*(\\.[\\w]+)+$": {
+              "$ref": "#/$defs/dotNotationEntry"
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false,
+      "patternProperties": {
+        "^[^_^\\d][\\w]*(\\.[\\w]+)+$": {
+          "$ref": "#/$defs/dotNotationEntry"
+        }
+      }
+    },
+    "nonFiniteFloat": {
+      "type": "string",
+      "enum": [
+        ".inf",
+        "-.inf",
+        ".nan"
+      ],
+      "description": "YAML 1.2 float literal for an IEEE-754 non-finite value: '.inf' -> +Infinity, '-.inf' -> -Infinity, '.nan' -> Not-a-Number. In a real Calliope YAML model these are written unquoted and parse to genuine floats; the quoted string form exists so that JSON carriers (and this schema's `default` keywords) can represent the value, since JSON has no Infinity/NaN literals. Consumers should map them to float('inf')/float('-inf')/float('nan')."
+    }
+  },
+  "properties": {
+    "import": {
+      "type": "array",
+      "title": "Imported YAML files.",
+      "description": "List of relative or absolute paths to further YAML files to import into this one (resolved recursively by Calliope's rich-YAML reader, src/calliope/io.py). Relative paths are relative to the importing file. The importing file takes precedence over imported content when keys collide. The `import` key itself is removed after resolution and only works for file-based (not string/dict-based) model definitions.",
+      "items": {
+        "type": "string",
+        "description": "Path to a YAML file to import."
+      }
+    },
+    "config": {
+      "$ref": "#/$defs/config"
+    },
+    "data_definitions": {
+      "$ref": "#/$defs/dataDefinitions",
+      "description": "All YAML-based model-wide input data definitions (upstream `CalliopeModelDef.data_definitions`). Named `parameters` in v0.7.0.dev6 and earlier. Each entry is an un-indexed scalar or an indexed `data`/`index`/`dims` definition."
+    },
+    "parameters": {
+      "$ref": "#/$defs/dataDefinitions",
+      "deprecated": true,
+      "description": "DEPRECATED (v0.7.0.dev6-and-earlier name; not accepted by v0.7.0.dev7): Calliope model arbitrary parameter definitions. Use the top-level `data_definitions` section instead. Content is identical: each entry is an un-indexed scalar or an indexed `data`/`index`/`dims` definition."
+    },
+    "techs": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "title": "Technology definitions.",
+      "description": "Calliope model technology definitions (upstream `CalliopeTechs`: `dict[AttrStr, CalliopeTech | None]`). Keys are technology names; a null value defines an (empty) technology placeholder.",
+      "patternProperties": {
+        "^[^_^\\d][\\w]*$": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/techDef"
+            }
+          ]
+        },
+        "^[^_^\\d][\\w]*(\\.[\\w]+)+$": {
+          "$ref": "#/$defs/dotNotationEntry"
+        }
+      },
+      "additionalProperties": false
+    },
+    "nodes": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "title": "Node definitions.",
+      "description": "Calliope model node definitions (upstream `CalliopeNodes`: `dict[AttrStr, CalliopeNode]`). Keys are node names.",
+      "patternProperties": {
+        "^[^_^\\d][\\w]*$": {
+          "$ref": "#/$defs/nodeDef"
+        },
+        "^[^_^\\d][\\w]*(\\.[\\w]+)+$": {
+          "$ref": "#/$defs/dotNotationEntry"
+        }
+      },
+      "additionalProperties": false
+    },
+    "locations": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "deprecated": true,
+      "title": "Node definitions (legacy name).",
+      "description": "DEPRECATED: `locations` has been renamed to `nodes` and will stop working in v0.7.1 (v0.7.0.dev7 still accepts it with a FutureWarning). Use the top-level `nodes` section instead.",
+      "patternProperties": {
+        "^[^_^\\d][\\w]*$": {
+          "$ref": "#/$defs/nodeDef"
+        },
+        "^[^_^\\d][\\w]*(\\.[\\w]+)+$": {
+          "$ref": "#/$defs/dotNotationEntry"
+        }
+      },
+      "additionalProperties": false
+    },
+    "templates": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "title": "Template definitions.",
+      "description": "Abstract technology/node/data-table templates from which other model components can inherit via their `template` key (upstream `TemplateSolver`; called `inherit` in early 0.7.0-dev versions). Template definitions must be placed at the top level of the YAML file and must be YAML blocks (mappings). Resolved and removed before schema validation. `templates` is protected: it can only appear in the YAML model definition, not be loaded from file via `data_tables`.",
+      "patternProperties": {
+        "^[^_^\\d][\\w]*$": {
+          "$ref": "#/$defs/template"
+        },
+        "^[^_^\\d][\\w]*(\\.[\\w]+)+$": {
+          "$ref": "#/$defs/dotNotationEntry"
+        }
+      },
+      "additionalProperties": false
+    },
+    "data_tables": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "title": "Data table definitions.",
+      "description": "All tabular model input data definitions (upstream `CalliopeDataTables`: `dict[AttrStr, CalliopeDataTable]`): references to files from which to load parts (or all) of the model definition. Loaded data will be _overridden_ by any data provided in the YAML definitions. Conflicting data between loaded files will be resolved by overriding in the order the data is provided (later entries take precedence over earlier ones).",
+      "patternProperties": {
+        "^[^_^\\d][\\w]*$": {
+          "$ref": "#/$defs/dataTable"
+        },
+        "^[^_^\\d][\\w]*(\\.[\\w]+)+$": {
+          "$ref": "#/$defs/dotNotationEntry"
+        }
+      },
+      "additionalProperties": false
+    },
+    "overrides": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "title": "Override definitions.",
+      "description": "Named overrides to apply to _any_ part of the model YAML configuration / definition, selected via `scenarios` or directly by name (comma-separated) through the `scenario` initialisation argument. An `override_dict` passed at initialisation has higher priority and can itself modify these definitions. Removed from the model definition before validation.",
+      "patternProperties": {
+        "^[^_^\\d][\\w]*$": {
+          "$ref": "#/$defs/override"
+        },
+        "^[^_^\\d][\\w]*(\\.[\\w]+)+$": {
+          "$ref": "#/$defs/dotNotationEntry"
+        }
+      },
+      "additionalProperties": false
+    },
+    "scenarios": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "title": "Scenario definitions.",
+      "description": "Groups of overrides (and/or other scenarios, expanded recursively) to define named scenarios. A scenario definition must be a list of override or other scenario names (or a single/comma-separated string of such names). Removed from the model definition before validation.",
+      "patternProperties": {
+        "^[^_^\\d][\\w]*$": {
+          "$ref": "#/$defs/scenarioDef"
+        }
+      },
+      "additionalProperties": false
+    },
+    "math": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "title": "Inline custom math definitions.",
+      "description": "Mapping from math entry name to a math definition following the math schema (upstream `CalliopeInputMath`: `dict[AttrStr, ...]`). NOTE: in v0.7.0.dev7 the model definition file itself does not carry a top-level `math` key - custom math lives in separate YAML files registered by name under `config.init.math_paths` and applied via `config.init.extra_math` (math application order: base -> mode -> extra), or is injected programmatically via the `math_dict` argument to `calliope.Model`, which this property mirrors. Each value follows `$defs/mathDefinition` (dimensions, parameters, lookups, variables, global_expressions, constraints, piecewise_constraints, objectives, checks). This property is included for completeness and for compatibility with programmatic/earlier-dev-cycle usage.",
+      "patternProperties": {
+        "^[^_^\\d][\\w]*$": {
+          "$ref": "#/$defs/mathDefinition"
+        },
+        "^[^_^\\d][\\w]*(\\.[\\w]+)+$": {
+          "$ref": "#/$defs/dotNotationEntry"
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "patternProperties": {
+    "^[^_^\\d][\\w]*(\\.[\\w]+)+$": {
+      "$ref": "#/$defs/dotNotationEntry"
+    }
+  }
+}

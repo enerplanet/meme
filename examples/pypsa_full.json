@@ -1,0 +1,547 @@
+{
+  "api_key": "s3cret",
+  "model": {
+    "metadata": {
+      "name": "pypsa_full",
+      "version": "1.0",
+      "description": "Maximal PyPSA configuration: every property PyPSA honors",
+      "currency": "EUR",
+      "currency_year": 2025
+    },
+    "time": {
+      "start": "2025-01-01",
+      "end": "2025-01-01T23:00",
+      "resolution": "1H"
+    },
+    "carriers": {
+      "electricity": {
+        "name": "Electricity",
+        "unit": "MWh",
+        "co2_intensity": 0,
+        "color": "#f1c40f"
+      },
+      "heat": {
+        "unit": "MWh",
+        "co2_intensity": 0,
+        "color": "#e74c3c"
+      },
+      "gas": {
+        "unit": "MWh",
+        "co2_intensity": 0.2,
+        "color": "#7f8c8d",
+        "native": {
+          "pypsa": {
+            "nice_name": "Natural Gas"
+          }
+        }
+      }
+    },
+    "nodes": {
+      "n1": {
+        "name": "North",
+        "coords": {
+          "lat": 48.8,
+          "lon": 12.9,
+          "alt": 340
+        },
+        "native": {
+          "pypsa": {
+            "v_nom": 110
+          }
+        }
+      },
+      "n2": {
+        "name": "South",
+        "coords": {
+          "lat": 49.0,
+          "lon": 13.2
+        }
+      }
+    },
+    "timeseries": {
+      "elec_dem": {
+        "source": "inline",
+        "values": [
+          70,
+          65,
+          60,
+          58,
+          60,
+          70,
+          90,
+          110,
+          120,
+          115,
+          110,
+          105,
+          100,
+          100,
+          105,
+          110,
+          120,
+          125,
+          120,
+          110,
+          100,
+          90,
+          80,
+          75
+        ]
+      },
+      "pv_cf": {
+        "source": "inline",
+        "values": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0.05,
+          0.15,
+          0.3,
+          0.45,
+          0.55,
+          0.6,
+          0.62,
+          0.6,
+          0.5,
+          0.35,
+          0.2,
+          0.08,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "import_price": {
+        "source": "inline",
+        "values": [
+          40,
+          38,
+          35,
+          33,
+          35,
+          45,
+          70,
+          95,
+          110,
+          100,
+          90,
+          80,
+          75,
+          72,
+          74,
+          80,
+          95,
+          120,
+          110,
+          90,
+          70,
+          60,
+          50,
+          45
+        ]
+      },
+      "hydro_inflow": {
+        "source": "inline",
+        "values": [
+          8,
+          8,
+          8,
+          9,
+          9,
+          10,
+          10,
+          11,
+          11,
+          10,
+          10,
+          9,
+          9,
+          9,
+          10,
+          10,
+          11,
+          11,
+          10,
+          9,
+          9,
+          8,
+          8,
+          8
+        ]
+      },
+      "peaker_mc": {
+        "source": "inline",
+        "values": [
+          90,
+          90,
+          90,
+          90,
+          90,
+          90,
+          120,
+          150,
+          180,
+          160,
+          140,
+          130,
+          120,
+          120,
+          125,
+          140,
+          160,
+          200,
+          180,
+          150,
+          120,
+          100,
+          95,
+          90
+        ]
+      }
+    },
+    "technologies": {
+      "pv": {
+        "role": "supply",
+        "node": [
+          "n1",
+          "n2"
+        ],
+        "carrier_out": "electricity",
+        "performance": {
+          "type": "physics",
+          "model": "pv",
+          "params": {
+            "tilt": 35,
+            "azimuth": 180,
+            "loss": 0.14
+          },
+          "precomputed": "pv_cf"
+        },
+        "capacity": {
+          "existing": 0,
+          "expandable": true,
+          "min": 10,
+          "max": 500,
+          "unit": "MW",
+          "systemwide_max": 700
+        },
+        "costs": {
+          "monetary": {
+            "investment_per_capacity": 600000,
+            "variable_om": 0
+          }
+        },
+        "lifetime": 25,
+        "interest_rate": 0.05,
+        "cost_basis": "overnight",
+        "node_overrides": {
+          "n2": {
+            "capacity": {
+              "existing": 0,
+              "expandable": true,
+              "max": 300
+            },
+            "costs": {
+              "monetary": {
+                "investment_per_capacity": 650000
+              }
+            }
+          }
+        }
+      },
+      "ccgt": {
+        "role": "supply",
+        "node": "n1",
+        "carrier_out": "electricity",
+        "efficiency": 0.55,
+        "capacity": {
+          "existing": 200,
+          "expandable": false,
+          "unit": "MW"
+        },
+        "operation": {
+          "committable": true,
+          "start_up_cost": 5000,
+          "shut_down_cost": 500,
+          "min_uptime": 3,
+          "min_downtime": 2,
+          "ramp_up": 0.6,
+          "ramp_down": 0.6,
+          "min_pu": 0.3,
+          "max_pu": 0.95
+        },
+        "costs": {
+          "monetary": {
+            "investment_per_capacity": 800000,
+            "fixed_om": 2000,
+            "variable_om": 45
+          }
+        },
+        "lifetime": 30,
+        "interest_rate": 0.07,
+        "cost_basis": "overnight",
+        "native": {
+          "pypsa": {
+            "stand_by_cost": 10
+          }
+        },
+        "build_year": 2020,
+        "annual_output_max": 1000000
+      },
+      "peaker": {
+        "role": "supply",
+        "node": "n1",
+        "carrier_out": "electricity",
+        "capacity": {
+          "existing": 100,
+          "expandable": false
+        },
+        "costs": {
+          "monetary": {
+            "variable_om": "peaker_mc"
+          }
+        }
+      },
+      "gas_src": {
+        "role": "supply",
+        "node": "n1",
+        "carrier_out": "gas",
+        "capacity": {
+          "expandable": true,
+          "max": 10000
+        },
+        "costs": {
+          "monetary": {
+            "variable_om": 25
+          }
+        }
+      },
+      "chp": {
+        "role": "conversion",
+        "node": "n1",
+        "flows": [
+          {
+            "carrier": "gas",
+            "direction": "in",
+            "reference": true
+          },
+          {
+            "carrier": "electricity",
+            "direction": "out",
+            "ratio": 0.4
+          },
+          {
+            "carrier": "heat",
+            "direction": "out",
+            "ratio": 0.45
+          }
+        ],
+        "capacity": {
+          "expandable": true,
+          "max": 250
+        },
+        "costs": {
+          "monetary": {
+            "investment_per_capacity": 900000,
+            "variable_om": 2
+          }
+        },
+        "lifetime": 25,
+        "interest_rate": 0.07,
+        "cost_basis": "overnight"
+      },
+      "battery": {
+        "role": "storage",
+        "node": "n1",
+        "carrier_in": "electricity",
+        "carrier_out": "electricity",
+        "capacity": {
+          "expandable": true,
+          "max": 200
+        },
+        "storage": {
+          "max_hours": 4,
+          "charge_eff": 0.95,
+          "discharge_eff": 0.95,
+          "self_discharge": 0.001,
+          "initial_soc": 0.5,
+          "cyclic": true
+        },
+        "costs": {
+          "monetary": {
+            "investment_per_capacity": 150000
+          }
+        },
+        "lifetime": 15,
+        "interest_rate": 0.07,
+        "cost_basis": "overnight"
+      },
+      "hydro": {
+        "role": "storage",
+        "node": "n2",
+        "carrier_in": "electricity",
+        "carrier_out": "electricity",
+        "capacity": {
+          "existing": 80,
+          "expandable": false
+        },
+        "storage": {
+          "max_hours": 6,
+          "inflow": "hydro_inflow",
+          "spill_cost": 5,
+          "discharge_eff": 0.9,
+          "initial_soc": 0.7,
+          "cyclic": false
+        },
+        "costs": {
+          "monetary": {
+            "variable_om": 1
+          }
+        }
+      },
+      "elec_demand": {
+        "role": "demand",
+        "node": "n1",
+        "carrier_in": "electricity",
+        "demand_profile": "elec_dem"
+      },
+      "elec_demand2": {
+        "role": "demand",
+        "node": "n2",
+        "carrier_in": "electricity",
+        "demand_profile": 40
+      },
+      "heat_demand": {
+        "role": "demand",
+        "node": "n1",
+        "carrier_in": "heat",
+        "demand_profile": 45
+      }
+    },
+    "transmission": {
+      "line1": {
+        "carrier": "electricity",
+        "from": "n1",
+        "to": "n2",
+        "bidirectional": true,
+        "capacity": {
+          "expandable": true,
+          "max": 300
+        },
+        "efficiency": 0.97,
+        "distance": 50,
+        "native": {
+          "pypsa": {
+            "x": 0.1,
+            "r": 0.01
+          }
+        },
+        "loss_per_distance": 5e-05
+      }
+    },
+    "trade": {
+      "grid": {
+        "node": "n1",
+        "carrier": "electricity",
+        "import": {
+          "limit": 500,
+          "price": "import_price",
+          "emission_factor": 0.35
+        },
+        "export": {
+          "limit": 200,
+          "price": 30
+        }
+      }
+    },
+    "emission_limits": [
+      {
+        "name": "co2_cap",
+        "carrier": "co2",
+        "sense": "<=",
+        "limit": 1000000
+      }
+    ],
+    "constraints": [
+      {
+        "name": "elec_capacity_budget",
+        "sense": "<=",
+        "bound": 5000,
+        "terms": [
+          {
+            "coefficient": 1,
+            "variable": "capacity",
+            "carriers": [
+              "electricity"
+            ]
+          }
+        ]
+      },
+      {
+        "name": "force_pv_floor",
+        "sense": ">=",
+        "bound": 100,
+        "terms": [
+          {
+            "coefficient": 1,
+            "variable": "capacity",
+            "techs": [
+              "pv"
+            ]
+          }
+        ]
+      },
+      {
+        "name": "pv_plus_battery",
+        "sense": "<=",
+        "bound": 600,
+        "terms": [
+          {
+            "coefficient": 1,
+            "variable": "capacity",
+            "techs": [
+              "pv"
+            ]
+          },
+          {
+            "coefficient": 1,
+            "variable": "capacity",
+            "techs": [
+              "battery"
+            ]
+          }
+        ]
+      }
+    ],
+    "native": {
+      "pypsa": {
+        "note": "system-wide payload lands in _native.pypsa.json"
+      }
+    }
+  },
+  "experiment": {
+    "mode": "plan",
+    "objective": "min_cost",
+    "foresight": "perfect",
+    "sweep": [
+      {
+        "parameter": "technologies.battery.capacity.max",
+        "values": [
+          100,
+          200
+        ]
+      }
+    ],
+    "solver": {
+      "name": "highs",
+      "time_limit": 600,
+      "threads": 4
+    }
+  }
+}

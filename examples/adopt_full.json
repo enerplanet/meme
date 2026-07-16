@@ -1,0 +1,311 @@
+{
+  "api_key": "s3cret",
+  "model": {
+    "metadata": {
+      "name": "adopt_full",
+      "version": "1.0",
+      "description": "Maximal AdOpT-NET0 configuration: every property AdOpT honors",
+      "currency": "EUR",
+      "currency_year": 2025
+    },
+    "time": {
+      "start": "2025-06-01",
+      "end": "2025-06-01T05:00",
+      "resolution": "1H"
+    },
+    "carriers": {
+      "electricity": {
+        "unit": "MWh"
+      },
+      "heat": {
+        "unit": "MWh"
+      }
+    },
+    "nodes": {
+      "n1": {
+        "name": "North",
+        "coords": {
+          "lat": 48.8,
+          "lon": 12.9,
+          "alt": 340
+        },
+        "climate": {
+          "ghi": "s_ghi",
+          "dni": "s_dni",
+          "dhi": "s_dhi",
+          "temp_air": "s_temp",
+          "rh": 55,
+          "ws10": "s_ws"
+        }
+      },
+      "n2": {
+        "name": "South",
+        "coords": {
+          "lat": 53.5,
+          "lon": 8.1
+        },
+        "climate": {
+          "ws10": "s_ws",
+          "temp_air": "s_temp"
+        }
+      }
+    },
+    "timeseries": {
+      "s_ghi": {
+        "source": "inline",
+        "values": [
+          0,
+          150,
+          400,
+          700,
+          800,
+          600
+        ]
+      },
+      "s_dni": {
+        "source": "inline",
+        "values": [
+          0,
+          200,
+          500,
+          800,
+          900,
+          700
+        ]
+      },
+      "s_dhi": {
+        "source": "inline",
+        "values": [
+          0,
+          60,
+          100,
+          140,
+          150,
+          120
+        ]
+      },
+      "s_temp": {
+        "source": "inline",
+        "values": [
+          12,
+          14,
+          18,
+          22,
+          25,
+          24
+        ]
+      },
+      "s_ws": {
+        "source": "inline",
+        "values": [
+          4,
+          6,
+          9,
+          12,
+          10,
+          8
+        ]
+      },
+      "elec_dem": {
+        "source": "inline",
+        "values": [
+          50,
+          55,
+          70,
+          90,
+          85,
+          65
+        ]
+      },
+      "imp_price": {
+        "source": "inline",
+        "values": [
+          60,
+          55,
+          70,
+          110,
+          95,
+          75
+        ]
+      }
+    },
+    "technologies": {
+      "pv": {
+        "role": "supply",
+        "node": "n1",
+        "carrier_out": "electricity",
+        "performance": {
+          "type": "physics",
+          "model": "pv",
+          "params": {
+            "tilt": 35,
+            "azimuth": 180
+          }
+        },
+        "capacity": {
+          "expandable": true,
+          "max": 1000
+        },
+        "costs": {
+          "monetary": {
+            "investment_per_capacity": 800,
+            "fixed_om": 10
+          }
+        },
+        "lifetime": 25,
+        "interest_rate": 0.05,
+        "cost_basis": "overnight"
+      },
+      "wind": {
+        "role": "supply",
+        "node": "n2",
+        "carrier_out": "electricity",
+        "performance": {
+          "type": "physics",
+          "model": "wind"
+        },
+        "capacity": {
+          "expandable": true,
+          "max": 1500
+        },
+        "costs": {
+          "monetary": {
+            "investment_per_capacity": 1200
+          }
+        },
+        "lifetime": 25,
+        "interest_rate": 0.05,
+        "cost_basis": "overnight"
+      },
+      "heat_pump": {
+        "role": "supply",
+        "node": "n1",
+        "carrier_out": "heat",
+        "performance": {
+          "type": "physics",
+          "model": "heat_pump",
+          "params": {
+            "cop_ref": 3.5
+          }
+        },
+        "capacity": {
+          "expandable": true,
+          "max": 200
+        },
+        "costs": {
+          "monetary": {
+            "investment_per_capacity": 600
+          }
+        },
+        "lifetime": 20,
+        "interest_rate": 0.05,
+        "cost_basis": "overnight"
+      },
+      "battery": {
+        "role": "storage",
+        "node": [
+          "n1",
+          "n2"
+        ],
+        "carrier_in": "electricity",
+        "carrier_out": "electricity",
+        "capacity": {
+          "expandable": true,
+          "max": 100
+        },
+        "storage": {
+          "max_hours": 4,
+          "charge_eff": 0.95,
+          "discharge_eff": 0.95
+        },
+        "costs": {
+          "monetary": {
+            "investment_per_capacity": 100,
+            "fixed_om": 2,
+            "variable_om": 0.1
+          }
+        },
+        "lifetime": 15,
+        "interest_rate": 0.05,
+        "cost_basis": "overnight",
+        "node_overrides": {
+          "n2": {
+            "capacity": {
+              "expandable": true,
+              "max": 40
+            }
+          }
+        },
+        "native": {
+          "adopt-net0": {
+            "Performance": {
+              "meme_example_flag": 1
+            }
+          }
+        }
+      },
+      "elec_demand": {
+        "role": "demand",
+        "node": "n1",
+        "carrier_in": "electricity",
+        "demand_profile": "elec_dem"
+      },
+      "elec_demand2": {
+        "role": "demand",
+        "node": "n2",
+        "carrier_in": "electricity",
+        "demand_profile": 30
+      },
+      "heat_demand": {
+        "role": "demand",
+        "node": "n1",
+        "carrier_in": "heat",
+        "demand_profile": 15
+      }
+    },
+    "trade": {
+      "grid1": {
+        "node": "n1",
+        "carrier": "electricity",
+        "import": {
+          "limit": 1000,
+          "price": "imp_price",
+          "emission_factor": 0.35
+        },
+        "export": {
+          "limit": 200,
+          "price": 25,
+          "emission_factor": 0.1
+        }
+      },
+      "grid2": {
+        "node": "n2",
+        "carrier": "electricity",
+        "import": {
+          "limit": 1000,
+          "price": 80
+        }
+      }
+    },
+    "emission_limits": [
+      {
+        "name": "co2_cap",
+        "sense": "<=",
+        "limit": 100000
+      }
+    ]
+  },
+  "experiment": {
+    "mode": "plan",
+    "objective": "min_cost",
+    "foresight": "perfect",
+    "solver": {
+      "name": "glpk",
+      "time_limit": 600,
+      "mip_gap": 0.01
+    },
+    "reporting": {
+      "case_name": "adopt_full"
+    }
+  }
+}

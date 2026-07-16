@@ -1,0 +1,20 @@
+# System-Python frameworks for the meme service. These two are invoked by the
+# Go runner via `python -c "import <pkg>; ..."`, so they must share one
+# interpreter (the image's system python):
+#
+#   PyPSA       ->  python -c "import pypsa;      ...; n.optimize()"
+#   AdOpT-NET0  ->  python -c "import adopt_net0 as adopt; adopt.run_model(...)"
+#
+# Calliope is installed separately, in its own venv, because its 0.7 pins
+# conflict with the above — see requirements-calliope.txt. It's driven through
+# the `calliope` CLI, so it doesn't need to share this interpreter.
+#
+# Known-good set, E2E-verified (test/e2e): pypsa 1.2.4 + adopt_net0 0.1.10.
+# The run scripts and emitters are validated against exactly these versions.
+
+pypsa==1.2.4
+adopt_net0==0.1.10
+
+# --- Free, open-source solver (HiGHS) ---
+# PyPSA drives it via linopy with solver name "highs".
+highspy

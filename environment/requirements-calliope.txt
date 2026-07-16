@@ -1,0 +1,24 @@
+# Calliope 0.7 lives in its own virtualenv (see Dockerfile) so its pinned
+# dependency set doesn't collide with PyPSA / AdOpT in the system Python.
+# The Go runner only ever calls the `calliope` CLI, so isolation is lossless.
+#
+# 0.7.0 is not yet on PyPI as a final release — only 0.7.0.dev* pre-releases —
+# and the service emits Calliope 0.7 (model.yaml + additional_math.yaml) syntax,
+# so we install the latest available 0.7 pre-release.
+calliope==0.7.0.dev7
+
+# calliope pins xarray<2024.4, but only says pandas>=2.1.3 — so the resolver
+# grabs pandas 3.0, whose `to_xarray` demands xarray>=2024.10. That's an
+# unsatisfiable combination. Cap pandas below 3.0 (2.2.x needs only an older
+# xarray) so calliope can actually load model data.
+pandas>=2.1.3,<2.3
+
+# pyomo pin for calliope dev7. HiGHS cannot drive calliope dev7 on ANY available
+# pyomo (6.9.4/6.9.5/6.10 hit an add_block bug in contrib.solver's persistent
+# interface; 6.8.x/appsi reject the call) — so use `solver: cbc` with calliope
+# (also free/OSS, apt-installed). 6.8.2 is the version where cbc solves cleanly
+# and general model building works; newer 6.9/6.10 regress it.
+pyomo>=6.8.2,<6.9
+
+# HiGHS solver inside the Calliope venv (Calliope/Pyomo drive it as "highs").
+highspy

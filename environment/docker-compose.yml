@@ -1,0 +1,63 @@
+# Build-and-test environment for the meme (energymodel) service.
+#
+# Per-environment settings (ports, work dir, image tag) come from an env file:
+#   docker compose --env-file environment/.env.dev  -f environment/docker-compose.yml up api
+#   docker compose --env-file environment/.env.prod -f environment/docker-compose.yml up api
+# or via the Makefile:  make docker-run ENV=dev   /   make docker-run ENV=prod
+#
+# The repo root is bind-mounted into /src so edits are picked up without a
+# rebuild; only the frameworks/solver layer is baked into the image.
+
+name: meme-env
+
+services:
+  # Long-running API with real solver execution.
+  api:
+    build:
+      context: ..
+      dockerfile: environment/Dockerfile
+    image: ${IMAGE_TAG:-meme-env:latest}
+    working_dir: /src
+    environment:
+      # Unified vars, consumed by the Makefile's run target (ADDR/WORK/EXEC use
+      # ?= so the environment wins over the in-file defaults).
+      - ADDR=:${PORT:-8080}
+      - WORK=${WORK:-/src/.work}
+      - EXEC=${EXEC:-true}
+    volumes:
+      - ..:/src
+      - go-build:/root/.cache/go-build
+      - go-mod:/root/go/pkg/mod
+    ports:
+      - "${HOST_PORT:-8080}:${PORT:-8080}"
+    command: make run
+
+  # One-shot: compile everything and run the Go test suite.
+  test:
+    image: ${IMAGE_TAG:-meme-env:latest}
+    build:
+      context: ..
+      dockerfile: environment/Dockerfile
+    working_dir: /src
+    volumes:
+      - ..:/src
+      - go-build:/root/.cache/go-build
+      - go-mod:/root/go/pkg/mod
+    command: make test
+
+  # Interactive shell with Go + all three frameworks + HiGHS on PATH.
+  shell:
+    image: ${IMAGE_TAG:-meme-env:latest}
+    build:
+      context: ..
+      dockerfile: environment/Dockerfile
+    working_dir: /src
+    volumes:
+      - ..:/src
+      - go-build:/root/.cache/go-build
+      - go-mod:/root/go/pkg/mod
+    command: bash
+
+volumes:
+  go-build:
+  go-mod:

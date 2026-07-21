@@ -1,3 +1,6 @@
+![Ignis logo](docs/assets/logos/meme-banner-dark.png#gh-dark-mode-only)
+![Ignis logo](docs/assets/logos/meme-banner-light.png#gh-light-mode-only)
+
 # Multi Energy Model Execution (MEME)
 
 A dependency-free (Go standard library only) REST service that accepts one

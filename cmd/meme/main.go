@@ -48,12 +48,20 @@ func main() {
 	store := service.NewJobStore()
 	store.StartGC(jobCtx, jobTTL, gcInterval)
 
+	// Fail fast on a CORS misconfiguration (e.g. "*" with credentials, or an
+	// origin with a trailing slash that would silently never match).
+	corsCfg := api.CORSConfig{AllowedOrigins: cfg.CORSOrigins}
+	if err := corsCfg.Validate(); err != nil {
+		log.Fatal(err)
+	}
+
 	handler := api.NewServer(api.Server{
 		Executor:   service.NewExecutor(runner, maxParallelJobs),
 		WorkRoot:   cfg.WorkRoot,
 		Store:      store,
 		JobContext: jobCtx,
 		APIKey:     cfg.APIKey,
+		CORS:       corsCfg,
 	})
 
 	server := &http.Server{
@@ -68,7 +76,11 @@ func main() {
 	if cfg.APIKey != "" {
 		auth = "enabled"
 	}
-	log.Printf("energymodel API listening on %s (exec=%v, auth %s)", cfg.Addr, cfg.Exec, auth)
+	cors := "disabled"
+	if len(cfg.CORSOrigins) > 0 {
+		cors = "enabled"
+	}
+	log.Printf("energymodel API listening on %s (exec=%v, auth %s, cors %s)", cfg.Addr, cfg.Exec, auth, cors)
 
 	select {
 	case err := <-errCh:

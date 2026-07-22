@@ -34,12 +34,16 @@ const maxBodyBytes = 32 << 20 // 32 MiB
 // default, i.e. no API_KEY in the .env), no key is required and any key a
 // client happens to send is accepted. The GET endpoints carry no payload;
 // job results are addressed by their unguessable 128-bit random ids.
+//
+// CORS defaults to off (its zero value); see CORSConfig for how browser
+// cross-origin access is enabled and customized.
 type Server struct {
 	Executor   *service.Executor
 	WorkRoot   string
 	Store      *service.JobStore
 	JobContext context.Context
 	APIKey     string
+	CORS       CORSConfig
 }
 
 // NewServer returns an http.Handler exposing (also aliased under /v1/):
@@ -56,6 +60,10 @@ type Server struct {
 // ("pypsa,calliope"), or "all": one request validates/emits/runs every
 // requested framework; multi-target bundles nest per-target under
 // files/<target>/.
+//
+// When CORS is enabled (see CORSConfig), a wrapping middleware answers
+// preflight OPTIONS on every route and decorates responses with the
+// Access-Control-* headers; otherwise the mux is returned bare.
 func NewServer(s Server) http.Handler {
 	if s.Store == nil {
 		s.Store = service.NewJobStore()
@@ -88,6 +96,9 @@ func NewServer(s Server) http.Handler {
 	route("POST /simulate", s.handleSubmit)
 	route("GET /jobs/{id}/status", s.handleStatus)
 	route("GET /jobs/{id}", s.handleResult)
+	if s.CORS.enabled() {
+		return newCORSHandler(s.CORS, mux)
+	}
 	return mux
 }
 

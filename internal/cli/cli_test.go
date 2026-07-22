@@ -94,7 +94,32 @@ func TestParseArgsDefaults(t *testing.T) {
 	if cfg.Addr != ":8080" || cfg.Exec || cfg.WorkRoot != "" || cfg.APIKey != "" {
 		t.Errorf("defaults: got %+v (API_KEY default must be empty = auth disabled)", cfg)
 	}
+	if cfg.CORSOrigins != nil {
+		t.Errorf("CORS_ORIGINS default must be nil = CORS disabled, got %v", cfg.CORSOrigins)
+	}
 	if cfg.EnvLoaded {
 		t.Error("expected EnvLoaded=false for missing file")
+	}
+}
+
+// CORS_ORIGINS is comma-split and trimmed; the -cors-origins flag overrides it.
+func TestParseArgsCORSOrigins(t *testing.T) {
+	t.Setenv("MEME_ENV_FILE", "")
+	envPath := writeEnv(t, "CORS_ORIGINS=https://a.test, https://*.b.test,\n")
+
+	cfg, err := ParseArgs([]string{"-env-file", envPath})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.CORSOrigins) != 2 || cfg.CORSOrigins[0] != "https://a.test" || cfg.CORSOrigins[1] != "https://*.b.test" {
+		t.Errorf(".env origins should be split and trimmed, got %v", cfg.CORSOrigins)
+	}
+
+	cfg, err = ParseArgs([]string{"-env-file", envPath, "-cors-origins", "*"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.CORSOrigins) != 1 || cfg.CORSOrigins[0] != "*" {
+		t.Errorf("CLI -cors-origins should override .env, got %v", cfg.CORSOrigins)
 	}
 }

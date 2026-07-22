@@ -59,6 +59,7 @@ load-bearing; see [`environment/README.md`](environment/README.md)).
 | `WORK` | `-work` | OS temp | root dir for emitted files and job dirs |
 | `EXEC` | `-exec` | `false` | run real solvers vs. dry-run |
 | `API_KEY` | `-api-key` | *(empty)* | require this key in every payload; empty = auth off |
+| `CORS_ORIGINS` | `-cors-origins` | *(empty)* | comma-separated browser origins allowed via CORS; empty = CORS off |
 
 **Authentication.** Set `API_KEY` and every payload-bearing request
 (`/validate`, `/convert`, `/simulate`) must carry it as a top-level
@@ -78,6 +79,29 @@ when `API_KEY` is unset the field is ignored.
 ```bash
 echo 'API_KEY=s3cret' >> .env && make run
 curl -s -X POST 'localhost:8080/validate?target=pypsa' -d @examples/pypsa_full.json
+```
+
+**CORS.** Off by default: no `Access-Control-*` headers are emitted and
+cross-origin browser calls stay blocked. Set `CORS_ORIGINS` to a
+comma-separated allow list — exact origins (`https://app.example.com`), the
+wildcard `*`, or subdomain wildcards (`https://*.example.com`) — and the
+server answers preflight `OPTIONS` on every route (204, before
+authentication: preflights carry no payload and hence no `api_key`), echoes
+the allowed origin on responses, and exposes `Content-Disposition` so
+browser JS can read the zip filename from `GET /jobs/{id}`. Combining `*`
+with credentials is rejected at startup, as are malformed origins (e.g. a
+trailing slash). Embedders constructing `api.Server` directly get the full
+knob set via `api.CORSConfig`: custom methods/headers, credentials,
+preflight max-age, Chrome private-network preflights, and an
+`AllowOriginFunc` escape hatch. Note CORS is browser policy, not access
+control — non-browser clients ignore it; `API_KEY` remains the
+authentication.
+
+```bash
+echo 'CORS_ORIGINS=http://localhost:5173' >> .env && make run
+curl -si -X OPTIONS 'localhost:8080/validate?target=pypsa' \
+  -H 'Origin: http://localhost:5173' -H 'Access-Control-Request-Method: POST'
+# HTTP/1.1 204 No Content, Access-Control-Allow-Origin: http://localhost:5173, …
 ```
 
 ## Repository overview

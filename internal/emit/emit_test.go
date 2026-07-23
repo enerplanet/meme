@@ -8,7 +8,9 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/enerplanet/meme/internal/model"
 )
@@ -25,11 +27,27 @@ func TestAnnualizedCapex(t *testing.T) {
 		{"zero interest is straight-line", 1000, 0, 20, 50},
 		{"CRF at 5% over 20y", 1000, 0.05, 20, 1000 * 0.05 * math.Pow(1.05, 20) / (math.Pow(1.05, 20) - 1)},
 		{"one-year lifetime repays principal plus interest", 1000, 0.05, 1, 1050},
+		// Numeric-stability edges: the naive CRF used to blow up here (rate
+		// 1e-16 gave +Inf, 1e-12 was 0.19% off, huge lifetimes gave NaN).
+		{"rate 1e-16 is straight-line, not +Inf", 1000, 1e-16, 20, 50},
+		{"rate 1e-17 is straight-line", 1000, 1e-17, 20, 50},
+		// First-order CRF: (1/L)(1 + (L+1)r/2), hand-computed for L=20.
+		{"rate 1e-12 keeps first-order accuracy", 1000, 1e-12, 20, 50.000000000525},
+		{"rate 1e-8 keeps first-order accuracy", 1000, 1e-8, 20, 50.00000525},
+		{"tiny negative rate", 1000, -1e-12, 20, 49.999999999475},
+		{"negative rate uses the closed form", 1000, -0.05, 20,
+			1000 * -0.05 * math.Pow(0.95, 20) / (math.Pow(0.95, 20) - 1)},
+		// (1.05)^175200 overflows; the stable form converges to CRF = r.
+		{"huge lifetime converges to the interest rate", 1000, 0.05, 175200, 50},
+		// Below -100% no CRF exists; documented straight-line fallback.
+		{"rate below -1 falls back to straight-line", 1000, -1.5, 20.5, 1000 / 20.5},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			got := AnnualizedCapex(c.overnight, c.rate, c.life)
-			if math.Abs(got-c.want) > 1e-9 {
+			// NaN fails every comparison, so guard finiteness explicitly or a
+			// NaN result would slip past the tolerance check.
+			if math.IsNaN(got) || math.IsInf(got, 0) || math.Abs(got-c.want) > 1e-9 {
 				t.Errorf("AnnualizedCapex(%v, %v, %v) = %v, want %v", c.overnight, c.rate, c.life, got, c.want)
 			}
 		})
@@ -106,6 +124,82 @@ func TestSnapshotLabels(t *testing.T) {
 	}
 }
 
+func TestSnapshotLabelsExtendsTimesteps(t *testing.T) {
+	cases := []struct {
+		name string
+		tc   model.TimeConfig
+		n    int
+		want []string
+	}{
+		{
+			"exact timesteps pass through",
+			model.TimeConfig{Timesteps: []string{"2030-01-01 00:00:00", "2030-01-01 01:00:00"}},
+			2,
+			[]string{"2030-01-01 00:00:00", "2030-01-01 01:00:00"},
+		},
+		{
+			// The old behavior padded with bare integer indices, producing a
+			// mixed datetime/int column that pandas to_datetime rejects.
+			"short timesteps extend by resolution arithmetic",
+			model.TimeConfig{Resolution: "1H", Timesteps: []string{"2030-01-01 00:00:00", "2030-01-01 01:00:00"}},
+			4,
+			[]string{"2030-01-01 00:00:00", "2030-01-01 01:00:00", "2030-01-01 02:00:00", "2030-01-01 03:00:00"},
+		},
+		{
+			"extension honors a coarser resolution",
+			model.TimeConfig{Resolution: "3H", Timesteps: []string{"2030-01-01 00:00:00"}},
+			3,
+			[]string{"2030-01-01 00:00:00", "2030-01-01 03:00:00", "2030-01-01 06:00:00"},
+		},
+		{
+			"missing resolution defaults to one hour",
+			model.TimeConfig{Timesteps: []string{"2030-01-01 00:00:00"}},
+			2,
+			[]string{"2030-01-01 00:00:00", "2030-01-01 01:00:00"},
+		},
+		{
+			"extension keeps the minute-precision layout",
+			model.TimeConfig{Resolution: "1H", Timesteps: []string{"2030-01-01T00:00"}},
+			2,
+			[]string{"2030-01-01T00:00", "2030-01-01T01:00"},
+		},
+		{
+			"date-only layout survives daily resolution",
+			model.TimeConfig{Resolution: "24H", Timesteps: []string{"2030-01-01"}},
+			3,
+			[]string{"2030-01-01", "2030-01-02", "2030-01-03"},
+		},
+		{
+			// A date-only layout cannot express hourly steps without emitting
+			// duplicate labels; the extension switches to the full layout.
+			"date-only layout widens for sub-daily resolution",
+			model.TimeConfig{Resolution: "1H", Timesteps: []string{"2030-01-01"}},
+			3,
+			[]string{"2030-01-01", "2030-01-01 01:00:00", "2030-01-01 02:00:00"},
+		},
+		{
+			// Nothing to extrapolate from: integer indices stay the last resort.
+			"unparseable last timestep keeps integer padding",
+			model.TimeConfig{Timesteps: []string{"a", "b"}},
+			4,
+			[]string{"a", "b", "2", "3"},
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := SnapshotLabels(c.tc, c.n)
+			if len(got) != len(c.want) {
+				t.Fatalf("SnapshotLabels = %v, want %v", got, c.want)
+			}
+			for i := range c.want {
+				if got[i] != c.want[i] {
+					t.Fatalf("SnapshotLabels = %v, want %v", got, c.want)
+				}
+			}
+		})
+	}
+}
+
 func TestParseDate(t *testing.T) {
 	for _, ok := range []string{
 		"2030-01-01", "2030-01-01T06:00", "2030-01-01 06:00",
@@ -124,17 +218,66 @@ func TestParseDate(t *testing.T) {
 
 func TestParseHours(t *testing.T) {
 	cases := map[string]float64{
-		"":     1, // default 1H
-		"1H":   1,
-		"3H":   3,
-		"24H":  24,
-		"PT1H": 1, // digit scrape also accepts ISO8601-style durations
-		"xyz":  1, // no digits -> default
-		"0H":   1, // zero -> default
+		"":    1, // default 1H
+		"1H":  1,
+		"3H":  3,
+		"24H": 24,
+		"xyz": 1, // unrecognized -> lenient default
+		"0H":  1, // zero -> lenient default
+		// Grammar fixes: the old digit scrape misread all of these.
+		"0.5H":  0.5,  // was 5h
+		"30min": 0.5,  // was 30h
+		"15T":   0.25, // was 15h
+		"PT30M": 0.5,  // was 30h
+		"PT1H":  1,
+		"D":     24, // was silent 1h default
 	}
 	for in, wantH := range cases {
 		if got := ParseHours(in).Hours(); got != wantH {
 			t.Errorf("ParseHours(%q) = %vh, want %vh", in, got, wantH)
+		}
+	}
+}
+
+func TestParseResolution(t *testing.T) {
+	ok := []struct {
+		in   string
+		want time.Duration
+	}{
+		{"1H", time.Hour},
+		{"3h", 3 * time.Hour},
+		{"H", time.Hour}, // count defaults to 1, as in pandas
+		{"0.5H", 30 * time.Minute},
+		{"30min", 30 * time.Minute},
+		{"min", time.Minute},
+		{"15T", 15 * time.Minute},
+		{"45S", 45 * time.Second},
+		{"D", 24 * time.Hour},
+		{"2d", 48 * time.Hour},
+		{"3", 3 * time.Hour}, // bare count means hours (pre-grammar behavior)
+		{" 1H ", time.Hour},
+		{"PT1H", time.Hour},
+		{"PT30M", 30 * time.Minute},
+		{"pt30m", 30 * time.Minute},
+		{"PT0.5H", 30 * time.Minute},
+		{"PT1H30M", 90 * time.Minute},
+		{"P1D", 24 * time.Hour},
+		{"P1DT12H", 36 * time.Hour},
+	}
+	for _, c := range ok {
+		got, err := ParseResolution(c.in)
+		if err != nil || got != c.want {
+			t.Errorf("ParseResolution(%q) = %v, %v, want %v", c.in, got, err, c.want)
+		}
+	}
+	bad := []string{
+		"", "xyz", "0H", "-1H", "1.5.2H", "H3",
+		"M", "1M", // month vs minute is ambiguous; must not guess
+		"P", "PT", "PTM", "PT1X", "P1M", // calendar-dependent or malformed
+	}
+	for _, in := range bad {
+		if got, err := ParseResolution(in); err == nil {
+			t.Errorf("ParseResolution(%q) = %v, want error", in, got)
 		}
 	}
 }
@@ -181,6 +324,67 @@ func TestWriteCSV(t *testing.T) {
 	}
 	if err := WriteCSV(filepath.Join(dir, "nope"), "t.csv", rows); err == nil {
 		t.Error("WriteCSV into a missing directory must error")
+	}
+}
+
+func TestWriteCSVRejectsNonFinite(t *testing.T) {
+	// Every spelling Ftoa can produce for a non-finite float must be refused
+	// before any bytes hit disk — a "NaN" cell in generators.csv used to
+	// round-trip into a successful job.
+	for _, cell := range []string{Ftoa(math.NaN()), Ftoa(math.Inf(1)), Ftoa(math.Inf(-1))} {
+		dir := t.TempDir()
+		rows := [][]string{{"name", "capital_cost"}, {"gen", cell}}
+		err := WriteCSV(dir, "t.csv", rows)
+		if err == nil {
+			t.Fatalf("WriteCSV with %q cell must error", cell)
+		}
+		if _, statErr := os.Stat(filepath.Join(dir, "t.csv")); !os.IsNotExist(statErr) {
+			t.Errorf("WriteCSV must not create a file when rejecting %q", cell)
+		}
+	}
+	// The lowercase "inf" spelling is the deliberate unbounded default
+	// (PyPSA p_nom_max via OptFloat) and must keep passing.
+	dir := t.TempDir()
+	if err := WriteCSV(dir, "t.csv", [][]string{{"p_nom_max"}, {"inf"}}); err != nil {
+		t.Errorf("WriteCSV must accept the lowercase inf default: %v", err)
+	}
+}
+
+func TestSeriesLengthMismatches(t *testing.T) {
+	// No inline series: nothing to compare against.
+	if got := SeriesLengthMismatches(&model.Model{Timeseries: map[string]model.TimeSeries{
+		"f": {Source: "file", Path: "x.csv"},
+	}}); got != nil {
+		t.Errorf("no inline series must yield nil, got %v", got)
+	}
+	// Equal lengths: no warnings.
+	if got := SeriesLengthMismatches(&model.Model{Timeseries: map[string]model.TimeSeries{
+		"a": {Source: "inline", Values: []float64{1, 2}},
+		"b": {Source: "inline", Values: []float64{3, 4}},
+	}}); len(got) != 0 {
+		t.Errorf("equal lengths must yield no warnings, got %v", got)
+	}
+	// Shorter inline series and a short explicit timestep list are both
+	// silently padded by the emitters; each must be reported, sorted, and
+	// non-inline series must stay exempt.
+	m := &model.Model{
+		Time: model.TimeConfig{Timesteps: []string{"2030-01-01 00:00:00"}},
+		Timeseries: map[string]model.TimeSeries{
+			"long":  {Source: "inline", Values: []float64{1, 2, 3}},
+			"zhort": {Source: "inline", Values: []float64{1}},
+			"also":  {Source: "inline", Values: []float64{1, 2}},
+			"file1": {Source: "file", Path: "x.csv"},
+		},
+	}
+	got := SeriesLengthMismatches(m)
+	if len(got) != 3 {
+		t.Fatalf("SeriesLengthMismatches = %v, want 3 warnings", got)
+	}
+	wantSubstr := []string{`"also": 2 values`, `"zhort": 1 values`, "time.timesteps lists 1 labels"}
+	for i, sub := range wantSubstr {
+		if !strings.Contains(got[i], sub) {
+			t.Errorf("warning[%d] = %q, want it to contain %q", i, got[i], sub)
+		}
 	}
 }
 

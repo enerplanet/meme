@@ -5,6 +5,7 @@ package calliope
 
 import (
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 )
@@ -106,7 +107,7 @@ func yamlScalar(v any) string {
 	case bool:
 		return strconv.FormatBool(x)
 	case yamlFloat:
-		s := strconv.FormatFloat(float64(x), 'g', -1, 64)
+		s := yamlFloatStr(float64(x))
 		if !strings.ContainsAny(s, ".eE") {
 			s += ".0"
 		}
@@ -116,7 +117,7 @@ func yamlScalar(v any) string {
 	case int64:
 		return strconv.FormatInt(x, 10)
 	case float64:
-		return strconv.FormatFloat(x, 'g', -1, 64)
+		return yamlFloatStr(x)
 	case string:
 		return yamlString(x)
 	case []any:
@@ -125,6 +126,28 @@ func yamlScalar(v any) string {
 	default:
 		return yamlString(fmt.Sprint(x))
 	}
+}
+
+// yamlFloatStr renders f so a YAML 1.1 loader resolves it as a float. Go's %g
+// prints 1e6 as "1e+06", but the YAML 1.1 float grammar requires a decimal
+// point in the mantissa, so a bare "1e+06" would load as a *string* in
+// Calliope; insert ".0" before the exponent when %g omitted it. Non-finite
+// values get their YAML float spellings (.inf/-.inf/.nan) rather than Go's
+// (+Inf/NaN), which YAML would also read back as strings.
+func yamlFloatStr(f float64) string {
+	switch {
+	case math.IsNaN(f):
+		return ".nan"
+	case math.IsInf(f, 1):
+		return ".inf"
+	case math.IsInf(f, -1):
+		return "-.inf"
+	}
+	s := strconv.FormatFloat(f, 'g', -1, 64)
+	if i := strings.IndexAny(s, "eE"); i >= 0 && !strings.Contains(s[:i], ".") {
+		s = s[:i] + ".0" + s[i:]
+	}
+	return s
 }
 
 // yamlString quotes a string only when needed to stay valid YAML.
@@ -148,6 +171,10 @@ func yamlString(s string) string {
 		switch strings.ToLower(s) {
 		case "true", "false", "null", "yes", "no", "on", "off", "~":
 			// YAML 1.1 boolean/null literals (any casing) — always quote.
+			safe = false
+		case ".inf", ".nan":
+			// YAML 1.1 non-finite float literals (Go's ParseFloat above does
+			// not recognize these spellings) — always quote.
 			safe = false
 		}
 	}

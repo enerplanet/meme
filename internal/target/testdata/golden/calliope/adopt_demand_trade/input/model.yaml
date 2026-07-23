@@ -11,7 +11,7 @@ techs:
   grid_import:
     base_tech: supply
     carrier_out: electricity
-    flow_cap_max: 1e+06
+    flow_cap_max: 1.0e+06
     cost_flow_out:
       data: [50, 0.3]
       index: [monetary, co2]

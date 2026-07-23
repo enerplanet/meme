@@ -31,7 +31,27 @@ func AnnualizedCapex(overnight, interestRate, lifetime float64) float64 {
 	if interestRate == 0 {
 		return overnight / lifetime
 	}
-	crf := interestRate * math.Pow(1+interestRate, lifetime) /
-		(math.Pow(1+interestRate, lifetime) - 1)
+	// The textbook CRF r(1+r)^L/((1+r)^L-1) stays in place for the normal
+	// parameter range (the golden corpus pins its exact bit patterns), but it
+	// is ill-conditioned at the edges: for tiny |r| the (1+r)^L-1 subtraction
+	// cancels catastrophically ((1+r) rounds to 1 below ~1e-16, dividing by
+	// zero), and a huge L overflows the power into Inf/Inf = NaN. Those
+	// regimes route through the algebraically identical r/-expm1(-L*log1p(r)),
+	// which is well-conditioned there.
+	crf := math.NaN()
+	if math.Abs(interestRate) >= 1e-6 {
+		pw := math.Pow(1+interestRate, lifetime)
+		crf = interestRate * pw / (pw - 1)
+	}
+	if math.IsNaN(crf) || math.IsInf(crf, 0) {
+		crf = interestRate / -math.Expm1(-lifetime*math.Log1p(interestRate))
+	}
+	if math.IsNaN(crf) || math.IsInf(crf, 0) {
+		// Rates at or below -100% (or otherwise degenerate inputs) have no
+		// defined CRF; fall back to straight-line depreciation so every finite
+		// input yields a finite result. (The CSV writer additionally rejects
+		// non-finite cells, so garbage inputs still cannot reach a file.)
+		return overnight / lifetime
+	}
 	return overnight * crf
 }

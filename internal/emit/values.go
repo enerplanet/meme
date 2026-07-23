@@ -28,7 +28,23 @@ func BoolPy(b bool) string {
 }
 
 // WriteCSV writes rows as an RFC 4180 CSV file under dir.
+//
+// Cells carrying a non-finite float spelling ("NaN", "+Inf", "-Inf" — exactly
+// the forms Ftoa produces for those values) are rejected before anything is
+// written: a non-finite number reaching the writer means an upstream
+// computation broke, and persisting it would let the run report success while
+// the target framework reads garbage. WriteJSON already refuses non-finite
+// floats via json.Marshal; this keeps the CSV path consistent. The lowercase
+// "inf" spelling stays allowed — it is the deliberate unbounded default some
+// columns use (e.g. PyPSA p_nom_max via OptFloat).
 func WriteCSV(dir, name string, rows [][]string) error {
+	for i, row := range rows {
+		for j, cell := range row {
+			if cell == "NaN" || cell == "+Inf" || cell == "-Inf" {
+				return fmt.Errorf("%s: non-finite value %s at row %d, column %d", name, cell, i+1, j+1)
+			}
+		}
+	}
 	f, err := os.Create(filepath.Join(dir, name))
 	if err != nil {
 		return fmt.Errorf("create %s: %w", name, err)

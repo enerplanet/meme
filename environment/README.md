@@ -72,8 +72,8 @@ compose or invoke the binary directly with `meme -env-file environment/.env.dev`
 | `HOST_PORT` | 8080 | 80 | port published on your machine | compose |
 | `WORK` | `/src/.work` | `/src/.work` | emitted-files dir | compose + API |
 | `EXEC` | true | true | run real solvers vs. dry-run | compose + API |
-| `API_KEY` | *(unset)* | *(unset)* | require this key in every request payload; unset = auth off | API |
-| `CORS_ORIGINS` | *(unset)* | *(unset)* | browser origins allowed via CORS, comma-separated (`*` and `https://*.sub` wildcards); unset = CORS off | API |
+| `API_KEY` | *(unset)* | *(unset)* | require this key in every request payload; unset = auth off | compose + API |
+| `CORS_ORIGINS` | *(unset)* | *(unset)* | browser origins allowed via CORS, comma-separated (`*` and `https://*.sub` wildcards); unset = CORS off | compose + API |
 | `IMAGE_TAG` | `meme-env:dev` | `meme-env:prod` | image tag | compose |
 
 Select one with `ENV=` on any of this folder's Make targets (defaults to

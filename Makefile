@@ -22,6 +22,13 @@ WORK        ?= .work
 EXEC        ?=
 # Translate a truthy EXEC into the -exec flag for the `run` target.
 EXEC_FLAG   := $(if $(filter 1 true yes on,$(EXEC)),-exec,)
+# API_KEY / CORS_ORIGINS thread through the same way: when set (shell or
+# compose) they are forwarded as flags, which override the binary's own .env;
+# when unset no flag is passed, so the .env applies or auth/CORS stay off.
+API_KEY      ?=
+CORS_ORIGINS ?=
+API_FLAG    := $(if $(API_KEY),-api-key '$(API_KEY)',)
+CORS_FLAG   := $(if $(CORS_ORIGINS),-cors-origins '$(CORS_ORIGINS)',)
 
 GO          := go
 GOFLAGS     :=
@@ -39,10 +46,10 @@ build: ## Compile the server binary into bin/
 
 # --- Run --------------------------------------------------------------------
 run: build ## Build and run the API (EXEC=1 enables real solvers; default dry-run)
-	$(BIN) -addr $(ADDR) -work $(WORK) $(EXEC_FLAG)
+	$(BIN) -addr $(ADDR) -work $(WORK) $(EXEC_FLAG) $(API_FLAG) $(CORS_FLAG)
 
 run-exec: build ## Build and run the API with real solver execution
-	$(BIN) -addr $(ADDR) -work $(WORK) -exec
+	$(BIN) -addr $(ADDR) -work $(WORK) -exec $(API_FLAG) $(CORS_FLAG)
 
 # --- Source hygiene ----------------------------------------------------------
 fmt: ## Format all Go sources

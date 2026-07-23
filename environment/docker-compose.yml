@@ -19,11 +19,14 @@ services:
     image: ${IMAGE_TAG:-meme-env:latest}
     working_dir: /src
     environment:
-      # Unified vars, consumed by the Makefile's run target (ADDR/WORK/EXEC use
-      # ?= so the environment wins over the in-file defaults).
+      # Unified vars, consumed by the Makefile's run target (?= lets the
+      # environment win over the in-file defaults). API_KEY / CORS_ORIGINS are
+      # forwarded as flags when set; empty keeps auth / CORS off.
       - ADDR=:${PORT:-8080}
       - WORK=${WORK:-/src/.work}
       - EXEC=${EXEC:-true}
+      - API_KEY=${API_KEY:-}
+      - CORS_ORIGINS=${CORS_ORIGINS:-}
     volumes:
       - ..:/src
       - go-build:/root/.cache/go-build

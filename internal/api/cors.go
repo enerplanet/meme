@@ -54,7 +54,9 @@ type CORSConfig struct {
 	AllowOriginFunc func(origin string) bool
 
 	// AllowedMethods a cross-origin request may use. Empty means
-	// GET, POST and OPTIONS — everything this API serves.
+	// GET, POST and OPTIONS — everything this API serves. A literal "*" is
+	// emitted as-is and only acts as a wildcard on credentialless requests;
+	// Validate rejects it in combination with AllowCredentials.
 	AllowedMethods []string
 
 	// AllowedHeaders a preflight may request. Empty means Content-Type (JSON
@@ -66,7 +68,9 @@ type CORSConfig struct {
 
 	// ExposeHeaders lists response headers browser JS may read beyond the
 	// CORS-safelisted set. Empty means Content-Disposition, so clients can
-	// recover the zip filename from GET /jobs/{id}.
+	// recover the zip filename from GET /jobs/{id}. Like AllowedMethods, a
+	// literal "*" is only a wildcard without credentials; Validate rejects
+	// the credentialed combination.
 	ExposeHeaders []string
 
 	// AllowCredentials permits cookies and TLS client certificates on
@@ -97,6 +101,21 @@ func (c CORSConfig) enabled() bool {
 // on the zero value. Call it once at startup; the middleware itself accepts
 // whatever it is given.
 func (c CORSConfig) Validate() error {
+	if c.AllowCredentials {
+		// On credentialed requests browsers read "*" in these headers as a
+		// literal token, not a wildcard — the config would silently not do
+		// what it says. (AllowedHeaders "*" is exempt: it is echo mode.)
+		for _, m := range c.AllowedMethods {
+			if m == "*" {
+				return fmt.Errorf("cors: AllowedMethods \"*\" cannot be combined with AllowCredentials (browsers treat it as a literal method name on credentialed requests)")
+			}
+		}
+		for _, h := range c.ExposeHeaders {
+			if h == "*" {
+				return fmt.Errorf("cors: ExposeHeaders \"*\" cannot be combined with AllowCredentials (browsers treat it as a literal header name on credentialed requests)")
+			}
+		}
+	}
 	for _, o := range c.AllowedOrigins {
 		if o == "" {
 			return fmt.Errorf("cors: AllowedOrigins contains an empty entry")

@@ -293,6 +293,58 @@ func TestCORSValidate(t *testing.T) {
 			t.Errorf("config %v must be rejected", cfg.AllowedOrigins)
 		}
 	}
+
+	// "*" in AllowedMethods/ExposeHeaders is a literal token on credentialed
+	// requests — the wildcard silently stops working, so Validate rejects the
+	// combination. Without credentials both stay valid.
+	origins := []string{"https://app.example.com"}
+	for _, cfg := range []api.CORSConfig{
+		{AllowedOrigins: origins, AllowedMethods: []string{"*"}, AllowCredentials: true},
+		{AllowedOrigins: origins, ExposeHeaders: []string{"*"}, AllowCredentials: true},
+	} {
+		if err := cfg.Validate(); err == nil {
+			t.Errorf("credentialed wildcard config %+v must be rejected", cfg)
+		}
+	}
+	for _, cfg := range []api.CORSConfig{
+		{AllowedOrigins: origins, AllowedMethods: []string{"*"}},
+		{AllowedOrigins: origins, ExposeHeaders: []string{"*"}},
+		{AllowedOrigins: origins, AllowedHeaders: []string{"*"}, AllowCredentials: true}, // echo mode is credential-safe
+	} {
+		if err := cfg.Validate(); err != nil {
+			t.Errorf("config %+v must validate, got %v", cfg, err)
+		}
+	}
+}
+
+// TestCORSHeadersOnAuthAndSizeErrors: the middleware sets the CORS headers
+// before the handler runs, so browser JS can read even a 401 (bad api_key) or
+// 413 (oversized body) error envelope.
+func TestCORSHeadersOnAuthAndSizeErrors(t *testing.T) {
+	srv := corsServer(t, api.Server{
+		APIKey: "s3cret",
+		CORS:   api.CORSConfig{AllowedOrigins: []string{"https://app.example.com"}},
+	})
+	origin := "https://app.example.com"
+
+	unauth := doRequest(t, http.MethodPost, srv.URL+"/validate?target=pypsa",
+		map[string]string{"Origin": origin, "Content-Type": "application/json"}, sampleBytes(t))
+	if unauth.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("missing key: status %d, want 401", unauth.StatusCode)
+	}
+	if v := unauth.Header.Get("Access-Control-Allow-Origin"); v != origin {
+		t.Errorf("401 must carry CORS headers, Allow-Origin %q", v)
+	}
+
+	big := bytes.Repeat([]byte("x"), 33<<20)
+	huge := doRequest(t, http.MethodPost, srv.URL+"/validate?target=pypsa",
+		map[string]string{"Origin": origin, "Content-Type": "application/json"}, big)
+	if huge.StatusCode != http.StatusRequestEntityTooLarge {
+		t.Fatalf("oversized body: status %d, want 413", huge.StatusCode)
+	}
+	if v := huge.Header.Get("Access-Control-Allow-Origin"); v != origin {
+		t.Errorf("413 must carry CORS headers, Allow-Origin %q", v)
+	}
 }
 
 // TestCORSExposeHeaders: the zip download exposes Content-Disposition by

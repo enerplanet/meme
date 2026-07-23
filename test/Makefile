@@ -26,7 +26,7 @@ COMPOSE := docker compose --env-file $(ROOT)/environment/.env.$(ENV) \
 test: ## Vet + full host test suite (E2E self-skips without MEME_E2E=1)
 	cd $(ROOT) && $(GO) vet ./... && $(GO) test ./...
 
-schema-check: ## Validate examples/ + the scenario corpus against docs/revised_unified_schema.json (schema/code drift gate; needs python3 + jsonschema)
+schema-check: ## Validate examples/ + the scenario corpus against schemas/revised_unified_schema.json (schema/code drift gate; needs python3 + jsonschema)
 	python3 schema_check.py
 
 test-race: ## Race-detector pass over the concurrent packages

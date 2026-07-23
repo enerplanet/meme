@@ -18,7 +18,7 @@ make e2e            # container: full corpus on real solvers (~1.5 min)
 - **Host tiers** (`test`, `test-race`, `golden-update`): Go ≥ 1.22, nothing
   else. No Python, no solvers — the default executor is a dry-runner.
 - **Schema tier** (`schema-check`): python3 with `jsonschema` ≥ 4.18. Validates
-  [`docs/revised_unified_schema.json`](../docs/revised_unified_schema.json)
+  [`schemas/revised_unified_schema.json`](../schemas/revised_unified_schema.json)
   against the draft 2020-12 meta-schema and every payload in
   [`examples/`](../examples/) plus the embedded scenario corpus against it —
   the drift gate between the published contract and the hand-written Go

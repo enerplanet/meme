@@ -6,7 +6,7 @@
 
 Validates the canonical payload contract in three steps:
 
-  1. docs/revised_unified_schema.json is a valid JSON Schema (draft 2020-12),
+  1. schemas/revised_unified_schema.json is a valid JSON Schema (draft 2020-12),
   2. every example payload in examples/ validates against it,
   3. every scenario payload in internal/scenarios/testdata/ (the corpus the Go
      tests and the E2E suite run) validates against it.
@@ -30,7 +30,7 @@ except ImportError as e:  # pragma: no cover
     sys.exit(f"schema-check needs the python 'jsonschema' package (>= 4.18): {e}")
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-SCHEMA = ROOT / "docs" / "revised_unified_schema.json"
+SCHEMA = ROOT / "schemas" / "revised_unified_schema.json"
 
 
 def main() -> int:

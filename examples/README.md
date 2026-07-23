@@ -24,7 +24,7 @@ framework's extras isolated in its own `native` namespace.
 ## 0. Start the API (real solvers)
 
 ```bash
-make docker-run ENV=dev          # API on :8080 with PyPSA + Calliope + AdOpT + solvers
+make -C environment run ENV=dev  # API on :8080 with PyPSA + Calliope + AdOpT + solvers
 ```
 
 Every payload below already carries a top-level `"api_key": "s3cret"`. It is

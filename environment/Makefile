@@ -7,8 +7,7 @@
 #   make -C environment run     # serve the API with real solvers
 #   make -C environment shell   # interactive shell in the image
 #
-# The root Makefile aliases these as docker-build / docker-test / docker-run /
-# docker-shell. ENV=dev (default) or prod selects .env.$(ENV).
+# ENV=dev (default) or prod selects .env.$(ENV).
 
 ENV      ?= dev
 ENV_FILE := .env.$(ENV)

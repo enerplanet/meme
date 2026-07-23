@@ -4,8 +4,8 @@
 #
 # One image that carries everything needed end-to-end:
 #   * Go 1.22 toolchain  -> build the stdlib-only service and run `go test`
-#   * Python 3.11        -> the three frameworks the service emits for
-#   * PyPSA, Calliope 0.7, AdOpT-NET0 + HiGHS (free open-source solver)
+#   * Python 3.12        -> the three frameworks the service emits for
+#   * PyPSA + HiGHS, Calliope 0.7 + CBC, AdOpT-NET0 + GLPK (all free solvers)
 #
 # With all of the above on PATH, the service can run in real-execution mode
 # (`meme -exec`) so /simulate actually invokes the solvers, and integration
@@ -27,8 +27,9 @@ ENV PATH="/usr/local/go/bin:/root/go/bin:${PATH}" \
 # System libraries the frameworks need at runtime:
 #   git            - some pip deps resolve VCS refs
 #   build-essential- native wheels that fall back to source
-#   coinor-cbc / glpk - extra free solvers (fallback next to HiGHS)
-#   libspatialindex, libgdal - geo deps pulled in by pypsa/calliope
+#   coinor-cbc / glpk - primary solvers for Calliope and AdOpT-NET0
+#                    respectively (HiGHS covers PyPSA only)
+#   libspatialindex - geo dep pulled in by pypsa/calliope
 RUN apt-get update && apt-get install -y --no-install-recommends \
         git \
         make \

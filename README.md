@@ -30,8 +30,8 @@ curl -s -X POST 'localhost:8080/convert?target=calliope' \
 install on the host beyond Docker):
 
 ```bash
-make docker-build ENV=dev                   # one-time image build
-make docker-run   ENV=dev                   # API on :8080, real execution
+make -C environment build ENV=dev           # one-time image build
+make -C environment run   ENV=dev           # API on :8080, real execution
 
 ID=$(curl -s -X POST 'localhost:8080/simulate?target=all' \
      -d @examples/shared_full.json | jq -r .id)          # 202, async job

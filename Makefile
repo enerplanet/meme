@@ -1,8 +1,9 @@
 # Makefile for the meme (energymodel) service — build & run only.
 #
 # Testing lives in test/Makefile, the container environment in
-# environment/Makefile; the aliases at the bottom keep the familiar
-# `make test`, `make e2e`, `make docker-run ENV=dev` working from the root.
+# environment/Makefile; the test aliases at the bottom keep the familiar
+# `make test`, `make e2e` working from the root. The container environment
+# is driven directly: `make -C environment <build|test|run|shell> ENV=dev`.
 #
 #   make            # build the server binary
 #   make run        # build and run the API (dry-run mode)
@@ -59,12 +60,6 @@ TEST_TARGETS := test test-race golden-update schema-check e2e-smoke e2e
 $(TEST_TARGETS): ## Test targets — defined in test/Makefile
 	$(MAKE) -C test $@
 
-# --- Delegated: container environment (environment/Makefile) -----------------
-DOCKER_TARGETS := docker-build docker-test docker-run docker-shell
-.PHONY: $(DOCKER_TARGETS)
-$(DOCKER_TARGETS): ## Container targets — defined in environment/Makefile
-	$(MAKE) -C environment $(@:docker-%=%)
-
 # --- Housekeeping -----------------------------------------------------------
 clean: ## Remove build artifacts and emitted work files
 	$(GO) clean
@@ -75,5 +70,5 @@ help: ## Show this help (root + delegated targets)
 		| awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
 	@echo "  --- testing (make -C test help) ---"
 	@$(MAKE) --no-print-directory -C test help
-	@echo "  --- environment (make -C environment help; aliased as docker-*) ---"
+	@echo "  --- environment (make -C environment help) ---"
 	@$(MAKE) --no-print-directory -C environment help

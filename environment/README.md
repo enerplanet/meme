@@ -20,32 +20,37 @@ scenario solves to optimal on it.
 
 ## Setup
 
-Prerequisites: **Docker with compose v2** — nothing else; Go, Python, the
-frameworks and the solvers all live inside the image.
+Prerequisites: **Docker with compose v2** and GNU `make` — everything else
+(Go, Python, the frameworks, the solvers) lives inside the image. From the
+repo root (or inside `environment/`, dropping the `-C environment`):
 
 ```bash
-make docker-build ENV=dev    # one-time image build (~framework install; grab a coffee)
-make docker-run   ENV=dev    # API with real solver execution on http://localhost:8080
+make -C environment build ENV=dev   # one-time image build (~framework install; grab a coffee)
+make -C environment run   ENV=dev   # API with real solver execution on http://localhost:8080
 ```
 
 The repo root is bind-mounted at `/src`, so source edits are picked up without
 rebuilding the image. Only the (heavy) framework/solver layer is baked in; the
 Go build and module caches persist in named volumes across runs — the first
-`docker-test` compiles everything, later runs are incremental. Rebuild the
+containerized `test` run compiles everything, later runs are incremental. Rebuild the
 image only when a `requirements*.txt` or the Dockerfile changes.
 
 ## Usage
 
-This folder has its own [`Makefile`](Makefile); the root Makefile aliases its
-targets with a `docker-` prefix, so both spellings work:
+The targets live in this folder's [`Makefile`](Makefile): run them **inside
+`environment/`** as plain `make <target>`, or from the repo root as
+`make -C environment <target>`. There are deliberately no `docker-*` aliases
+in the root Makefile:
 
 ```bash
-make docker-build ENV=dev    # == make -C environment build : image (frameworks + solvers + Go)
-make docker-test  ENV=dev    # == make -C environment test  : full Go suite inside the container
-make docker-run   ENV=dev    # == make -C environment run   : API with real solvers
-make docker-shell ENV=dev    # == make -C environment shell : go/python/pypsa/calliope/adopt/solvers
+# from the repo root:
+make -C environment build ENV=dev   # image (frameworks + solvers + Go)
+make -C environment test  ENV=dev   # full Go suite inside the container
+make -C environment run   ENV=dev   # API with real solvers
+make -C environment shell ENV=dev   # go/python/pypsa/calliope/adopt/solvers
 
-# End-to-end tiers (real HTTP API + frameworks + solvers; defined in test/Makefile):
+# End-to-end tiers (real HTTP API + frameworks + solvers; defined in
+# test/Makefile, aliased at the root):
 make e2e-smoke               # 3 per-target lifecycles + one multi-target job (~1 min)
 make e2e                     # the whole scenario corpus, -parallel 3 (~1.5 min)
 ```
@@ -68,13 +73,16 @@ compose or invoke the binary directly with `meme -env-file environment/.env.dev`
 | `WORK` | `/src/.work` | `/src/.work` | emitted-files dir | compose + API |
 | `EXEC` | true | true | run real solvers vs. dry-run | compose + API |
 | `API_KEY` | *(unset)* | *(unset)* | require this key in every request payload; unset = auth off | API |
+| `CORS_ORIGINS` | *(unset)* | *(unset)* | browser origins allowed via CORS, comma-separated (`*` and `https://*.sub` wildcards); unset = CORS off | API |
 | `IMAGE_TAG` | `meme-env:dev` | `meme-env:prod` | image tag | compose |
 
-Select one with `ENV=` on any `docker-*` Make target (defaults to `dev`):
+Select one with `ENV=` on any of this folder's Make targets (defaults to
+`dev`):
 
 ```bash
-make docker-run ENV=dev     # publishes on :8080
-make docker-run ENV=prod    # publishes on :80
+# from the repo root:
+make -C environment run ENV=dev     # publishes on :8080
+make -C environment run ENV=prod    # publishes on :80
 ```
 
 Or drive compose directly with `--env-file`:

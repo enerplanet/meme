@@ -3,7 +3,7 @@
 # Per-environment settings (ports, work dir, image tag) come from an env file:
 #   docker compose --env-file environment/.env.dev  -f environment/docker-compose.yml up api
 #   docker compose --env-file environment/.env.prod -f environment/docker-compose.yml up api
-# or via the Makefile:  make docker-run ENV=dev   /   make docker-run ENV=prod
+# or via the Makefile:  make -C environment run ENV=dev   /   ENV=prod
 #
 # The repo root is bind-mounted into /src so edits are picked up without a
 # rebuild; only the frameworks/solver layer is baked into the image.
@@ -45,7 +45,7 @@ services:
       - go-mod:/root/go/pkg/mod
     command: make test
 
-  # Interactive shell with Go + all three frameworks + HiGHS on PATH.
+  # Interactive shell with Go + all three frameworks + solvers (HiGHS/CBC/GLPK) on PATH.
   shell:
     image: ${IMAGE_TAG:-meme-env:latest}
     build:

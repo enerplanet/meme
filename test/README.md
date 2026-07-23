@@ -24,7 +24,7 @@ make e2e            # container: full corpus on real solvers (~1.5 min)
   the drift gate between the published contract and the hand-written Go
   validation (`internal/model`). The Go module itself stays dependency-free.
 - **Container tiers** (`e2e-smoke`, `e2e`): Docker with compose v2 and the
-  environment image built once via `make docker-build ENV=dev` (see
+  environment image built once via `make -C environment build ENV=dev` (see
   [`environment/README.md`](../environment/README.md)). The Make targets
   mount the repo at `/src`, set `MEME_E2E=1`, and cap solver processes with
   `-parallel 3`; source edits are picked up without an image rebuild.

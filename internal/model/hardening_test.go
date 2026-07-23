@@ -335,6 +335,438 @@ func TestPeriodJSON(t *testing.T) {
 	}
 }
 
+// --- third tranche: closing the remaining Validate branches ------------------
+
+func TestStructuralReferenceChecks(t *testing.T) {
+	cases := []struct {
+		name string
+		mut  func(*model.Model)
+		want string
+	}{
+		{"no nodes", func(m *model.Model) {
+			m.Nodes = nil
+		}, "model has no nodes"},
+		{"no carriers", func(m *model.Model) {
+			m.Carriers = nil
+		}, "model has no carriers"},
+		{"invalid role", func(m *model.Model) {
+			m.Technologies["g"] = model.Technology{Role: "magic", Node: model.StringList{"n1"}}
+		}, `role "magic" is invalid`},
+		{"invalid cost basis", func(m *model.Model) {
+			m.Technologies["g"] = model.Technology{Role: model.RoleSupply, Node: model.StringList{"n1"},
+				CarrierOut: model.StringList{"el"}, CostBasis: "levelized"}
+		}, `cost_basis "levelized" is invalid`},
+		{"no node specified", func(m *model.Model) {
+			m.Technologies["g"] = model.Technology{Role: model.RoleSupply, CarrierOut: model.StringList{"el"}}
+		}, "no node specified"},
+		{"undefined node", func(m *model.Model) {
+			m.Technologies["g"] = model.Technology{Role: model.RoleSupply, Node: model.StringList{"ghost"},
+				CarrierOut: model.StringList{"el"}}
+		}, `node "ghost" not defined`},
+		{"undefined carrier", func(m *model.Model) {
+			m.Technologies["g"] = model.Technology{Role: model.RoleSupply, Node: model.StringList{"n1"},
+				CarrierOut: model.StringList{"unobtainium"}}
+		}, `carrier "unobtainium" not defined`},
+		{"storage role without storage block", func(m *model.Model) {
+			m.Technologies["s"] = model.Technology{Role: model.RoleStorage, Node: model.StringList{"n1"},
+				CarrierOut: model.StringList{"el"}}
+		}, "role is storage but no storage block"},
+		{"demand role without profile", func(m *model.Model) {
+			m.Technologies["d"] = model.Technology{Role: model.RoleDemand, Node: model.StringList{"n1"},
+				CarrierIn: model.StringList{"el"}}
+		}, "role is demand but no demand_profile"},
+		{"unresolved efficiency series", func(m *model.Model) {
+			m.Technologies["g"] = model.Technology{Role: model.RoleSupply, Node: model.StringList{"n1"},
+				CarrierOut: model.StringList{"el"}, Efficiency: model.Series("missing_eff")}
+		}, `time-series "missing_eff" not defined`},
+		{"unresolved demand profile series", func(m *model.Model) {
+			m.Technologies["d"] = model.Technology{Role: model.RoleDemand, Node: model.StringList{"n1"},
+				CarrierIn: model.StringList{"el"}, DemandProfile: model.Series("missing_dp")}
+		}, `time-series "missing_dp" not defined`},
+		{"unresolved max_pu series", func(m *model.Model) {
+			m.Technologies["g"] = model.Technology{Role: model.RoleSupply, Node: model.StringList{"n1"},
+				CarrierOut: model.StringList{"el"}, Operation: &model.Operation{MaxPU: model.Series("missing_max")}}
+		}, `time-series "missing_max" not defined`},
+		{"unresolved min_pu series", func(m *model.Model) {
+			m.Technologies["g"] = model.Technology{Role: model.RoleSupply, Node: model.StringList{"n1"},
+				CarrierOut: model.StringList{"el"}, Operation: &model.Operation{MinPU: model.Series("missing_min")}}
+		}, `time-series "missing_min" not defined`},
+		{"unresolved inflow series", func(m *model.Model) {
+			m.Technologies["s"] = model.Technology{Role: model.RoleStorage, Node: model.StringList{"n1"},
+				CarrierOut: model.StringList{"el"}, Storage: &model.Storage{Inflow: model.Series("missing_inflow")}}
+		}, `inflow series "missing_inflow" not defined`},
+		{"overnight investment missing lifetime", func(m *model.Model) {
+			m.Technologies["g"] = model.Technology{Role: model.RoleSupply, Node: model.StringList{"n1"},
+				CarrierOut: model.StringList{"el"},
+				Costs:      map[string]model.CostClass{"monetary": {InvestmentPerCapacity: fp(1000)}}}
+		}, "needs lifetime and interest_rate"},
+		{"overnight investment missing interest rate", func(m *model.Model) {
+			m.Technologies["g"] = model.Technology{Role: model.RoleSupply, Node: model.StringList{"n1"},
+				CarrierOut: model.StringList{"el"}, CostBasis: model.CostOvernight, Lifetime: fp(20),
+				Costs: map[string]model.CostClass{"monetary": {InvestmentPerCapacity: fp(1000)}}}
+		}, "needs lifetime and interest_rate"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			m := baseModel()
+			tc.mut(&m)
+			wantValidateErr(t, &m, tc.want)
+		})
+	}
+}
+
+func TestFlowStructureChecks(t *testing.T) {
+	mk := func(flows []model.Flow) model.Model {
+		m := baseModel()
+		m.Technologies["chp"] = model.Technology{
+			Role: model.RoleConversion, Node: model.StringList{"n1"}, Flows: flows,
+		}
+		return m
+	}
+
+	m := mk([]model.Flow{
+		{Carrier: "unobtainium", Direction: model.FlowIn, Reference: true},
+	})
+	wantValidateErr(t, &m, `flow carrier "unobtainium" not defined`)
+
+	m = mk([]model.Flow{
+		{Carrier: "gas", Direction: "sideways", Ratio: 1},
+	})
+	wantValidateErr(t, &m, `must be "in" or "out"`)
+
+	m = mk([]model.Flow{
+		{Carrier: "el", Direction: model.FlowOut, Ratio: 0.4},
+		{Carrier: "heat", Direction: model.FlowOut, Ratio: 0.5},
+	})
+	wantValidateErr(t, &m, "flows need at least one input")
+
+	m = mk([]model.Flow{
+		{Carrier: "gas", Direction: model.FlowIn, Reference: true},
+		{Carrier: "heat", Direction: model.FlowIn, Reference: true},
+		{Carrier: "el", Direction: model.FlowOut, Ratio: 0.4},
+	})
+	wantValidateErr(t, &m, "at most one flow may be the reference input")
+}
+
+func TestNodeOverrideStructure(t *testing.T) {
+	mkTech := func(ov map[string]model.NodeOverride) model.Technology {
+		return model.Technology{Role: model.RoleSupply, Node: model.StringList{"n1"},
+			CarrierOut: model.StringList{"el"}, NodeOverrides: ov}
+	}
+	cases := []struct {
+		name string
+		mut  func(*model.Model)
+		want string
+	}{
+		{"override node not in tech's list", func(m *model.Model) {
+			m.Technologies["g"] = mkTech(map[string]model.NodeOverride{"n2": {}})
+		}, `node_override "n2" is not in the tech's node list`},
+		{"override node undefined", func(m *model.Model) {
+			m.Technologies["g"] = mkTech(map[string]model.NodeOverride{"ghost": {}})
+		}, `node_override "ghost" is not a defined node`},
+		{"override performance invalid", func(m *model.Model) {
+			m.Technologies["g"] = mkTech(map[string]model.NodeOverride{"n1": {
+				Performance: &model.Performance{Type: model.PerfPiecewise}}})
+		}, "at least 2 breakpoints"},
+		{"override series undefined", func(m *model.Model) {
+			m.Technologies["g"] = mkTech(map[string]model.NodeOverride{"n1": {
+				Efficiency: model.Series("missing_ov")}})
+		}, `override "n1": time-series "missing_ov" not defined`},
+		{"override capacity range", func(m *model.Model) {
+			m.Technologies["g"] = mkTech(map[string]model.NodeOverride{"n1": {
+				Capacity: &model.Capacity{Min: fp(10), Max: fp(5)}}})
+		}, `override "n1": capacity.min`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			m := baseModel()
+			tc.mut(&m)
+			wantValidateErr(t, &m, tc.want)
+		})
+	}
+}
+
+func TestNodeChecks(t *testing.T) {
+	m := baseModel()
+	m.Nodes["n1"] = model.Node{AvailableArea: fp(-10)}
+	wantValidateErr(t, &m, "available_area must not be negative")
+
+	m = baseModel()
+	m.Nodes["n1"] = model.Node{Climate: map[string]model.Value{"ghi": *model.Series("missing_ghi")}}
+	wantValidateErr(t, &m, `climate series "missing_ghi" (column ghi) not defined`)
+}
+
+func TestTransmissionChecks(t *testing.T) {
+	mk := func(mut func(*model.Transmission)) model.Model {
+		m := baseModel()
+		l := model.Transmission{Carrier: "el", From: "n1", To: "n2"}
+		mut(&l)
+		m.Transmission = map[string]model.Transmission{"l": l}
+		return m
+	}
+	cases := []struct {
+		name string
+		mut  func(*model.Transmission)
+		want string
+	}{
+		{"efficiency above 1", func(l *model.Transmission) {
+			l.Efficiency = model.Num(1.5)
+		}, "efficiency must be within (0,1]"},
+		{"efficiency zero", func(l *model.Transmission) {
+			l.Efficiency = model.Num(0)
+		}, "efficiency must be within (0,1]"},
+		{"negative distance", func(l *model.Transmission) {
+			l.Distance = fp(-5)
+		}, "distance must not be negative"},
+		{"min_flow out of range", func(l *model.Transmission) {
+			l.MinFlow = fp(1.5)
+		}, "min_flow must be within [0,1]"},
+		{"energy_consumption undefined carrier", func(l *model.Transmission) {
+			l.EnergyConsumption = &model.TransportEnergy{Carrier: "unobtainium"}
+		}, `energy_consumption carrier "unobtainium" not defined`},
+		{"energy_consumption negative rate", func(l *model.Transmission) {
+			l.EnergyConsumption = &model.TransportEnergy{Carrier: "el", PerFlow: -1}
+		}, "rates must not be negative"},
+		{"energy_consumption per-distance needs distance", func(l *model.Transmission) {
+			l.EnergyConsumption = &model.TransportEnergy{Carrier: "el", PerFlowDistance: 0.1}
+		}, "per_flow_distance needs distance"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			m := mk(tc.mut)
+			wantValidateErr(t, &m, tc.want)
+		})
+	}
+}
+
+func TestEmissionLimitAndTradeChecks(t *testing.T) {
+	m := baseModel()
+	m.EmissionLimits = []model.EmissionLimit{{Sense: "<"}}
+	wantValidateErr(t, &m, `sense "<" must be one of <=, >=, ==`)
+
+	m = baseModel()
+	m.Trade = map[string]model.Trade{"tr": {Node: "ghost", Carrier: "el",
+		Import: &model.TradeSide{Price: model.Num(50)}}}
+	wantValidateErr(t, &m, `trade "tr": node "ghost" not defined`)
+
+	m = baseModel()
+	m.Trade = map[string]model.Trade{"tr": {Node: "n1", Carrier: "unobtainium",
+		Import: &model.TradeSide{Price: model.Num(50)}}}
+	wantValidateErr(t, &m, `trade "tr": carrier "unobtainium" not defined`)
+
+	m = baseModel()
+	m.Trade = map[string]model.Trade{"tr": {Node: "n1", Carrier: "el",
+		Import: &model.TradeSide{Price: model.Series("missing_price")}}}
+	wantValidateErr(t, &m, `import price series "missing_price" not defined`)
+}
+
+func TestPerformanceValidate(t *testing.T) {
+	cases := []struct {
+		name string
+		perf model.Performance
+		want string
+	}{
+		{"too few breakpoints", model.Performance{Type: model.PerfPiecewise,
+			Breakpoints: []model.Breakpoint{{Load: 1, Efficiency: 0.5}}},
+			"at least 2 breakpoints"},
+		{"load above 1", model.Performance{Type: model.PerfPiecewise,
+			Breakpoints: []model.Breakpoint{{Load: 0.5, Efficiency: 0.4}, {Load: 1.2, Efficiency: 0.5}}},
+			"must be within [0,1]"},
+		{"load below 0", model.Performance{Type: model.PerfPiecewise,
+			Breakpoints: []model.Breakpoint{{Load: -0.1, Efficiency: 0.4}, {Load: 1, Efficiency: 0.5}}},
+			"must be within [0,1]"},
+		{"non-increasing breakpoints", model.Performance{Type: model.PerfPiecewise,
+			Breakpoints: []model.Breakpoint{{Load: 0.5, Efficiency: 0.4}, {Load: 0.5, Efficiency: 0.5}}},
+			"strictly increasing"},
+		{"non-positive efficiency", model.Performance{Type: model.PerfPiecewise,
+			Breakpoints: []model.Breakpoint{{Load: 0.2, Efficiency: 0}, {Load: 1, Efficiency: 0.5}}},
+			"efficiency must be positive"},
+		{"min_load out of range", model.Performance{Type: model.PerfPiecewise,
+			Breakpoints: []model.Breakpoint{{Load: 0.2, Efficiency: 0.4}, {Load: 1, Efficiency: 0.5}},
+			MinLoad:     fp(1.2)},
+			"min_load"},
+		{"unknown physics model", model.Performance{Type: model.PerfPhysics, Model: "fusion"},
+			"unknown physics model"},
+		{"unknown type", model.Performance{Type: "quantum"},
+			"unknown performance type"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := tc.perf.Validate()
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("want error containing %q, got: %v", tc.want, err)
+			}
+		})
+	}
+
+	ok := model.Performance{Type: model.PerfPiecewise, MinLoad: fp(0.3),
+		Breakpoints: []model.Breakpoint{{Load: 0.3, Efficiency: 0.35}, {Load: 1, Efficiency: 0.5}}}
+	if err := ok.Validate(); err != nil {
+		t.Fatalf("valid piecewise curve rejected: %v", err)
+	}
+	var nilPerf *model.Performance
+	if err := nilPerf.Validate(); err != nil {
+		t.Fatalf("nil performance must validate: %v", err)
+	}
+}
+
+// --- new hardening rules ------------------------------------------------------
+
+func TestIdentifierGuard(t *testing.T) {
+	cases := []struct {
+		name string
+		mut  func(*model.Model)
+		want string
+	}{
+		{"node id with path traversal", func(m *model.Model) {
+			m.Nodes["../etc"] = model.Node{}
+		}, `nodes: id "../etc" is invalid`},
+		{"node id with backslash", func(m *model.Model) {
+			m.Nodes[`a\b`] = model.Node{}
+		}, `nodes: id "a\\b" is invalid`},
+		{"node id with leading dot", func(m *model.Model) {
+			m.Nodes[".hidden"] = model.Node{}
+		}, `nodes: id ".hidden" is invalid`},
+		{"tech id with slash", func(m *model.Model) {
+			m.Technologies["a/b"] = model.Technology{Role: model.RoleSupply, Node: model.StringList{"n1"},
+				CarrierOut: model.StringList{"el"}}
+		}, `technologies: id "a/b" is invalid`},
+		{"carrier id with space", func(m *model.Model) {
+			m.Carriers["natural gas"] = model.Carrier{}
+		}, `carriers: id "natural gas" is invalid`},
+		{"transmission id empty", func(m *model.Model) {
+			m.Transmission = map[string]model.Transmission{"": {Carrier: "el", From: "n1", To: "n2"}}
+		}, `transmission: id "" is invalid`},
+		{"trade id with dotdot", func(m *model.Model) {
+			m.Trade = map[string]model.Trade{"..": {Node: "n1", Carrier: "el",
+				Import: &model.TradeSide{Price: model.Num(50)}}}
+		}, `trade: id ".." is invalid`},
+		{"timeseries id with slash", func(m *model.Model) {
+			m.Timeseries = map[string]model.TimeSeries{"a/b": {Source: "inline", Values: []float64{1}}}
+		}, `timeseries: id "a/b" is invalid`},
+		{"interned id with unsafe segment", func(m *model.Model) {
+			m.Timeseries = map[string]model.TimeSeries{"_inline:tech:../evil:max_pu": {Source: "inline", Values: []float64{1}}}
+		}, `timeseries: id "_inline:tech:../evil:max_pu" is invalid`},
+		{"cost class with slash", func(m *model.Model) {
+			m.Technologies["g"] = model.Technology{Role: model.RoleSupply, Node: model.StringList{"n1"},
+				CarrierOut: model.StringList{"el"},
+				Costs:      map[string]model.CostClass{"mon/etary": {FixedOM: fp(5)}}}
+		}, `cost class "mon/etary" is invalid`},
+		{"climate column with slash", func(m *model.Model) {
+			m.Nodes["n1"] = model.Node{Climate: map[string]model.Value{"gh/i": *model.Num(1)}}
+		}, `climate column "gh/i" is invalid`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			m := baseModel()
+			tc.mut(&m)
+			wantValidateErr(t, &m, tc.want)
+		})
+	}
+
+	// The permitted charset (including dots, underscores, hyphens, and the
+	// interner's colon-separated form) stays accepted.
+	m := baseModel()
+	m.Nodes["DE.north_01-a"] = model.Node{}
+	m.Timeseries = map[string]model.TimeSeries{
+		"pv_cf.2030-v1":         {Source: "inline", Values: []float64{1}},
+		"_inline:tech:g:max_pu": {Source: "inline", Values: []float64{1}},
+		"_inline:time:weights":  {Source: "inline", Values: []float64{1}},
+	}
+	if err := m.Validate(); err != nil {
+		t.Fatalf("valid identifiers rejected: %v", err)
+	}
+}
+
+func TestDuplicateConstraintNames(t *testing.T) {
+	term := []model.Term{{Coefficient: 1, Variable: model.VarCapacity}}
+
+	m := baseModel()
+	m.Constraints = []model.Constraint{
+		{Name: "cap", Terms: term, Sense: "<="},
+		{Name: "cap", Terms: term, Sense: "<="},
+	}
+	wantValidateErr(t, &m, `constraints[1]: name "cap" is already used by constraints[0]`)
+
+	m = baseModel()
+	m.EmissionLimits = []model.EmissionLimit{
+		{Name: "co2_cap", Sense: "<="},
+		{Name: "co2_cap", Sense: "<="},
+	}
+	wantValidateErr(t, &m, `emission_limits[1]: name "co2_cap" is already used by emission_limits[0]`)
+
+	// Cross-list collision: Calliope renders both lists into one YAML map.
+	m = baseModel()
+	m.Constraints = []model.Constraint{{Name: "cap", Terms: term, Sense: "<="}}
+	m.EmissionLimits = []model.EmissionLimit{{Name: "cap", Sense: "<="}}
+	wantValidateErr(t, &m, `emission_limits[0]: name "cap" is already used by constraints[0]`)
+
+	// Unnamed entries never collide.
+	m = baseModel()
+	m.Constraints = []model.Constraint{
+		{Terms: term, Sense: "<="},
+		{Terms: term, Sense: "<="},
+	}
+	m.EmissionLimits = []model.EmissionLimit{{Sense: "<="}, {Sense: "<="}}
+	if err := m.Validate(); err != nil {
+		t.Fatalf("unnamed constraints/limits rejected: %v", err)
+	}
+}
+
+func TestTimeConfigRules(t *testing.T) {
+	m := baseModel()
+	m.Time.Start, m.Time.End = "2030-01-02", "2030-01-01"
+	wantValidateErr(t, &m, "must be after time.start")
+
+	// Equal instants across layouts are caught too (date-only means midnight).
+	m = baseModel()
+	m.Time.Start, m.Time.End = "2030-01-01", "2030-01-01T00:00:00"
+	wantValidateErr(t, &m, "must be after time.start")
+
+	m = baseModel()
+	m.Time.Timesteps = []string{"2030-01-01 00:00", "2030-01-01 01:00", "2030-01-01 00:00"}
+	wantValidateErr(t, &m, `time.timesteps[2] duplicates timesteps[0]`)
+
+	m = baseModel()
+	m.Time.Timesteps = []string{"2030-01-01 00:00", "2030-01-01 01:00"}
+	if err := m.Validate(); err != nil {
+		t.Fatalf("distinct timesteps rejected: %v", err)
+	}
+}
+
+func TestSweepRunCap(t *testing.T) {
+	vals := func(n int) []float64 {
+		out := make([]float64, n)
+		for i := range out {
+			out[i] = float64(i)
+		}
+		return out
+	}
+	axes := func(counts ...int) []model.SweepAxis {
+		out := make([]model.SweepAxis, len(counts))
+		for i, n := range counts {
+			out[i] = model.SweepAxis{Parameter: string(rune('a' + i)), Values: vals(n)}
+		}
+		return out
+	}
+
+	e := model.Experiment{Sweep: axes(11, 10, 10)} // 1100 runs
+	if err := e.Validate(); err == nil || !strings.Contains(err.Error(), "expands to 1100 runs; the limit is 1000") {
+		t.Fatalf("want sweep cap error, got: %v", err)
+	}
+
+	e = model.Experiment{Sweep: axes(10, 10, 10)} // exactly the limit
+	if err := e.Validate(); err != nil {
+		t.Fatalf("sweep at the limit rejected: %v", err)
+	}
+
+	// The product must not overflow before the cap fires (100^10 > MaxInt).
+	e = model.Experiment{Sweep: axes(100, 100, 100, 100, 100, 100, 100, 100, 100, 100)}
+	if err := e.Validate(); err == nil || !strings.Contains(err.Error(), "more runs than can be counted") {
+		t.Fatalf("want overflow-safe sweep cap error, got: %v", err)
+	}
+}
+
 func TestEffectiveCapacityBounds(t *testing.T) {
 	four := 4
 	c := &model.Capacity{PerUnit: fp(250), UnitsMax: &four}

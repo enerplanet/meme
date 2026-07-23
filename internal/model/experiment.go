@@ -6,8 +6,13 @@ package model
 import (
 	"errors"
 	"fmt"
+	"math"
 	"sort"
 )
+
+// MaxSweepRuns caps how many runs a sweep may expand into (the product of
+// values per axis); Experiment.Validate rejects anything larger.
+const MaxSweepRuns = 1000
 
 // Solver settings are a run concern, so they live on the Experiment, not the
 // physical Model. TimeLimit/MIPGap/Threads are the three options every run
@@ -269,13 +274,29 @@ func (e *Experiment) Validate() error {
 			add("experiment.scenarios[%d] %q has a negative weight", i, sc.Name)
 		}
 	}
+	// ExpandSweep launches the cartesian product of the axes as independent
+	// runs; cap it so a few generous axes cannot fan out into an unbounded
+	// amount of work. The product is computed overflow-safely.
+	runs, overflowed := 1, false
 	for i, ax := range e.Sweep {
 		if ax.Parameter == "" {
 			add("experiment.sweep[%d] has no parameter path", i)
 		}
-		if len(ax.Values) == 0 {
+		n := len(ax.Values)
+		if n == 0 {
 			add("experiment.sweep[%d] (%s) has no values", i, ax.Parameter)
+			continue
 		}
+		if runs > math.MaxInt/n {
+			overflowed = true
+		} else {
+			runs *= n
+		}
+	}
+	if overflowed {
+		add("experiment.sweep expands to more runs than can be counted; the limit is %d", MaxSweepRuns)
+	} else if runs > MaxSweepRuns {
+		add("experiment.sweep expands to %d runs; the limit is %d", runs, MaxSweepRuns)
 	}
 	return errors.Join(errs...)
 }

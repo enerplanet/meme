@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strings"
 	"time"
 )
 
@@ -39,6 +40,19 @@ func (m *Model) Validate() error {
 			add("time.%s %q is not an ISO 8601 timestamp", ts.field, ts.v)
 		}
 	}
+	if s, okS := parseDate(m.Time.Start); okS {
+		if e, okE := parseDate(m.Time.End); okE && !e.After(s) {
+			add("time.end %q must be after time.start %q", m.Time.End, m.Time.Start)
+		}
+	}
+	seenSteps := map[string]int{}
+	for i, step := range m.Time.Timesteps {
+		if first, dup := seenSteps[step]; dup {
+			add("time.timesteps[%d] duplicates timesteps[%d] (%q)", i, first, step)
+		} else {
+			seenSteps[step] = i
+		}
+	}
 	if m.Time.Weights != nil {
 		if f, ok := m.Time.Weights.Reduce(); ok && f <= 0 {
 			add("time.weights must be positive")
@@ -63,6 +77,25 @@ func (m *Model) Validate() error {
 	}
 	if len(m.Carriers) == 0 {
 		add("model has no carriers")
+	}
+
+	// Identifier hygiene: see validID for why these keys are charset-limited.
+	checkIDs := func(section string, keys []string) {
+		for _, k := range keys {
+			if !validID(k) {
+				add("%s: id %q is invalid (allowed: %s)", section, k, idCharset)
+			}
+		}
+	}
+	checkIDs("carriers", keysOf(m.Carriers))
+	checkIDs("nodes", keysOf(m.Nodes))
+	checkIDs("technologies", keysOf(m.Technologies))
+	checkIDs("transmission", keysOf(m.Transmission))
+	checkIDs("trade", keysOf(m.Trade))
+	for _, k := range keysOf(m.Timeseries) {
+		if !validSeriesID(k) {
+			add("timeseries: id %q is invalid (allowed: %s)", k, idCharset)
+		}
 	}
 
 	hasNode := func(id string) bool { _, ok := m.Nodes[id]; return ok }
@@ -245,6 +278,11 @@ func (m *Model) Validate() error {
 			add("node %q: available_area must not be negative", nid)
 		}
 		for _, col := range keysOf(n.Climate) {
+			// Climate columns feed interned series ids, so they follow the
+			// same identifier rule as the registry keys they end up in.
+			if !validID(col) {
+				add("node %q: climate column %q is invalid (allowed: %s)", nid, col, idCharset)
+			}
 			if v := n.Climate[col]; v.IsSeries() {
 				if _, ok := m.Timeseries[v.SeriesID()]; !ok {
 					add("node %q: climate series %q (column %s) not defined", nid, v.SeriesID(), col)
@@ -253,7 +291,22 @@ func (m *Model) Validate() error {
 		}
 	}
 
+	// Constraints and emission limits render into ONE Calliope add_math map, so
+	// a name reused anywhere across the two lists would silently drop an entry.
+	seenNames := map[string]string{}
+	checkName := func(where, name string) {
+		if name == "" {
+			return
+		}
+		if first, dup := seenNames[name]; dup {
+			add("%s: name %q is already used by %s", where, name, first)
+		} else {
+			seenNames[name] = where
+		}
+	}
+
 	for i, c := range m.Constraints {
+		checkName(fmt.Sprintf("constraints[%d]", i), c.Name)
 		switch c.Sense {
 		case "<=", ">=", "==":
 		default:
@@ -315,6 +368,7 @@ func (m *Model) Validate() error {
 	}
 
 	for i, el := range m.EmissionLimits {
+		checkName(fmt.Sprintf("emission_limits[%d]", i), el.Name)
 		switch el.Sense {
 		case "<=", ">=", "==":
 		default:
@@ -371,21 +425,67 @@ func (m *Model) Validate() error {
 	return errors.Join(errs...)
 }
 
-// parseableDate reports whether s parses under one of the ISO 8601 layouts
-// the emit layer accepts (kept in sync with emit.ParseDate; duplicated here
-// because emit imports model).
-func parseableDate(s string) bool {
+// parseDate parses s under one of the ISO 8601 layouts the emit layer accepts
+// (kept in sync with emit.ParseDate; duplicated here because emit imports
+// model).
+func parseDate(s string) (time.Time, bool) {
 	for _, layout := range []string{
 		time.RFC3339,
 		"2006-01-02T15:04:05", "2006-01-02 15:04:05",
 		"2006-01-02T15:04", "2006-01-02 15:04",
 		"2006-01-02",
 	} {
-		if _, err := time.Parse(layout, s); err == nil {
-			return true
+		if t, err := time.Parse(layout, s); err == nil {
+			return t, true
 		}
 	}
-	return false
+	return time.Time{}, false
+}
+
+// parseableDate reports whether s parses as an ISO 8601 timestamp.
+func parseableDate(s string) bool {
+	_, ok := parseDate(s)
+	return ok
+}
+
+// idCharset documents the identifier rule for error messages.
+const idCharset = `letters, digits, ".", "_" and "-", not starting with "."`
+
+// validID reports whether id is safe to use verbatim as a filesystem path
+// component. Emitters join these ids into output paths (adoptnet0 writes
+// node_data/<node-id>/ directories and carrier_data/<carrier-id>.csv, calliope
+// writes <series-id>.csv data tables), so the charset is a conservative
+// whitelist rather than per-emitter sanitizing. A leading "." is rejected to
+// rule out ".", ".." and hidden files.
+func validID(id string) bool {
+	if id == "" || id[0] == '.' {
+		return false
+	}
+	for i := 0; i < len(id); i++ {
+		switch c := id[i]; {
+		case c >= 'a' && c <= 'z', c >= 'A' && c <= 'Z', c >= '0' && c <= '9',
+			c == '.', c == '_', c == '-':
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+// validSeriesID applies validID to a timeseries registry key, additionally
+// accepting the "_inline:<kind>:<id>:<field>" form InternInlineSeries
+// generates (validated segment-wise so the colons cannot smuggle separators;
+// interning runs before Validate, so its output must pass here).
+func validSeriesID(id string) bool {
+	if strings.HasPrefix(id, "_inline:") {
+		for _, seg := range strings.Split(id, ":") {
+			if !validID(seg) {
+				return false
+			}
+		}
+		return true
+	}
+	return validID(id)
 }
 
 // --- numeric range checks -----------------------------------------------------
@@ -529,6 +629,11 @@ func validateStorage(add func(string, ...any), where string, s *Storage) {
 
 func validateCosts(add func(string, ...any), where string, costs map[string]CostClass) {
 	for _, class := range keysOf(costs) {
+		// Cost-class keys become segments of interned series ids (and thus of
+		// emitted file names), so they follow the identifier rule too.
+		if !validID(class) {
+			add("%s: cost class %q is invalid (allowed: %s)", where, class, idCharset)
+		}
 		c := costs[class]
 		nonNeg := func(name string, v *float64) {
 			if v != nil && *v < 0 {

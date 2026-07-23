@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"sort"
 
+	"github.com/enerplanet/meme/internal/emit"
 	"github.com/enerplanet/meme/internal/model"
 )
 
@@ -32,6 +33,9 @@ func ValidateFor(j *model.Job, name model.Target) (warnings []string, err error)
 	if e := j.Experiment.Validate(); e != nil {
 		return nil, e
 	}
+	// Inline series shorter than the model horizon are padded by repeating
+	// their last value at emit time — legal, but rarely what the user meant.
+	warnings = append(warnings, emit.SeriesLengthMismatches(&j.Model)...)
 	warnings = append(warnings, j.Experiment.OptionWarnings()...)
 	genWarns, err := validateGeneric(t, j)
 	warnings = append(warnings, genWarns...)
@@ -111,11 +115,12 @@ func validateGeneric(t Target, j *model.Job) ([]string, error) {
 	// Problem-shaping feature gates: reject a payload that uses a field the
 	// selected target cannot honor.
 	var usesFlows, usesCommit, usesArea, usesSource bool
+	committable := func(op *model.Operation) bool { return op != nil && op.Committable }
 	for _, tech := range m.Technologies {
 		if len(tech.Flows) > 0 {
 			usesFlows = true
 		}
-		if tech.Operation != nil && tech.Operation.Committable {
+		if committable(tech.Operation) {
 			usesCommit = true
 		}
 		if tech.Area != nil {
@@ -123,6 +128,19 @@ func validateGeneric(t Target, j *model.Job) ([]string, error) {
 		}
 		if tech.Source != nil {
 			usesSource = true
+		}
+		// Technology.At merges override Operation/Area/Source wholesale, so an
+		// override-only usage must trip the same gates as a base-field usage.
+		for _, ov := range tech.NodeOverrides {
+			if committable(ov.Operation) {
+				usesCommit = true
+			}
+			if ov.Area != nil {
+				usesArea = true
+			}
+			if ov.Source != nil {
+				usesSource = true
+			}
 		}
 	}
 	gates := []struct {

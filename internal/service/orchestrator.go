@@ -39,6 +39,7 @@ type RunResult struct {
 	Stdout   string             `json:"stdout,omitempty"`
 	Stderr   string             `json:"stderr,omitempty"`
 	ExitCode int                `json:"exit_code"`
+	TimedOut bool               `json:"timed_out,omitempty"`
 	Error    string             `json:"error,omitempty"`
 }
 

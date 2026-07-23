@@ -7,6 +7,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -139,19 +140,45 @@ func (j *JobRecord) View(includeLog bool) JobView {
 	return v
 }
 
-// LogText returns the full console log (read from disk).
+// LogText returns the console log (read from disk), capped to head + tail for
+// huge logs — the full file stays on disk (and in the bundle's files/ tree).
 func (j *JobRecord) LogText() string {
 	j.mu.Lock()
 	defer j.mu.Unlock()
 	return j.logText()
 }
 
+// logText reads the log with the same head/tail cap as run output capture: the
+// log view is embedded in every status poll, so it must not balloon with the
+// solver's console output. The tail carries the completion/objective lines
+// consumers grep for.
 func (j *JobRecord) logText() string {
-	b, err := os.ReadFile(j.logPath)
+	f, err := os.Open(j.logPath)
 	if err != nil {
 		return ""
 	}
-	return string(b)
+	defer f.Close()
+	fi, err := f.Stat()
+	if err != nil {
+		return ""
+	}
+	size := fi.Size()
+	if size <= int64(captureHead+captureTail) {
+		b, err := io.ReadAll(f)
+		if err != nil {
+			return ""
+		}
+		return string(b)
+	}
+	head := make([]byte, captureHead)
+	if _, err := io.ReadFull(f, head); err != nil {
+		return ""
+	}
+	tail := make([]byte, captureTail)
+	if _, err := f.ReadAt(tail, size-int64(captureTail)); err != nil {
+		return ""
+	}
+	return string(head) + truncationMarker(size-int64(len(head)+len(tail))) + string(tail)
 }
 
 func (j *JobRecord) doneBefore(cutoff time.Time) bool {

@@ -5,11 +5,14 @@ package service_test
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"testing"
 	"time"
 
@@ -114,6 +117,9 @@ func TestCommandRunnerTimeout(t *testing.T) {
 	if res.ExitCode == 0 || !strings.Contains(res.Error, "aborted") {
 		t.Errorf("timed-out run must fail with an aborted error, got exit=%d err=%q", res.ExitCode, res.Error)
 	}
+	if !res.TimedOut {
+		t.Error("deadline-exceeded run must be marked TimedOut")
+	}
 }
 
 // TestCommandRunnerContextCancel: server shutdown (context cancellation) kills
@@ -131,6 +137,82 @@ func TestCommandRunnerContextCancel(t *testing.T) {
 	}
 	if res.ExitCode == 0 {
 		t.Errorf("cancelled run must fail, got %+v", res)
+	}
+	if res.TimedOut {
+		t.Error("shutdown cancellation must not be reported as a timeout")
+	}
+}
+
+// TestCommandRunnerKillsProcessGroup: a solver grandchild inheriting the
+// output pipes must die with the entrypoint — without process-group kill it
+// would keep the pipe open (blocking the runner) and leak past the timeout.
+func TestCommandRunnerKillsProcessGroup(t *testing.T) {
+	pidFile := filepath.Join(t.TempDir(), "grandchild.pid")
+	script := fmt.Sprintf("sleep 300 & echo $! > %s; exec sleep 300", pidFile)
+	r := service.CommandRunner{Timeout: 200 * time.Millisecond}
+	start := time.Now()
+	res := r.Run(context.Background(), target.RunPlan{Command: []string{"sh", "-c", script}})
+	if elapsed := time.Since(start); elapsed > 4*time.Second {
+		t.Fatalf("runner blocked on the grandchild's inherited pipe (took %s)", elapsed)
+	}
+	if !res.TimedOut || res.ExitCode == 0 {
+		t.Errorf("timed-out run must be marked, got exit=%d timedOut=%v err=%q", res.ExitCode, res.TimedOut, res.Error)
+	}
+	b, err := os.ReadFile(pidFile)
+	if err != nil {
+		t.Fatalf("grandchild pidfile: %v", err)
+	}
+	pid, err := strconv.Atoi(strings.TrimSpace(string(b)))
+	if err != nil {
+		t.Fatalf("pidfile content %q: %v", b, err)
+	}
+	// kill -0 succeeds on zombies too, so poll until init reaps the grandchild.
+	deadline := time.Now().Add(2 * time.Second)
+	for syscall.Kill(pid, 0) != syscall.ESRCH {
+		if time.Now().After(deadline) {
+			t.Fatalf("grandchild %d survived the process-group kill", pid)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+// TestCommandRunnerCapsOutput: output beyond the head+tail cap is dropped with
+// a truncation marker; the tail — where solver status/objective lines live —
+// must survive.
+func TestCommandRunnerCapsOutput(t *testing.T) {
+	script := "yes 0123456789abcdef | head -c 3000000; echo; echo tail-sentinel"
+	res := service.CommandRunner{}.Run(context.Background(), target.RunPlan{Command: []string{"sh", "-c", script}})
+	if res.ExitCode != 0 {
+		t.Fatalf("run failed: exit=%d err=%q", res.ExitCode, res.Error)
+	}
+	if len(res.Stdout) > 1100*1024 {
+		t.Errorf("stdout not capped: %d bytes", len(res.Stdout))
+	}
+	if !strings.HasPrefix(res.Stdout, "0123456789abcdef\n") {
+		t.Errorf("head of output lost: %q...", res.Stdout[:32])
+	}
+	if !strings.Contains(res.Stdout, "...[truncated ") {
+		t.Error("truncation marker missing")
+	}
+	if !strings.Contains(res.Stdout[len(res.Stdout)-64:], "tail-sentinel") {
+		t.Error("tail of output lost — consumers grep markers near the end")
+	}
+}
+
+// TestCommandRunnerSeparatesStderr: Stdout stays the combined stream (the job
+// log and its markers rely on it) while Stderr carries just the error stream.
+func TestCommandRunnerSeparatesStderr(t *testing.T) {
+	res := service.CommandRunner{}.Run(context.Background(), target.RunPlan{
+		Command: []string{"sh", "-c", "echo to-stdout; echo to-stderr >&2"},
+	})
+	if res.ExitCode != 0 {
+		t.Fatalf("run failed: exit=%d err=%q", res.ExitCode, res.Error)
+	}
+	if !strings.Contains(res.Stdout, "to-stdout") || !strings.Contains(res.Stdout, "to-stderr") {
+		t.Errorf("Stdout must remain the combined stream, got %q", res.Stdout)
+	}
+	if strings.Contains(res.Stderr, "to-stdout") || !strings.Contains(res.Stderr, "to-stderr") {
+		t.Errorf("Stderr must carry only the error stream, got %q", res.Stderr)
 	}
 }
 
@@ -155,6 +237,29 @@ func TestJobLogOnDisk(t *testing.T) {
 	}
 	if v := rec.View(true); v.Log != "hello\nworld\n" {
 		t.Errorf("View log = %q", v.Log)
+	}
+}
+
+// TestJobLogViewCapped: a huge on-disk log is embedded head+tail only in the
+// status view, and the closing lines survive the cut.
+func TestJobLogViewCapped(t *testing.T) {
+	store := service.NewJobStore()
+	rec := store.Create(model.TargetPyPSA, t.TempDir(), nil)
+	rec.AppendLog(strings.Repeat("x", 2<<20)) // 2 MiB, beyond the head+tail cap
+	rec.AppendLog("all runs complete")
+
+	got := rec.LogText()
+	if len(got) > 1100*1024 {
+		t.Errorf("log view not capped: %d bytes", len(got))
+	}
+	if !strings.Contains(got, "...[truncated ") {
+		t.Error("truncation marker missing from log view")
+	}
+	if !strings.Contains(got[len(got)-64:], "all runs complete") {
+		t.Error("log tail lost — the e2e contract greps markers near the end")
+	}
+	if v := rec.View(true); v.Log != got {
+		t.Error("View(true) log must match LogText")
 	}
 }
 

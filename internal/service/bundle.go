@@ -49,6 +49,11 @@ func addTree(zw *zip.Writer, root, prefix string) {
 		if err != nil || d.IsDir() {
 			return nil
 		}
+		// Skip symlinks: following one would copy content from outside the
+		// job tree into a downloadable artifact.
+		if d.Type()&os.ModeSymlink != 0 {
+			return nil
+		}
 		rel, rerr := filepath.Rel(root, path)
 		if rerr != nil {
 			return nil

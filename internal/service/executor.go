@@ -22,7 +22,7 @@ import (
 type Executor struct {
 	Runner  Runner        // nil -> DryRunner
 	MaxJobs int           // concurrent jobs; <=0 -> 2
-	sem     chan struct{} // lazily sized from MaxJobs
+	sem     chan struct{} // sized by NewExecutor
 }
 
 // NewExecutor returns an Executor with its semaphore initialized.
@@ -38,9 +38,6 @@ func NewExecutor(r Runner, maxJobs int) *Executor {
 // as complete as possible); the job is marked failed if any target failed.
 // Blocks while the concurrency semaphore is full (the job shows as queued).
 func (e *Executor) Execute(ctx context.Context, rec *JobRecord, job model.Job, targets []model.Target) {
-	if e.sem == nil {
-		e.sem = make(chan struct{}, 2)
-	}
 	select {
 	case e.sem <- struct{}{}:
 		defer func() { <-e.sem }()

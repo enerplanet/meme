@@ -11,6 +11,9 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/enerplanet/meme/internal/api"
@@ -165,4 +168,97 @@ func TestSubmitRejectsBeforeScheduling(t *testing.T) {
 		t.Error("a rejected submit must not create a job")
 	}
 	_ = model.TargetAdOpt // (documents which target rejects the raw sample)
+}
+
+// TestValidateMultiTargetMixedVerdicts: when one requested target accepts the
+// payload and another rejects it, /validate answers 422 with overall
+// valid=false and one verdict per target — the accepting target keeps its
+// valid=true, the rejecting one carries the reason.
+func TestValidateMultiTargetMixedVerdicts(t *testing.T) {
+	srv := newTestServer(t)
+	resp, err := http.Post(srv.URL+"/validate?target=pypsa,adopt-net0", "application/json", bytes.NewReader(sampleBytes(t)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusUnprocessableEntity {
+		t.Fatalf("mixed verdicts: status %d, want 422", resp.StatusCode)
+	}
+	var out map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if out["valid"] != false {
+		t.Errorf("overall valid must be false, got %v", out["valid"])
+	}
+	verdicts, _ := out["targets"].(map[string]any)
+	if pv, _ := verdicts["pypsa"].(map[string]any); pv["valid"] != true {
+		t.Errorf("pypsa verdict must stay valid, got %v", pv)
+	}
+	av, _ := verdicts["adopt-net0"].(map[string]any)
+	if av["valid"] != false {
+		t.Errorf("adopt-net0 verdict must be invalid, got %v", av)
+	}
+	if reason, _ := av["error"].(string); reason == "" {
+		t.Errorf("invalid verdict must carry the reason, got %v", av)
+	}
+}
+
+// TestConvertRejectsInvalidPayload: /convert validates every requested target
+// before writing anything — a rejecting target is a 422 error envelope naming
+// that target, and the work root stays empty.
+func TestConvertRejectsInvalidPayload(t *testing.T) {
+	work := t.TempDir()
+	srv := httptest.NewServer(api.NewServer(api.Server{WorkRoot: work}))
+	defer srv.Close()
+
+	resp, err := http.Post(srv.URL+"/convert?target=pypsa,adopt-net0", "application/json", bytes.NewReader(sampleBytes(t)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusUnprocessableEntity {
+		t.Fatalf("rejecting target: status %d, want 422", resp.StatusCode)
+	}
+	var out map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if msg, _ := out["error"].(string); !strings.HasPrefix(msg, "adopt-net0: ") {
+		t.Errorf("422 must name the rejecting target, got %q", msg)
+	}
+	entries, err := os.ReadDir(work)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 0 {
+		t.Errorf("a rejected convert must not write anything, found %v", entries)
+	}
+}
+
+// TestWorkRootUnusable: when the work root cannot be created (here: nested
+// under a regular file), /convert and /simulate answer a 500 error envelope —
+// after validation, before any job exists — instead of panicking.
+func TestWorkRootUnusable(t *testing.T) {
+	blocker := filepath.Join(t.TempDir(), "blocker")
+	if err := os.WriteFile(blocker, []byte("not a dir"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	srv := httptest.NewServer(api.NewServer(api.Server{WorkRoot: filepath.Join(blocker, "work")}))
+	defer srv.Close()
+
+	for _, path := range []string{"/convert?target=pypsa", "/simulate?target=pypsa"} {
+		resp, err := http.Post(srv.URL+path, "application/json", bytes.NewReader(sampleBytes(t)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if resp.StatusCode != http.StatusInternalServerError {
+			t.Errorf("%s: status %d, want 500", path, resp.StatusCode)
+		}
+		var out map[string]any
+		if err := json.NewDecoder(resp.Body).Decode(&out); err != nil || out["error"] == nil {
+			t.Errorf("%s: 500 body must be the {\"error\":...} envelope, got err=%v body=%v", path, err, out)
+		}
+		resp.Body.Close()
+	}
 }

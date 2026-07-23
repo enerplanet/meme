@@ -390,6 +390,42 @@ func TestCORSNonPreflightOptions(t *testing.T) {
 	}
 }
 
+// TestCORSAllowedHeadersWildcard: the single entry "*" switches AllowedHeaders
+// into echo mode — the preflight's requested headers come back verbatim, and a
+// preflight requesting none gets no Allow-Headers header at all. "*" next to
+// other entries stays a literal header list, as documented on AllowedHeaders.
+func TestCORSAllowedHeadersWildcard(t *testing.T) {
+	srv := corsServer(t, api.Server{CORS: api.CORSConfig{
+		AllowedOrigins: []string{"https://app.example.com"},
+		AllowedHeaders: []string{"*"},
+	}})
+
+	requested := "x-custom-header, content-type"
+	resp := preflight(t, srv.URL+"/validate?target=pypsa", "https://app.example.com",
+		map[string]string{"Access-Control-Request-Headers": requested})
+	if resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("preflight status %d, want 204", resp.StatusCode)
+	}
+	if got := resp.Header.Get("Access-Control-Allow-Headers"); got != requested {
+		t.Errorf("echo mode: Allow-Headers %q, want the requested %q", got, requested)
+	}
+
+	resp = preflight(t, srv.URL+"/validate?target=pypsa", "https://app.example.com", nil)
+	if got := resp.Header.Values("Access-Control-Allow-Headers"); len(got) != 0 {
+		t.Errorf("echo mode without requested headers must omit Allow-Headers, got %v", got)
+	}
+
+	literal := corsServer(t, api.Server{CORS: api.CORSConfig{
+		AllowedOrigins: []string{"https://app.example.com"},
+		AllowedHeaders: []string{"*", "X-Other"},
+	}})
+	resp = preflight(t, literal.URL+"/validate?target=pypsa", "https://app.example.com",
+		map[string]string{"Access-Control-Request-Headers": requested})
+	if got := resp.Header.Get("Access-Control-Allow-Headers"); got != "*, X-Other" {
+		t.Errorf("multi-entry list with \"*\" must stay literal, got %q", got)
+	}
+}
+
 // TestCORSPrivateNetwork: Chrome's Access-Control-Request-Private-Network
 // preflight is answered affirmatively iff AllowPrivateNetwork is set.
 func TestCORSPrivateNetwork(t *testing.T) {

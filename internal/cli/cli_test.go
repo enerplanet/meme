@@ -123,3 +123,12 @@ func TestParseArgsCORSOrigins(t *testing.T) {
 		t.Errorf("CLI -cors-origins should override .env, got %v", cfg.CORSOrigins)
 	}
 }
+
+// ParseArgs returns flag errors (ContinueOnError) instead of exiting the
+// process — the contract that makes it safe to call from tests.
+func TestParseArgsFlagError(t *testing.T) {
+	t.Setenv("MEME_ENV_FILE", "")
+	if _, err := ParseArgs([]string{"-no-such-flag"}); err == nil {
+		t.Error("unknown flag must return an error, not exit")
+	}
+}

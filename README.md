@@ -46,8 +46,9 @@ a 422 rejection) is in [`examples/README.md`](examples/README.md).
 
 **Requirements.** Host build: Go ≥ 1.22 and `make`. Real solver execution:
 Docker with compose v2 — the [`environment/`](environment/) image carries
-Python 3.12, the three frameworks and their solvers (versions are pinned and
-load-bearing; see [`environment/README.md`](environment/README.md)).
+Python 3.12, the three frameworks and their solvers (the framework versions
+are exact-pinned and load-bearing; the solvers ride on `highspy`/apt without
+pins — see [`environment/README.md`](environment/README.md)).
 
 **Configuration** — precedence **CLI flag > `.env` > built-in default**
 (copy [`.env.example`](.env.example) to `.env`, or point elsewhere with
@@ -134,10 +135,11 @@ curl -si -X OPTIONS 'localhost:8080/validate?target=pypsa' \
 ├── environment/             Docker image, compose, per-env .env files, pinned
 │                            framework requirements (see environment/README.md)
 ├── examples/                maximal + shared payloads with the curl walkthrough
-├── docs/                    CAPABILITY.md (shared schema, per-framework natives,
+├── schemas/                 CAPABILITY.md (shared schema, per-framework natives,
 │                            property tables), the published JSON Schemas
 │                            (revised_unified_schema.json = the payload contract,
 │                            checked by `make schema-check`), schema-vs-Go report
+├── docs/                    mkdocs site (template scaffolding + assets)
 ├── Makefile                 build/run; delegates to test/ and environment/
 └── .env.example             annotated configuration template
 ```
@@ -158,7 +160,7 @@ single- and multi-target).
 ```bash
 make test           # vet + all unit/integration tests on the host (no Python)
 make test-race      # race-detector pass over the concurrent packages
-make schema-check   # examples/ + scenario corpus vs docs/revised_unified_schema.json (python3 + jsonschema)
+make schema-check   # examples/ + scenario corpus vs schemas/revised_unified_schema.json (python3 + jsonschema)
 make e2e-smoke      # container: 3 real-solver lifecycles + one multi-target job (~1 min)
 make e2e            # container: the full corpus on real solvers (~1.5 min)
 make golden-update  # accept an intended emitter/validation change into the goldens
@@ -541,7 +543,7 @@ result bundle.
 
 Property-by-property support (every input, node, tech, transmission/trade and
 output property × target, plus each framework's native attach points) is
-catalogued in [CAPABILITY.md](CAPABILITY.md); this section summarizes the
+catalogued in [CAPABILITY.md](schemas/CAPABILITY.md); this section summarizes the
 feature-level matrix that validation enforces.
 
 Each feature maps to a first-class schema field or a run mode. `ValidateFor`
@@ -634,8 +636,9 @@ and piecewise math render regardless (they are model physics, not user math).
 - **Runner commands** assume the Python tools are on PATH; `DryRunner` is the
   default so the service runs with no Python installed (`-exec` switches to
   `CommandRunner`). The `environment/` image provides all three frameworks + cbc.
-- **JobStore is in-memory** — jobs don't survive a restart and aren't GC'd; a
-  persistent store or TTL sweeper is the production follow-up.
+- **JobStore is in-memory** — jobs don't survive a restart. Finished jobs are
+  GC'd after 24 h (15-min sweep, see `cmd/meme/main.go`); a persistent store is
+  the production follow-up.
 - **AdOpT-NET0 runs and solves** (verified end-to-end via `/simulate -exec`), but
   it works differently from PyPSA/Calliope in two ways you must know:
   - **Solver: `cbc`/`highs` are not options.** `adopt_net0` supports only

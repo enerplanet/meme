@@ -105,7 +105,9 @@ with `ENV=staging`.
   Calliope in particular must stay at `0.7.0.dev7` (dev8 renames data-table
   keys). Bump deliberately and re-run the E2E suite.
 - CBC and GLPK are not fallbacks — they are the primary solvers for Calliope
-  and AdOpT respectively (see the table above).
+  and AdOpT respectively (see the table above). Note the solvers themselves are
+  not exact-pinned: `highspy` is unversioned in the requirements and CBC/GLPK
+  come from apt — only the three framework packages carry `==` pins.
 - The `api` service writes emitted files to `/src/.work`; add that to
   `.gitignore` if you don't already ignore it. Note the container runs as root,
   so `.work` contents created via docker are root-owned on the host.

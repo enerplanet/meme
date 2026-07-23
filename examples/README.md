@@ -1,7 +1,7 @@
 # API Examples
 
 Four payloads — one **maximal** config per framework (every property that
-target honors per [CAPABILITY.md](../docs/CAPABILITY.md)) plus one **shared** config
+target honors per [CAPABILITY.md](../schemas/CAPABILITY.md)) plus one **shared** config
 valid for all three at once — and the API calls to drive them. All four have
 been executed against the real API with real solvers and run to `succeeded`
 (PyPSA/HiGHS, Calliope/CBC, AdOpT/GLPK).

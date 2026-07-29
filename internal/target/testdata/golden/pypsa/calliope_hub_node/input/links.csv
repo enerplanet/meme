@@ -1,0 +1,3 @@
+name,bus0,bus1,p_nom,p_nom_extendable,p_nom_max,efficiency,capital_cost,p_min_pu
+l1,n1::electricity,hub::electricity,0,True,500,0.97,0,-1
+l2,hub::electricity,n2::electricity,0,True,500,0.97,0,-1

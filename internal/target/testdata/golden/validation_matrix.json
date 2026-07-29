@@ -176,6 +176,17 @@
       "verdict": "error: tech \"flex_load\": demand_curtailable is only supported for target calliope (sink_use_max)"
     }
   },
+  "calliope_hub_node.json": {
+    "adopt-net0": {
+      "verdict": "error: transmission is not supported by target \"adopt-net0\" yet (adopt_net0 Networks are not mapped); model exchange via trade or nodes.\u003cn\u003e.native.adopt-net0"
+    },
+    "calliope": {
+      "verdict": "ok"
+    },
+    "pypsa": {
+      "verdict": "ok"
+    }
+  },
   "calliope_node_override.json": {
     "adopt-net0": {
       "verdict": "error: tech \"pv\" (supply) has no adopt_net0 database mapping (only pv/wind/heat_pump physics and storage map); model it via nodes.\u003cnode\u003e.native.adopt-net0 naming a database technology"

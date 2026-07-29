@@ -1,0 +1,20 @@
+{
+  "model": {
+    "metadata": {"name": "calliope_hub_node"},
+    "time": {"start": "2025-01-01", "end": "2025-01-02", "resolution": "1H"},
+    "carriers": {"electricity": {"unit": "MWh"}},
+    "nodes": {"n1": {"coords": {"lat": 48, "lon": 11}}, "n2": {"coords": {"lat": 49, "lon": 12}}, "hub": {}},
+    "technologies": {
+      "gen": {"role": "supply", "node": "n1", "carrier_out": "electricity",
+              "capacity": {"expandable": true, "max": 1000}, "costs": {"monetary": {"variable_om": 40}}},
+      "load": {"role": "demand", "node": "n2", "carrier_in": "electricity", "demand_profile": 100}
+    },
+    "transmission": {
+      "l1": {"carrier": "electricity", "from": "n1", "to": "hub", "bidirectional": true,
+             "capacity": {"expandable": true, "max": 500}, "efficiency": 0.97},
+      "l2": {"carrier": "electricity", "from": "hub", "to": "n2", "bidirectional": true,
+             "capacity": {"expandable": true, "max": 500}, "efficiency": 0.97}
+    }
+  },
+  "experiment": {"mode": "plan", "solver": {"name": "cbc"}}
+}

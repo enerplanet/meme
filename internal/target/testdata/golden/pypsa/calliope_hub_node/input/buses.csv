@@ -1,0 +1,4 @@
+name,carrier,x,y
+hub::electricity,electricity,,
+n1::electricity,electricity,11,48
+n2::electricity,electricity,12,49

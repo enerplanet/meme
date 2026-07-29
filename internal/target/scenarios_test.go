@@ -85,6 +85,7 @@ func TestScenarios(t *testing.T) {
 		{"calliope_source_native.json", model.TargetCalliope, []string{"source_use_max", "area_use_max"}},
 		{"calliope_conversion.json", model.TargetCalliope, []string{"base_tech: conversion", "carrier_in: gas", "meme_ratio_chp_out_heat", "NOT [chp] in techs"}},
 		{"calliope_transmission.json", model.TargetCalliope, []string{"base_tech: transmission", "link_from: n1", "link_to: n2"}},
+		{"calliope_hub_node.json", model.TargetCalliope, []string{"link_to: hub", "link_from: hub", "  hub:\n    techs: {}"}},
 		{"calliope_node_override.json", model.TargetCalliope, []string{"cost_flow_cap", "300000"}},
 		{"calliope_trade.json", model.TargetCalliope, []string{"market_import", "market_export", "cost_flow_in", "-30"}},
 		{"calliope_committable.json", model.TargetCalliope, []string{"cap_method: integer", "flow_cap_per_unit: 100", "extra_math: [milp]"}},

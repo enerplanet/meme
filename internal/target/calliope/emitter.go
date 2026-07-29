@@ -266,9 +266,9 @@ func (Emitter) Emit(j *model.Job, outDir string) (string, error) {
 		for _, tid := range tradeTechs[id] {
 			tset.set(tid, nil)
 		}
-		if tset.len() > 0 {
-			nn.set("techs", tset)
-		}
+		// Calliope requires every node to declare techs, even as an empty
+		// mapping (techs: {}) — e.g. a hub only crossed by transmission links.
+		nn.set("techs", tset)
 		if err := mergeNativeIntoYAML(nn, n.Native.For(model.TargetCalliope)); err != nil {
 			return "", fmt.Errorf("node %q: %w", id, err)
 		}

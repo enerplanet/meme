@@ -8,10 +8,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
 	"os/exec"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/enerplanet/meme/internal/target"
@@ -149,14 +147,7 @@ func (c CommandRunner) Run(ctx context.Context, p target.RunPlan) RunResult {
 	// holding the pipe and block Wait forever. Run the command in its own
 	// process group and kill the whole group on cancel/timeout; WaitDelay is
 	// the backstop for anything that escaped the group.
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	cmd.Cancel = func() error {
-		err := syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
-		if err == syscall.ESRCH {
-			return os.ErrProcessDone
-		}
-		return err
-	}
+	configureProcGroup(cmd)
 	cmd.WaitDelay = 3 * time.Second
 	err := cmd.Run()
 	res.Stdout = combined.String()

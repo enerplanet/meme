@@ -34,13 +34,19 @@ GO          := go
 GOFLAGS     :=
 LDFLAGS     := -s -w
 
+ifeq ($(OS),Windows_NT)
+MKDIR_BIN   = if not exist $(BIN_DIR) mkdir $(BIN_DIR)
+else
+MKDIR_BIN   = mkdir -p $(BIN_DIR)
+endif
+
 # --- Meta -------------------------------------------------------------------
 .DEFAULT_GOAL := build
 .PHONY: build run run-exec fmt vet tidy clean help
 
 # --- Build ------------------------------------------------------------------
 build: ## Compile the server binary into bin/
-	@mkdir -p $(BIN_DIR)
+	@$(MKDIR_BIN)
 	$(GO) build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o $(BIN) $(CMD_PKG)
 	@echo "built $(BIN)"
 

@@ -7,11 +7,14 @@
 package calliope
 
 import (
+	"encoding/json"
 	"fmt"
+	"os"
 	"path/filepath"
 
 	"github.com/enerplanet/meme/internal/emit"
 	"github.com/enerplanet/meme/internal/model"
+	"github.com/enerplanet/meme/internal/scripts"
 	"github.com/enerplanet/meme/internal/target"
 )
 
@@ -184,15 +187,33 @@ func (Calliope) Emit(j *model.Job, outDir string) (string, error) {
 	return (Emitter{}).Emit(j, outDir)
 }
 
-// Plan drives the Calliope CLI, saving netCDF + CSV results into the output
-// directory (no generated driver script needed).
+// Plan drives Calliope via a generated run.py that solves the CLI (saving
+// netCDF + CSV into the output directory) and then extracts TEMPO's frozen
+// result contract into output/contract.json. extract_contract.py is written
+// alongside the driver and imported by it.
 func (Calliope) Plan(j *model.Job, entrypoint string, dirs target.RunDirs) (target.RunPlan, error) {
+	cfg, err := json.Marshal(map[string]string{
+		"entrypoint": entrypoint,
+		"netcdf":     filepath.Join(dirs.OutDir, "results.nc"),
+		"csv":        filepath.Join(dirs.OutDir, "csv"),
+		"contract":   filepath.Join(dirs.OutDir, "contract.json"),
+	})
+	if err != nil {
+		return target.RunPlan{}, err
+	}
+	if err := os.WriteFile(filepath.Join(dirs.RunDir, "extract_contract.py"),
+		[]byte(scripts.CalliopeExtractContract), 0o644); err != nil {
+		return target.RunPlan{}, err
+	}
+	driver := "CFG = " + string(cfg) + "\n" + scripts.CalliopeRun
+	if err := os.WriteFile(filepath.Join(dirs.RunDir, "run.py"),
+		[]byte(driver), 0o644); err != nil {
+		return target.RunPlan{}, err
+	}
 	return target.RunPlan{
 		Target:     model.TargetCalliope,
 		Entrypoint: entrypoint,
-		Command: []string{"calliope", "run", entrypoint,
-			"--save_netcdf", filepath.Join(dirs.OutDir, "results.nc"),
-			"--save_csv", filepath.Join(dirs.OutDir, "csv")},
-		WorkDir: dirs.RunDir,
+		Command:    []string{"python", "run.py"},
+		WorkDir:    dirs.RunDir,
 	}, nil
 }

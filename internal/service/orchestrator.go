@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -41,6 +42,9 @@ type RunResult struct {
 	ExitCode int                `json:"exit_code"`
 	TimedOut bool               `json:"timed_out,omitempty"`
 	Error    string             `json:"error,omitempty"`
+	// Contract is the target's normalized result contract (TEMPO's frozen
+	// shape), read from output/contract.json when the run's driver emits one.
+	Contract json.RawMessage `json:"contract,omitempty"`
 }
 
 // Simulate validates, expands the sweep, and for each run emits + materializes +
@@ -89,6 +93,11 @@ func (o Orchestrator) Simulate(ctx context.Context, j *model.Job, name model.Tar
 		res.Index = i
 		res.InputDir = dirs.InputDir
 		res.Assigned = run.Assignment
+		// A target's driver may write output/contract.json (TEMPO's frozen
+		// result shape); surface it on the run so it flows into the job view.
+		if raw, rerr := os.ReadFile(filepath.Join(dirs.OutDir, "contract.json")); rerr == nil && json.Valid(raw) {
+			res.Contract = json.RawMessage(raw)
+		}
 		o.logf("run %d: exit=%d", i, res.ExitCode)
 		if s := strings.TrimSpace(res.Stdout); s != "" {
 			o.logf("run %d output:\n%s", i, s)

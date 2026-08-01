@@ -23,3 +23,20 @@ var PyPSARun string
 //
 //go:embed adoptnet0_run.py
 var AdOptNET0Run string
+
+// CalliopeRun drives Calliope 0.7: run the CLI solve (save_netcdf + save_csv),
+// then extract TEMPO's frozen result contract into contract.json. The emitter
+// prepends a CFG line (see calliope.Plan) and writes CalliopeExtractContract
+// alongside it as extract_contract.py.
+//
+//go:embed calliope_run.py
+var CalliopeRun string
+
+// CalliopeExtractContract reads the emitted model.yaml (tech metadata) and the
+// solved results.nc (via calliope.read_netcdf) and emits contract.json in
+// TEMPO's frozen result shape. Written into the run dir as extract_contract.py
+// and imported by CalliopeRun. Mirrors calliope07_runner._extract_results in
+// the TEMPO repo.
+//
+//go:embed calliope_extract_contract.py
+var CalliopeExtractContract string

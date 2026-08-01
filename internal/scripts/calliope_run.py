@@ -10,11 +10,26 @@ console output (which the job log streams) is unchanged. Contract extraction is
 best-effort: a solved run is never marked failed just because extraction hit a
 snag — the missing contract.json is surfaced by the caller instead.
 """
-import json
 import os
+import shutil
 import subprocess
 import sys
-import traceback
+
+
+def _calliope_python():
+    """The interpreter that backs the `calliope` CLI — the one with calliope,
+    xarray, numpy and pyyaml installed. The driver itself may run under a
+    different (system) python that lacks those, so extraction must use this one.
+    Falls back to the current interpreter.
+    """
+    cal = shutil.which("calliope")
+    if cal:
+        d = os.path.dirname(os.path.realpath(cal))
+        for name in ("python", "python3", "python.exe"):
+            cand = os.path.join(d, name)
+            if os.path.exists(cand):
+                return cand
+    return sys.executable
 
 
 def _main():
@@ -29,19 +44,15 @@ def _main():
     if rc != 0:
         sys.exit(rc)
 
-    # extract_contract.py is written into the same directory as this driver.
-    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-    try:
-        import extract_contract
-
-        data = extract_contract.extract(entry, netcdf)
-        with open(contract, "w", encoding="utf-8") as fh:
-            json.dump(data, fh)
-        print("contract written: %s (objective=%s)"
-              % (contract, data.get("objective", "N/A")))
-    except Exception:  # noqa: BLE001 — never fail a good solve on extraction
-        print("contract extraction failed (non-fatal):", file=sys.stderr)
-        traceback.print_exc()
+    # Run the extractor under calliope's own interpreter (it imports calliope to
+    # read results.nc). extract_contract.py sits next to this driver.
+    here = os.path.dirname(os.path.abspath(__file__))
+    extractor = os.path.join(here, "extract_contract.py")
+    rc = subprocess.call([_calliope_python(), extractor, entry, netcdf, contract])
+    if rc != 0:
+        # Never fail a good solve on extraction — the caller surfaces the
+        # missing contract instead.
+        print("contract extraction failed (non-fatal), rc=%d" % rc, file=sys.stderr)
 
 
 if __name__ == "__main__":

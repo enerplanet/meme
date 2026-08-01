@@ -48,7 +48,7 @@ def _main():
     # read results.nc). extract_contract.py sits next to this driver.
     here = os.path.dirname(os.path.abspath(__file__))
     extractor = os.path.join(here, "extract_contract.py")
-    rc = subprocess.call([_calliope_python(), extractor, entry, netcdf, contract])
+    rc = subprocess.call([_calliope_python(), extractor, netcdf, contract])
     if rc != 0:
         # Never fail a good solve on extraction — the caller surfaces the
         # missing contract instead.

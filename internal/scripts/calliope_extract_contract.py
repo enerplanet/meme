@@ -1,13 +1,13 @@
 #!/usr/bin/env python
 """Extract TEMPO's frozen result contract from a solved Calliope 0.7 run.
 
-Standalone, dependency-light (xarray + numpy + pyyaml — all present in a
-Calliope 0.7 environment). Reads the emitted model.yaml (for tech metadata:
-base_tech, link endpoints, carrier, name, color) and the solved results.nc
-(for the optimised variables), and writes contract.json in the exact shape
-TEMPO's Results view consumes.
+Depends only on what a Calliope 0.7 environment already provides — calliope and
+numpy (NO pyyaml/xarray-direct): all tech metadata (base_tech, carrier, link
+endpoints) is sourced from the model that `calliope.read_netcdf` restores, so
+nothing beyond the solver env is required. Writes contract.json in the exact
+shape TEMPO's Results view consumes.
 
-    python extract_contract.py <model.yaml> <results.nc> <out_contract.json>
+    python extract_contract.py <results.nc> <out_contract.json>
 
 The contract mirrors python/calliope07_runner.py::_extract_results in the TEMPO
 repo — keep the two in sync. The `objective` is Calliope's post-processed
@@ -18,7 +18,6 @@ import json
 import sys
 
 import numpy as np
-import yaml
 
 
 def _clean(v):
@@ -30,50 +29,61 @@ def _idx(names, dim):
     return names.index(dim)
 
 
-def extract(model_yaml_path, results_nc_path):
-    with open(model_yaml_path, "r", encoding="utf-8") as fh:
-        doc = yaml.safe_load(fh) or {}
-    techs = doc.get("techs") or {}
+def extract(results_nc_path):
+    # Calliope 0.7 serialises results into netCDF groups; read_netcdf restores
+    # the Model (a bare xarray.open_dataset returns an empty root group). inputs
+    # carry base_tech/carrier_out; results hold the optimised variables.
+    import calliope
 
-    # Tech metadata sourced from the emitted YAML. MEME does not emit name/color,
-    # so those fall back to the tech id (TEMPO Results supplies defaults).
+    model = calliope.read_netcdf(results_nc_path)
+    inp = model.inputs
+    ds = model.results
+
+    # base_tech per tech (dims: techs).
+    base_of = {}
+    if "base_tech" in inp:
+        for tid, v in inp["base_tech"].to_series().dropna().items():
+            base_of[str(tid)] = str(v).strip()
+
+    # carrier_out per tech: the first carrier any node outputs (carrier_out is a
+    # nodes×techs×carriers boolean membership matrix).
+    carrier_out_of = {}
+    if "carrier_out" in inp:
+        anynode = inp["carrier_out"].any(dim="nodes")  # dims: techs, carriers
+        names = list(anynode.to_series().index.names)
+        i_t, i_c = names.index("techs"), names.index("carriers")
+        for idx, val in anynode.to_series().items():
+            tid = str(idx[i_t])
+            if val and tid not in carrier_out_of:
+                carrier_out_of[tid] = str(idx[i_c]).lower()
+
     tech_meta = {}
     transmission_tids = set()
     demand_tids = set()
-    link_endpoints = {}  # tid -> (from, to)
-    for tid, tdef in techs.items():
-        tdef = tdef or {}
-        base = str(tdef.get("base_tech", "")).strip()
+    for tid, base in base_of.items():
         if base == "transmission":
             transmission_tids.add(tid)
         if base == "demand":
             demand_tids.add(tid)
-        lf, lt = tdef.get("link_from"), tdef.get("link_to")
-        if lf and lt:
-            link_endpoints[tid] = (str(lf), str(lt))
-        carrier_out = tdef.get("carrier_out") or tdef.get("carrier") or ""
-        if isinstance(carrier_out, list):
-            carrier_out = carrier_out[0] if carrier_out else ""
-        meta = {"parent": base, "carrier_out": str(carrier_out).strip().lower()}
-        # Only emit display_name/color when the emitted YAML actually carries
-        # them. MEME does not, so these are omitted and the consumer (TEMPO
-        # Results) fills them from its own model definition rather than being
-        # clobbered by a generic id / empty colour.
-        name = tdef.get("name")
-        if name:
-            meta["display_name"] = str(name)
-        color = tdef.get("color")
-        if color:
-            meta["color"] = str(color)
-        tech_meta[tid] = meta
+        # display_name/color are intentionally omitted — MEME's model carries no
+        # human names, so TEMPO Results fills them from its own model definition
+        # rather than being clobbered by a generic id / empty colour.
+        tech_meta[tid] = {"parent": base, "carrier_out": carrier_out_of.get(tid, "")}
 
-    # Calliope 0.7 serialises results into netCDF groups; read_netcdf restores
-    # the Model, whose .results holds the optimised variables (a bare
-    # xarray.open_dataset returns an empty root group).
-    import calliope
-
-    model = calliope.read_netcdf(results_nc_path)
-    ds = model.results
+    # Transmission endpoints: a link tech's flow_cap is defined only at its two
+    # end nodes, so the non-null nodes are its endpoints (no link_from/link_to in
+    # the netcdf). Direction is irrelevant — net flow sorts the pair.
+    link_endpoints = {}  # tid -> (a, b)
+    if "flow_cap" in ds and transmission_tids:
+        fc = ds["flow_cap"]
+        for tid in transmission_tids:
+            arr = fc.sel(techs=tid)
+            drop = [d for d in arr.dims if d != "nodes"]
+            if drop:
+                arr = arr.max(dim=drop)
+            nodes = [str(n) for n, _ in arr.to_series().dropna().items()]
+            if len(nodes) >= 2:
+                link_endpoints[tid] = (nodes[0], nodes[1])
 
     tc = (ds.attrs or {}).get("termination_condition") \
         or (getattr(model, "_model_data", None).attrs.get("termination_condition")
@@ -238,12 +248,11 @@ def extract(model_yaml_path, results_nc_path):
 
 
 def main(argv):
-    if len(argv) != 4:
-        print("usage: extract_contract.py <model.yaml> <results.nc> <out.json>",
-              file=sys.stderr)
+    if len(argv) != 3:
+        print("usage: extract_contract.py <results.nc> <out.json>", file=sys.stderr)
         return 2
-    model_yaml_path, results_nc_path, out_path = argv[1], argv[2], argv[3]
-    results = extract(model_yaml_path, results_nc_path)
+    results_nc_path, out_path = argv[1], argv[2]
+    results = extract(results_nc_path)
     with open(out_path, "w", encoding="utf-8") as fh:
         json.dump(results, fh)
     print(f"contract: objective={results.get('objective', 'N/A')} "

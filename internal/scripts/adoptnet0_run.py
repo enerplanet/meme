@@ -1,7 +1,7 @@
 # Copyright (c) 2026 BigGeoData & Spatial AI, Technische Hochschule Deggendorf
 # SPDX-License-Identifier: MIT
 
-import glob, json, os
+import glob, json, os, subprocess, sys
 
 import adopt_net0 as adopt
 
@@ -22,6 +22,19 @@ for f in glob.glob(os.path.join(BASE, "*", "node_data", "*", "technology_data", 
             d[k] = v
     json.dump(d, open(f, "w"))
 
+os.makedirs(os.path.join(BASE, "results"), exist_ok=True)
+
 m = adopt.ModelHub()
 m.read_data(BASE)
 m.quick_solve()
+
+try:
+    m.write_results()
+except Exception as exc:
+    print(f"write_results failed: {exc}", file=sys.stderr)
+
+here = os.path.dirname(os.path.abspath(__file__))
+extractor = os.path.join(here, "adoptnet0_extract_contract.py")
+rc = subprocess.call([sys.executable, extractor, BASE, CONTRACT])
+if rc != 0:
+    print(f"contract extraction failed (rc={rc})", file=sys.stderr)

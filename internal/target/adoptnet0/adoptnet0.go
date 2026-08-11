@@ -143,13 +143,20 @@ func (AdOptNET0) Emit(j *model.Job, outDir string) (string, error) {
 	return (Emitter{}).Emit(j, outDir)
 }
 
-// Plan writes the run.py driver into dirs.RunDir and returns the command. The
-// driver (embedded from internal/scripts/adoptnet0_run.py) copies the mapped database
-// technologies into the tree (adopt_net0 is database-driven), patches each
-// with the emitter's node-keyed overrides (_meme_overrides.json), then reads
-// and solves via ModelHub().quick_solve().
+// Plan writes run.py and adoptnet0_extract_contract.py into dirs.RunDir.
+// The driver solves via ModelHub().quick_solve(), writes HDF5 results, then
+// runs the extractor to produce dirs.OutDir/contract.json.
 func (AdOptNET0) Plan(j *model.Job, entrypoint string, dirs target.RunDirs) (target.RunPlan, error) {
-	script := fmt.Sprintf("BASE = %q\n", entrypoint) + scripts.AdOptNET0Run
+	if err := os.WriteFile(
+		filepath.Join(dirs.RunDir, "adoptnet0_extract_contract.py"),
+		[]byte(scripts.AdOptNET0ExtractContract),
+		0o644,
+	); err != nil {
+		return target.RunPlan{}, err
+	}
+	script := fmt.Sprintf("BASE = %q\nCONTRACT = %q\n",
+		entrypoint, filepath.Join(dirs.OutDir, "contract.json"),
+	) + scripts.AdOptNET0Run
 	if err := os.WriteFile(filepath.Join(dirs.RunDir, "run.py"), []byte(script), 0o644); err != nil {
 		return target.RunPlan{}, err
 	}

@@ -22,8 +22,6 @@ for f in glob.glob(os.path.join(BASE, "*", "node_data", "*", "technology_data", 
             d[k] = v
     json.dump(d, open(f, "w"))
 
-os.makedirs(os.path.join(BASE, "results"), exist_ok=True)
-
 m = adopt.ModelHub()
 m.read_data(BASE)
 m.quick_solve()
@@ -33,8 +31,10 @@ try:
 except Exception as exc:
     print(f"write_results failed: {exc}", file=sys.stderr)
 
+# AdOpT writes results into <parent-of-BASE>/results/<timestamp>/, not into BASE/results/.
+# Pass the parent directory so the extractor searches the right tree.
 here = os.path.dirname(os.path.abspath(__file__))
 extractor = os.path.join(here, "adoptnet0_extract_contract.py")
-rc = subprocess.call([sys.executable, extractor, BASE, CONTRACT])
+rc = subprocess.call([sys.executable, extractor, os.path.dirname(BASE), CONTRACT])
 if rc != 0:
     print(f"contract extraction failed (rc={rc})", file=sys.stderr)

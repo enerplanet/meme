@@ -4,9 +4,15 @@
 Reads the HDF5 file written by ModelHub.write_results() and emits contract.json
 in the shape TEMPO's Results view consumes. Depends only on h5py and numpy.
 
-    python adoptnet0_extract_contract.py <case_dir> <out_contract.json>
+    python adoptnet0_extract_contract.py <job_input_dir> <out_contract.json>
 
-Mirrors adoptnet0_runner._extract_results / _to_frozen_contract in the TEMPO repo.
+<job_input_dir> is the parent of input_data/ (i.e. run_0/input/).
+AdOpT writes results into <job_input_dir>/results/<timestamp>/optimization_results.h5.
+
+HDF5 structure (all group names are lowercase):
+  summary/lb                          -- optimal objective value
+  design/nodes/period1/{node}/{tech}/size  -- installed capacity (MW)
+  operation/technology_operation/period1/{node}/{tech}/*_output  -- dispatch timeseries
 """
 import glob
 import json
@@ -14,12 +20,12 @@ import os
 import sys
 
 
-def extract(case_dir):
-    results_dir = os.path.join(case_dir, "results")
+def extract(job_input_dir):
+    results_dir = os.path.join(job_input_dir, "results")
     h5_files = (
         glob.glob(os.path.join(results_dir, "**", "*.h5"), recursive=True)
         or glob.glob(os.path.join(results_dir, "*.h5"))
-        or glob.glob(os.path.join(case_dir, "**", "*.h5"), recursive=True)
+        or glob.glob(os.path.join(job_input_dir, "**", "*.h5"), recursive=True)
     )
     if not h5_files:
         print("no HDF5 file found", file=sys.stderr)
@@ -42,49 +48,73 @@ def extract(case_dir):
 
     try:
         with h5py.File(h5_path, "r") as f:
-            for key in ("Summary/costs_total", "Summary/Total Cost",
-                        "Summary/objective", "Summary/total_cost"):
+            # --- Objective: summary/lb is the optimal LP/MIP lower bound ---
+            for key in ("summary/lb", "summary/cost_imports", "summary/total_cost",
+                        "Summary/costs_total", "Summary/lb"):
                 if key in f:
                     try:
                         objective = float(np.array(f[key]).ravel()[0])
                         break
                     except Exception:
                         pass
-            if objective is None and "Summary" in f:
-                for k in f["Summary"]:
-                    if "cost" in k.lower() or "objective" in k.lower():
+            # Fallback: sum all summary/cost_* scalars
+            if objective is None and "summary" in f:
+                total = 0.0
+                found_any = False
+                for k in f["summary"]:
+                    if "cost" in k.lower():
                         try:
-                            objective = float(np.array(f[f"Summary/{k}"]).ravel()[0])
-                            break
+                            total += float(np.array(f[f"summary/{k}"]).ravel()[0])
+                            found_any = True
                         except Exception:
                             pass
+                if found_any:
+                    objective = total
 
-            design = "Design/nodes/period1"
-            if design in f:
-                for node in f[design]:
+            # --- Capacities: design/nodes/period1/{node}/{tech}/size ---
+            for prefix in ("design/nodes/period1", "Design/nodes/period1"):
+                if prefix not in f:
+                    continue
+                for node in f[prefix]:
                     raw_cap[node] = {}
-                    for tech in f[f"{design}/{node}"]:
+                    for tech in f[f"{prefix}/{node}"]:
                         tech_names.add(tech)
-                        try:
-                            arr = np.array(f[f"{design}/{node}/{tech}"]).ravel()
-                            raw_cap[node][tech] = float(arr[0]) if arr.size == 1 else arr.tolist()
-                        except Exception:
-                            pass
+                        grp = f[f"{prefix}/{node}/{tech}"]
+                        # 'size' is the installed capacity in MW
+                        cap_val = None
+                        for cap_key in ("size", "capacity", "cap"):
+                            if cap_key in grp:
+                                try:
+                                    cap_val = float(np.array(grp[cap_key]).ravel()[0])
+                                except Exception:
+                                    pass
+                                break
+                        if cap_val is not None:
+                            raw_cap[node][tech] = cap_val
+                break
 
-            op = "Operation/technology_operation/period1"
-            if op in f:
-                for node in f[op]:
+            # --- Dispatch: operation/technology_operation/period1/{node}/{tech}/*_output ---
+            for prefix in ("operation/technology_operation/period1",
+                           "Operation/technology_operation/period1"):
+                if prefix not in f:
+                    continue
+                for node in f[prefix]:
                     raw_dispatch[node] = {}
-                    for tech in f[f"{op}/{node}"]:
+                    for tech in f[f"{prefix}/{node}"]:
                         tech_names.add(tech)
-                        grp = f[f"{op}/{node}/{tech}"]
-                        for out_key in ("output", "Output", "out", "technology_output"):
-                            if out_key in grp:
+                        grp = f[f"{prefix}/{node}/{tech}"]
+                        # Look for any dataset whose name ends with '_output'
+                        for out_key in grp:
+                            if out_key.endswith("_output") or out_key in (
+                                "output", "Output", "out", "technology_output"
+                            ):
                                 try:
                                     raw_dispatch[node][tech] = np.array(grp[out_key]).ravel().tolist()
                                 except Exception:
                                     pass
                                 break
+                break
+
     except Exception as exc:
         print(f"HDF5 read error: {exc}", file=sys.stderr)
         return {"success": False, "termination_condition": "extractor_error"}
@@ -132,7 +162,7 @@ def extract(case_dir):
 
 def main(argv):
     if len(argv) != 3:
-        print("usage: adoptnet0_extract_contract.py <case_dir> <out.json>", file=sys.stderr)
+        print("usage: adoptnet0_extract_contract.py <job_input_dir> <out.json>", file=sys.stderr)
         return 2
     result = extract(argv[1])
     with open(argv[2], "w") as fh:

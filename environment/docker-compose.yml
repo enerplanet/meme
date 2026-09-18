@@ -33,7 +33,7 @@ services:
       - go-mod:/root/go/pkg/mod
     ports:
       - "${HOST_PORT:-8080}:${PORT:-8080}"
-    command: make run
+    command: sh -c "git config --global --add safe.directory /src && make run"
 
   # One-shot: compile everything and run the Go test suite.
   test:

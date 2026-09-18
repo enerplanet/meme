@@ -31,7 +31,7 @@ API_FLAG    := $(if $(API_KEY),-api-key '$(API_KEY)',)
 CORS_FLAG   := $(if $(CORS_ORIGINS),-cors-origins '$(CORS_ORIGINS)',)
 
 GO          := go
-GOFLAGS     :=
+GOFLAGS     := -buildvcs=false
 LDFLAGS     := -s -w
 
 # --- Meta -------------------------------------------------------------------

@@ -37,7 +37,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         coinor-cbc \
         glpk-utils \
         libspatialindex-dev \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && git config --system --add safe.directory /src
 
 # Install the Python frameworks + solver. Cached as its own layer so source
 # changes don't reinstall the (heavy) Python stack.

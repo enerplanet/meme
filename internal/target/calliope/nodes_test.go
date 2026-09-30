@@ -158,3 +158,45 @@ func section(y, header string) string {
 	return rest
 }
 
+// Tech-level capacity and costs come from the base tech, not the first node's
+// override: a system-wide cap must survive, and the first node's per-node max /
+// cost must not become the default for the tech's other nodes (each node's
+// override is projected separately under nodes.<node>.techs).
+func TestCalliopeTechLevelCapacityNotFromFirstNode(t *testing.T) {
+	payload := `{
+      "model": {
+        "metadata": {"name": "sysw"},
+        "time": {"start": "2025-01-01", "end": "2025-01-02", "resolution": "1H"},
+        "carriers": {"electricity": {}},
+        "nodes": {"a": {}, "b": {}, "c": {}},
+        "technologies": {
+          "bio": {"role": "supply", "node": ["a", "b", "c"], "carrier_out": "electricity",
+                  "capacity": {"expandable": true, "systemwide_max": 4000},
+                  "lifetime": 20, "interest_rate": 0.1,
+                  "costs": {"monetary": {"investment_per_capacity": 2901}},
+                  "node_overrides": {"a": {"capacity": {"expandable": true, "max": 4000},
+                                           "costs": {"monetary": {"investment_per_capacity": 999}}},
+                                     "b": {"capacity": {"expandable": true, "max": 1000}}}},
+          "load": {"role": "demand", "node": "a", "carrier_in": "electricity", "demand_profile": 10}
+        }
+      },
+      "experiment": {"mode": "plan", "solver": {"name": "cbc"}}
+    }`
+	y := emitCalliopeJSON(t, payload)
+	tech := section(y, "  bio:\n")
+	if !strings.Contains(tech, "flow_cap_max_systemwide: 4000") {
+		t.Errorf("expected the system-wide cap at tech level; got:\n%s", tech)
+	}
+	if strings.Contains(tech, "flow_cap_max:") || strings.Contains(tech, "data: 999") {
+		t.Errorf("first node's override leaked into the tech defaults:\n%s", tech)
+	}
+	if !strings.Contains(tech, "data: 2901") {
+		t.Errorf("expected the base investment cost at tech level:\n%s", tech)
+	}
+	for _, w := range []string{"flow_cap_max: 4000", "data: 999", "flow_cap_max: 1000"} {
+		if !strings.Contains(y, w) {
+			t.Errorf("expected node override %q; got:\n%s", w, y)
+		}
+	}
+}
+

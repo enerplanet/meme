@@ -150,7 +150,7 @@ func (Emitter) Emit(j *model.Job, outDir string) (string, error) {
 	for _, id := range emit.Keys(m.Technologies) {
 		t := m.Technologies[id]
 		node := t.Node.First()
-		tn, err := calliopeTech(t.At(node), m, id, dataTables, &csvs, &anyCO2, ms)
+		tn, err := calliopeTech(techLevel(t, node), m, id, dataTables, &csvs, &anyCO2, ms)
 		if err != nil {
 			return "", err
 		}
@@ -1017,6 +1017,61 @@ func calliopeNodeOverride(t model.Technology, node string) *yamlNode {
 type calliopeCSV struct {
 	file, tech, node, series string
 	values                   []float64
+}
+
+// techLevel is the technology whose fields become the tech-level Calliope
+// definition. A multi-node tech's tech level is its base definition: node
+// values are projected under nodes.<node>.techs (calliopeNodeOverride) and
+// per-node series as per-node data tables — the first node's effective tech
+// would make that node's max, costs, reservoir, ... every node's default and
+// drop base settings its override replaces wholesale (e.g. storage
+// efficiencies). A single-node tech takes its node's effective tech, with the
+// storage/operation blocks merged field by field and system-wide bounds from
+// the base.
+func techLevel(t model.Technology, first string) model.Technology {
+	if len(t.Node) > 1 {
+		return t
+	}
+	te := t.At(first)
+	if ov, ok := t.NodeOverrides[first]; ok {
+		if ov.Storage != nil && t.Storage != nil {
+			te.Storage = mergeFields(t.Storage, ov.Storage)
+		}
+		if ov.Operation != nil && t.Operation != nil {
+			te.Operation = mergeFields(t.Operation, ov.Operation)
+		}
+	}
+	if te.Capacity != nil && t.Capacity != nil && te.Capacity != t.Capacity {
+		c := *te.Capacity
+		if c.SystemwideMax == nil {
+			c.SystemwideMax = t.Capacity.SystemwideMax
+		}
+		if c.SystemwideMin == nil {
+			c.SystemwideMin = t.Capacity.SystemwideMin
+		}
+		te.Capacity = &c
+	}
+	return te
+}
+
+// mergeFields overlays the fields set in ov onto base (JSON field level) and
+// returns a new value; neither input is modified.
+func mergeFields[T any](base, ov *T) *T {
+	var bm, om map[string]json.RawMessage
+	b, errB := json.Marshal(base)
+	o, errO := json.Marshal(ov)
+	if errB != nil || errO != nil || json.Unmarshal(b, &bm) != nil || json.Unmarshal(o, &om) != nil {
+		return ov
+	}
+	for k, v := range om {
+		bm[k] = v
+	}
+	merged, err := json.Marshal(bm)
+	out := new(T)
+	if err != nil || json.Unmarshal(merged, out) != nil {
+		return ov
+	}
+	return out
 }
 
 // calliopeNodeTables adds the timeseries-shaped data tables of one tech at one

@@ -696,12 +696,63 @@ func calliopeTech(t model.Technology, m *model.Model, id string, dataTables *yam
 	if calliopeFlowCosts(n, t, m) {
 		*anyCO2 = true
 	}
+	if pinsToInput(t) {
+		pinToInputCarrier(n, t.CarrierIn.First())
+	}
 	// Calliope-specific params ride in native.calliope, merged last so they can
 	// override or extend the emitted attributes.
 	if err := mergeNativeIntoYAML(n, t.Native.For(model.TargetCalliope)); err != nil {
 		return nil, fmt.Errorf("tech %q: %w", id, err)
 	}
 	return n, nil
+}
+
+// pinsToInput: plain single-input conversions. Multi-port (flows) techs use
+// ratio-pinning math and piecewise techs a fixed-capacity curve on their own
+// carriers, so both keep their per-carrier (scalar) bounds.
+func pinsToInput(t model.Technology) bool {
+	return t.Role == model.RoleConversion && len(t.Flows) == 0 &&
+		(t.Performance == nil || t.Performance.Kind() != model.PerfPiecewise)
+}
+
+// pinToInputCarrier re-indexes a single-input conversion's capacity bounds and
+// per-capacity costs to its input carrier. Calliope 0.7 defines flow_cap per
+// carrier, so scalar values would bound AND charge the input and the output
+// capacity alike; the canonical conversion capacity is input-referenced (as
+// PyPSA's link p_nom).
+func pinToInputCarrier(n *yamlNode, carrier string) {
+	if carrier == "" {
+		return
+	}
+	for _, k := range []string{"flow_cap_max", "flow_cap_min"} {
+		v, ok := n.vals[k]
+		if !ok {
+			continue
+		}
+		if _, isNode := v.(*yamlNode); isNode {
+			continue
+		}
+		e := newYAML()
+		e.set("data", v)
+		e.set("index", carrier)
+		e.set("dims", "carriers")
+		n.vals[k] = e
+	}
+	for _, k := range []string{"cost_flow_cap", "cost_om_annual"} {
+		v, ok := n.vals[k].(*yamlNode)
+		if !ok || v.vals["dims"] != "costs" {
+			continue
+		}
+		class, ok := v.vals["index"].(string)
+		if !ok {
+			continue
+		}
+		e := newYAML()
+		e.set("data", v.vals["data"])
+		e.set("index", []any{[]any{class, carrier}})
+		e.set("dims", []any{"costs", "carriers"})
+		n.vals[k] = e
+	}
 }
 
 // calliopeOperation emits the shared operational limits Calliope supports
@@ -1055,6 +1106,9 @@ func calliopeNodeOverride(t model.Technology, node string) *yamlNode {
 	}
 	if n.len() == 0 {
 		return nil
+	}
+	if pinsToInput(t) {
+		pinToInputCarrier(n, t.CarrierIn.First())
 	}
 	return n
 }

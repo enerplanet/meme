@@ -264,6 +264,40 @@ func TestCalliopeStorageInterestAndExistingEnergy(t *testing.T) {
 	}
 }
 
+// A (single-input) conversion's capacity is referenced to its input carrier
+// (canonical semantics, as PyPSA's link p_nom): capacity bounds and
+// per-capacity costs apply to that carrier only — not once per carrier, which
+// would bound and charge the output capacity too.
+func TestCalliopeConversionCapacityOnInputCarrier(t *testing.T) {
+	payload := `{
+      "model": {
+        "metadata": {"name": "conv"},
+        "time": {"start": "2025-01-01", "end": "2025-01-02", "resolution": "1H"},
+        "carriers": {"electricity": {}, "hydrogen": {}},
+        "nodes": {"a": {}},
+        "technologies": {
+          "gen": {"role": "supply", "node": "a", "carrier_out": "electricity", "capacity": {"expandable": true}},
+          "electrolysis": {"role": "conversion", "node": "a", "carrier_in": "electricity", "carrier_out": "hydrogen",
+                           "efficiency": 0.66, "capacity": {"expandable": true, "max": 1000},
+                           "lifetime": 18, "interest_rate": 0.1,
+                           "costs": {"monetary": {"investment_per_capacity": 792, "fixed_om": 23.76}}},
+          "h2": {"role": "demand", "node": "a", "carrier_in": "hydrogen", "demand_profile": 10}
+        }
+      },
+      "experiment": {"mode": "plan", "solver": {"name": "cbc"}}
+    }`
+	tech := section(emitCalliopeJSON(t, payload), "  electrolysis:\n")
+	for _, w := range []string{
+		"flow_cap_max:\n      data: 1000\n      index: electricity\n      dims: carriers",
+		"cost_flow_cap:\n      data: 792\n      index: [[monetary, electricity]]\n      dims: [costs, carriers]",
+		"cost_om_annual:\n      data: 23.76\n      index: [[monetary, electricity]]\n      dims: [costs, carriers]",
+	} {
+		if !strings.Contains(tech, w) {
+			t.Errorf("expected\n%s\nin:\n%s", w, tech)
+		}
+	}
+}
+
 // Per-node storage settings (e.g. each existing pumped-hydro plant's own
 // reservoir size) must be projected into the node override, not dropped —
 // otherwise the reservoir is unbounded.

@@ -73,4 +73,9 @@ func TestAdOptNetworks(t *testing.T) {
 	if _, err := validateFor(&j, model.TargetAdOpt); err == nil || !strings.Contains(err.Error(), "distance") {
 		t.Errorf("missing distance must be rejected, got %v", err)
 	}
+
+	j = networkJob(t, `"distance": 150, "energy_consumption": {"carrier": "CO2captured", "per_flow": 0.1},`)
+	if _, err := validateFor(&j, model.TargetAdOpt); err == nil || !strings.Contains(err.Error(), "energy_consumption") {
+		t.Errorf("unmapped energy_consumption must be rejected, got %v", err)
+	}
 }

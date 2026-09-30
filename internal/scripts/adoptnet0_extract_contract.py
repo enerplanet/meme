@@ -115,6 +115,9 @@ def extract(job_input_dir):
                                 break
                 break
 
+            transmission_flow = _network_flows(f, np, job_input_dir)
+            trade = _trade(f, np)
+
     except Exception as exc:
         print(f"HDF5 read error: {exc}", file=sys.stderr)
         return {"success": False, "termination_condition": "extractor_error"}
@@ -151,13 +154,50 @@ def extract(job_input_dir):
         "generation": {},
         "dispatch": dispatch,
         "timestamps": list(range(dispatch_len)),
-        "transmission_flow": {},
+        "transmission_flow": transmission_flow,
         "demand_timeseries": {},
         "costs_by_tech": {},
         "costs_by_location": {},
         "tech_metadata": {t: {} for t in tech_names},
         "tech_parents": {},
+        "trade": trade,
     }
+
+
+def _network_flows(f, np, job_input_dir):
+    """{"<from>::<to>::<network>": {from, to, network, size, timeseries}}.
+    AdOpT names an arc "<from><to>", so it is split on the Topology nodes."""
+    with open(os.path.join(job_input_dir, "input_data", "Topology.json")) as fh:
+        nodes = json.load(fh)["nodes"]
+    out = {}
+    design, operation = "design/networks/period1", "operation/networks/period1"
+    for net in f[design] if design in f else []:
+        for arc in f[f"{design}/{net}"]:
+            ends = [(a, arc[len(a):]) for a in nodes if arc.startswith(a) and arc[len(a):] in nodes]
+            flow = f"{operation}/{net}/{arc}/flow"
+            if not ends or flow not in f:
+                continue
+            a, b = ends[0]
+            out[f"{a}::{b}::{net}"] = {
+                "from": a, "to": b, "network": net,
+                "size": float(np.array(f[f"{design}/{net}/{arc}/size"]).ravel()[0]),
+                "timeseries": np.nan_to_num(np.array(f[flow], dtype=float)).ravel().tolist(),
+            }
+    return out
+
+
+def _trade(f, np):
+    """{"<node>::<carrier>": {"import": total, "export": total}}, non-zero only."""
+    out = {}
+    base = "operation/energy_balance/period1"
+    for node in f[base] if base in f else []:
+        for car in f[f"{base}/{node}"]:
+            g = f[f"{base}/{node}/{car}"]
+            totals = {k: float(np.nansum(np.array(g[k], dtype=float))) for k in ("import", "export") if k in g}
+            totals = {k: v for k, v in totals.items() if abs(v) > 1e-9}
+            if totals:
+                out[f"{node}::{car}"] = totals
+    return out
 
 
 def main(argv):

@@ -36,6 +36,9 @@ func adoptNetworks(m *model.Model) (map[string][]string, map[string]map[string]a
 		if l.Capacity != nil && (!l.Capacity.Expandable || l.Capacity.Existing > 0) {
 			return nil, nil, fmt.Errorf("transmission %q: only new (expandable) arcs are supported for adopt-net0", id)
 		}
+		if l.Efficiency != nil || l.MinFlow != nil || l.EmissionFactor != nil || l.EnergyConsumption != nil {
+			return nil, nil, fmt.Errorf("transmission %q: efficiency, min_flow, emission_factor and energy_consumption are not mapped for adopt-net0; set them on the network via native.adopt-net0 (e.g. Performance.energyconsumption)", id)
+		}
 		native := map[string]any{}
 		if raw := l.Native.For(model.TargetAdOpt); len(raw) > 0 {
 			if err := json.Unmarshal(raw, &native); err != nil {

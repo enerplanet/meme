@@ -47,3 +47,39 @@ func jsonToYAML(v any) any {
 		return x
 	}
 }
+
+// splitModelNative splits a model-level native.calliope object into its `math`
+// part (extra math) and the rest (model.yaml root keys).
+func splitModelNative(raw json.RawMessage) (math, rest map[string]any, err error) {
+	if len(raw) == 0 {
+		return nil, nil, nil
+	}
+	var all map[string]any
+	if err := json.Unmarshal(raw, &all); err != nil {
+		return nil, nil, fmt.Errorf("must be a JSON object: %w", err)
+	}
+	if mv, ok := all["math"]; ok {
+		mm, ok := mv.(map[string]any)
+		if !ok {
+			return nil, nil, fmt.Errorf("math must be an object")
+		}
+		math = mm
+		delete(all, "math")
+	}
+	return math, all, nil
+}
+
+// mergeYAMLDeep merges a decoded JSON object into n: objects merge into an
+// existing mapping of the same key, anything else replaces it. Keys are applied
+// in sorted order for deterministic output.
+func mergeYAMLDeep(n *yamlNode, m map[string]any) {
+	for _, k := range emit.SortedKeys(m) {
+		if sub, ok := m[k].(map[string]any); ok {
+			if existing, ok := n.vals[k].(*yamlNode); ok {
+				mergeYAMLDeep(existing, sub)
+				continue
+			}
+		}
+		n.set(k, jsonToYAML(m[k]))
+	}
+}

@@ -315,6 +315,15 @@ func (Emitter) Emit(j *model.Job, outDir string) (string, error) {
 		root.set("data_tables", dataTables)
 	}
 
+	// Model-level native.calliope: `math` extends the additional math file;
+	// every other key deep-merges into model.yaml's root (e.g. extra
+	// data_definitions next to the emitted ones).
+	nativeMath, nativeRoot, err := splitModelNative(m.Native.For(model.TargetCalliope))
+	if err != nil {
+		return "", fmt.Errorf("model native.calliope: %w", err)
+	}
+	mergeYAMLDeep(root, nativeRoot)
+
 	// Extra math assembly. Portable constraints + emission limits render into
 	// the math file when custom math is enabled (default); ratio-pinning for
 	// multi-port flows and piecewise performance are physics and render
@@ -325,7 +334,7 @@ func (Emitter) Emit(j *model.Job, outDir string) (string, error) {
 	useMath := j.Experiment.CustomMathEnabled()
 	havePortable := len(m.Constraints) > 0 || len(m.EmissionLimits) > 0
 	renderPortable := havePortable && useMath
-	needMathFile := renderPortable || len(ms.flowTechs) > 0 || len(ms.pwTechs) > 0
+	needMathFile := renderPortable || len(ms.flowTechs) > 0 || len(ms.pwTechs) > 0 || len(nativeMath) > 0
 	var extraMath []any
 	if ms.anyMILP {
 		extraMath = append(extraMath, "milp")
@@ -355,6 +364,7 @@ func (Emitter) Emit(j *model.Job, outDir string) (string, error) {
 
 	if needMathFile {
 		doc := calliopeMathDoc(m, ms, renderPortable)
+		mergeYAMLDeep(doc, nativeMath)
 		if err := os.WriteFile(filepath.Join(outDir, "additional_math.yaml"), []byte(yamlDoc(doc)), 0o644); err != nil {
 			return "", err
 		}

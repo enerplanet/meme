@@ -377,3 +377,39 @@ func TestCalliopeTechLevelStorageSurvivesNodeOverride(t *testing.T) {
 	}
 }
 
+// Model-level native.calliope: `math` extends the additional math file (which
+// is then registered and applied); other keys deep-merge into model.yaml's
+// root, keeping emitted entries of the same block (e.g. data_definitions).
+func TestCalliopeModelLevelNative(t *testing.T) {
+	payload := `{
+      "model": {
+        "metadata": {"name": "rm"},
+        "time": {"start": "2025-01-01", "end": "2025-01-02", "resolution": "1H"},
+        "carriers": {"electricity": {}},
+        "nodes": {"a": {}},
+        "technologies": {
+          "gen": {"role": "supply", "node": "a", "carrier_out": "electricity", "capacity": {"expandable": true}},
+          "load": {"role": "demand", "node": "a", "carrier_in": "electricity", "demand_profile": 10}
+        },
+        "native": {"calliope": {
+          "math": {"parameters": {"tempo_rm_peak": {"default": 0}},
+                   "constraints": {"tempo_reserve_margin": {"equations": [{"expression": "sum(flow_cap, over=[nodes, techs, carriers]) >= 1.1"}]}}},
+          "data_definitions": {"tempo_rm_peak": {"data": 1, "index": ["2025-01-01 05:00:00"], "dims": "timesteps"}}
+        }}
+      },
+      "experiment": {"mode": "alternatives", "alternatives": {"number": 2, "slack": 0.1}, "solver": {"name": "cbc"}}
+    }`
+	dir := emitCalliopeJSONDir(t, payload)
+	y := readFile(t, dir, "model.yaml")
+	for _, w := range []string{"math_paths:", "additional_math.yaml", "extra_math:", "tempo_rm_peak:", "spores_slack: 0.1"} {
+		if !strings.Contains(y, w) {
+			t.Errorf("model.yaml: expected %q; got:\n%s", w, y)
+		}
+	}
+	m := readFile(t, dir, "additional_math.yaml")
+	for _, w := range []string{"tempo_reserve_margin:", "sum(flow_cap, over=[nodes, techs, carriers]) >= 1.1", "tempo_rm_peak:"} {
+		if !strings.Contains(m, w) {
+			t.Errorf("additional_math.yaml: expected %q; got:\n%s", w, m)
+		}
+	}
+}

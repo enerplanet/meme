@@ -15,6 +15,12 @@ import (
 
 func emitCalliopeJSON(t *testing.T, payload string) string {
 	t.Helper()
+	return readFile(t, emitCalliopeJSONDir(t, payload), "model.yaml")
+}
+
+// emitCalliopeJSONDir validates + emits a JSON job and returns the output dir.
+func emitCalliopeJSONDir(t *testing.T, payload string) string {
+	t.Helper()
 	var j model.Job
 	if err := json.Unmarshal([]byte(payload), &j); err != nil {
 		t.Fatalf("decode: %v", err)
@@ -26,7 +32,7 @@ func emitCalliopeJSON(t *testing.T, payload string) string {
 	if _, err := (calliope.Calliope{}).Emit(&j, dir); err != nil {
 		t.Fatalf("emit: %v", err)
 	}
-	return readFile(t, dir, "model.yaml")
+	return dir
 }
 
 // Calliope-specific params supplied via native.calliope (tech + node) must land

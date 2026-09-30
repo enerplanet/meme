@@ -154,6 +154,13 @@ func (Emitter) Emit(j *model.Job, outDir string) (string, error) {
 		if err != nil {
 			return "", err
 		}
+		// Timeseries-shaped inputs are indexed by [techs, nodes]: one data table
+		// per node, from that node's effective tech (base + node_overrides).
+		for i, nd := range t.Node {
+			if calliopeNodeTables(t.At(nd), m, id, nd, i == 0, dataTables, &csvs) {
+				tn.set("source_unit", "per_cap")
+			}
+		}
 		if mode == model.ModeOperate {
 			applyOperateCaps(tn, t.At(node))
 		}
@@ -523,8 +530,7 @@ func calliopeTech(t model.Technology, m *model.Model, id string, dataTables *yam
 		// explicit technology.source block wins over the availability route.
 		if av, param := calliopeAvailability(t); av != nil {
 			if av.IsSeries() {
-				addDataTable(dataTables, csvs, id, t.Node.First(), param, av.SeriesID())
-				n.set("source_unit", "per_cap")
+				n.set("source_unit", "per_cap") // tables: calliopeNodeTables
 			} else if f, ok := av.Reduce(); ok {
 				n.set(param, f)
 				n.set("source_unit", "per_cap")
@@ -533,7 +539,7 @@ func calliopeTech(t model.Technology, m *model.Model, id string, dataTables *yam
 		if s := t.Source; s != nil {
 			if s.Max != nil {
 				if s.Max.IsSeries() {
-					addDataTable(dataTables, csvs, id, t.Node.First(), "source_use_max", s.Max.SeriesID())
+					// tables: calliopeNodeTables
 				} else if f, ok := s.Max.Reduce(); ok {
 					n.set("source_use_max", f)
 				}
@@ -549,19 +555,7 @@ func calliopeTech(t model.Technology, m *model.Model, id string, dataTables *yam
 		n.set("carrier_in", t.CarrierIn.First())
 		// A curtailable demand serves at most the profile (sink_use_max)
 		// instead of exactly (sink_use_equals).
-		sinkParam := "sink_use_equals"
-		if t.DemandCurtailable {
-			sinkParam = "sink_use_max"
-		}
-		if v, ok := t.DemandProfile.Reduce(); ok {
-			// A scalar demand still becomes a timesteps-indexed data table:
-			// Calliope 0.7 requires at least one timeseries data input to build
-			// its time index, and an all-scalar model would otherwise abort with
-			// "Must define at least one timeseries data input".
-			addScalarDataTable(dataTables, csvs, id, t.Node.First(), sinkParam, v, m)
-		} else if t.DemandProfile.IsSeries() {
-			addDataTable(dataTables, csvs, id, t.Node.First(), sinkParam, t.DemandProfile.SeriesID())
-		}
+		// Demand profiles become per-node data tables: calliopeNodeTables.
 	case model.RoleConversion:
 		if len(t.Flows) > 0 {
 			if ref, needsMath := calliopeFlows(n, t.Flows); needsMath {
@@ -1002,26 +996,78 @@ type calliopeCSV struct {
 	values                   []float64
 }
 
+// calliopeNodeTables adds the timeseries-shaped data tables of one tech at one
+// node (availability, source limit, demand profile). Tables are indexed by
+// [techs, nodes], so a tech on several nodes needs one per node, each from that
+// node's effective tech. Reports whether an availability series was added (the
+// tech then needs source_unit: per_cap).
+func calliopeNodeTables(t model.Technology, m *model.Model, id, node string, first bool, dt *yamlNode, csvs *[]calliopeCSV) bool {
+	perCap := false
+	switch t.Role {
+	case model.RoleSupply:
+		if av, param := calliopeAvailability(t); av != nil && av.IsSeries() {
+			addDataTable(dt, csvs, id, node, param, av.SeriesID(), first)
+			perCap = true
+		}
+		if s := t.Source; s != nil && s.Max != nil && s.Max.IsSeries() {
+			addDataTable(dt, csvs, id, node, "source_use_max", s.Max.SeriesID(), first)
+		}
+	case model.RoleDemand:
+		// A curtailable demand serves at most the profile (sink_use_max)
+		// instead of exactly (sink_use_equals).
+		sinkParam := "sink_use_equals"
+		if t.DemandCurtailable {
+			sinkParam = "sink_use_max"
+		}
+		if v, ok := t.DemandProfile.Reduce(); ok {
+			// A scalar demand still becomes a timesteps-indexed data table:
+			// Calliope 0.7 requires at least one timeseries data input to build
+			// its time index, and an all-scalar model would otherwise abort with
+			// "Must define at least one timeseries data input".
+			addScalarDataTable(dt, csvs, id, node, sinkParam, v, m, first)
+		} else if t.DemandProfile.IsSeries() {
+			addDataTable(dt, csvs, id, node, sinkParam, t.DemandProfile.SeriesID(), first)
+		}
+	}
+	return perCap
+}
+
+// dataTableKey names a tech/param data table; tables for a tech's further
+// nodes get a node suffix (the first node keeps the plain name).
+func dataTableKey(tech, param, node string, first bool) string {
+	if first {
+		return tech + "__" + param
+	}
+	return tech + "__" + param + "__" + node
+}
+
 // addDataTable registers a CSV-backed parameter (e.g. a demand profile) in the
 // data_tables block and records the CSV to materialize. The file is a
 // timesteps-indexed table with `columns: [techs, nodes]` — a shape Calliope
 // reads directly (the tech and node are named in the first two header rows).
-func addDataTable(dt *yamlNode, csvs *[]calliopeCSV, tech, node, param, seriesID string) {
+func addDataTable(dt *yamlNode, csvs *[]calliopeCSV, tech, node, param, seriesID string, first bool) {
+	// One CSV per table: the file's header rows name its tech and node, so two
+	// techs sharing a series must not share (and overwrite) one file.
+	key := dataTableKey(tech, param, node, first)
 	entry := newYAML()
-	entry.set("data", seriesID+".csv")
+	entry.set("data", key+".csv")
 	entry.set("rows", "timesteps")
 	entry.set("columns", []any{"techs", "nodes"})
 	add := newYAML()
 	add.set("parameters", param)
 	entry.set("add_dims", add)
-	dt.set(tech+"__"+param, entry)
-	*csvs = append(*csvs, calliopeCSV{file: seriesID + ".csv", tech: tech, node: node, series: seriesID})
+	dt.set(key, entry)
+	*csvs = append(*csvs, calliopeCSV{file: key + ".csv", tech: tech, node: node, series: seriesID})
 }
 
 // addScalarDataTable registers a data table for a scalar-valued timeseries
 // parameter by expanding the scalar over the model's snapshot index.
-func addScalarDataTable(dt *yamlNode, csvs *[]calliopeCSV, tech, node, param string, v float64, m *model.Model) {
+func addScalarDataTable(dt *yamlNode, csvs *[]calliopeCSV, tech, node, param string, v float64, m *model.Model, first bool) {
+	key := dataTableKey(tech, param, node, first)
 	file := tech + "_" + param + ".csv"
+	if !first {
+		file = key + ".csv"
+	}
 	entry := newYAML()
 	entry.set("data", file)
 	entry.set("rows", "timesteps")
@@ -1029,7 +1075,7 @@ func addScalarDataTable(dt *yamlNode, csvs *[]calliopeCSV, tech, node, param str
 	add := newYAML()
 	add.set("parameters", param)
 	entry.set("add_dims", add)
-	dt.set(tech+"__"+param, entry)
+	dt.set(key, entry)
 
 	vals := make([]float64, emit.SnapshotCount(m))
 	for i := range vals {

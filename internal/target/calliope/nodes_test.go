@@ -225,3 +225,121 @@ func TestCalliopeFixedZeroCapacityIsPinned(t *testing.T) {
 	}
 }
 
+// Storage: an investment priced per unit of energy capacity is annualized with
+// the tech's interest rate too (not only per-power investment), and an existing
+// non-expandable energy capacity is pinned.
+func TestCalliopeStorageInterestAndExistingEnergy(t *testing.T) {
+	payload := `{
+      "model": {
+        "metadata": {"name": "store"},
+        "time": {"start": "2025-01-01", "end": "2025-01-02", "resolution": "1H"},
+        "carriers": {"electricity": {}, "methane": {}},
+        "nodes": {"a": {}},
+        "technologies": {
+          "battery": {"role": "storage", "node": "a", "carrier_in": "electricity", "carrier_out": "electricity",
+                      "capacity": {"expandable": true}, "lifetime": 15, "interest_rate": 0.1,
+                      "storage": {"charge_eff": 0.98, "discharge_eff": 0.98},
+                      "costs": {"monetary": {"investment_per_energy_capacity": 433}}},
+          "gas_store": {"role": "storage", "node": "a", "carrier_in": "methane", "carrier_out": "methane",
+                        "capacity": {"expandable": true},
+                        "storage": {"energy_capacity": {"existing": 1e10, "expandable": false}}},
+          "gen": {"role": "supply", "node": "a", "carrier_out": "electricity", "capacity": {"expandable": true}},
+          "load": {"role": "demand", "node": "a", "carrier_in": "electricity", "demand_profile": 10}
+        }
+      },
+      "experiment": {"mode": "plan", "solver": {"name": "cbc"}}
+    }`
+	y := emitCalliopeJSON(t, payload)
+	bat := section(y, "  battery:\n")
+	for _, w := range []string{"cost_storage_cap:", "cost_interest_rate:", "data: 0.1", "flow_out_eff: 0.98", "flow_in_eff: 0.98"} {
+		if !strings.Contains(bat, w) {
+			t.Errorf("battery: expected %q in:\n%s", w, bat)
+		}
+	}
+	gas := section(y, "  gas_store:\n")
+	for _, w := range []string{"storage_cap_max: 1.0e+10", "storage_cap_min: 1.0e+10"} {
+		if !strings.Contains(gas, w) {
+			t.Errorf("gas_store: expected %q in:\n%s", w, gas)
+		}
+	}
+}
+
+// Per-node storage settings (e.g. each existing pumped-hydro plant's own
+// reservoir size) must be projected into the node override, not dropped —
+// otherwise the reservoir is unbounded.
+func TestCalliopeNodeOverrideStorage(t *testing.T) {
+	payload := `{
+      "model": {
+        "metadata": {"name": "phs"},
+        "time": {"start": "2025-01-01", "end": "2025-01-02", "resolution": "1H"},
+        "carriers": {"electricity": {}},
+        "nodes": {"a": {}, "b": {}},
+        "technologies": {
+          "phs": {"role": "storage", "node": ["a", "b"], "carrier_in": "electricity", "carrier_out": "electricity",
+                  "storage": {"charge_eff": 0.87, "discharge_eff": 0.87},
+                  "node_overrides": {
+                    "a": {"capacity": {"existing": 1356, "expandable": false},
+                          "storage": {"energy_capacity": {"existing": 125591, "expandable": false}}},
+                    "b": {"capacity": {"existing": 100, "expandable": false},
+                          "storage": {"energy_capacity": {"existing": 900, "expandable": false}, "max_discharge_rate": 0.25}}}},
+          "gen": {"role": "supply", "node": "a", "carrier_out": "electricity", "capacity": {"expandable": true}},
+          "load": {"role": "demand", "node": "a", "carrier_in": "electricity", "demand_profile": 10}
+        }
+      },
+      "experiment": {"mode": "plan", "solver": {"name": "cbc"}}
+    }`
+	y := emitCalliopeJSON(t, payload)
+	a := section(y, "      phs:\n") // first node's override block (node a)
+	for _, w := range []string{"storage_cap_max: 125591", "storage_cap_min: 125591"} {
+		if !strings.Contains(a, w) {
+			t.Errorf("node a: expected %q in:\n%s", w, a)
+		}
+	}
+	for _, w := range []string{"storage_cap_max: 900", "storage_cap_min: 900", "flow_cap_per_storage_cap_max: 0.25"} {
+		if !strings.Contains(y, w) {
+			t.Errorf("node b: expected %q; got:\n%s", w, y)
+		}
+	}
+}
+
+// Tech-level storage settings (efficiencies) survive a node override that only
+// sets the node's reservoir size — for multi-node and single-node techs alike.
+func TestCalliopeTechLevelStorageSurvivesNodeOverride(t *testing.T) {
+	payload := `{
+      "model": {
+        "metadata": {"name": "phs2"},
+        "time": {"start": "2025-01-01", "end": "2025-01-02", "resolution": "1H"},
+        "carriers": {"electricity": {}},
+        "nodes": {"a": {}, "b": {}},
+        "technologies": {
+          "phs": {"role": "storage", "node": ["a", "b"], "carrier_in": "electricity", "carrier_out": "electricity",
+                  "storage": {"charge_eff": 0.87, "discharge_eff": 0.87},
+                  "node_overrides": {"a": {"capacity": {"existing": 10, "expandable": false},
+                                           "storage": {"energy_capacity": {"existing": 900, "expandable": false}}}}},
+          "solo": {"role": "storage", "node": "a", "carrier_in": "electricity", "carrier_out": "electricity",
+                   "storage": {"charge_eff": 0.9, "discharge_eff": 0.9},
+                   "node_overrides": {"a": {"storage": {"energy_capacity": {"existing": 50, "expandable": false}}}}},
+          "gen": {"role": "supply", "node": "a", "carrier_out": "electricity", "capacity": {"expandable": true}},
+          "load": {"role": "demand", "node": "a", "carrier_in": "electricity", "demand_profile": 10}
+        }
+      },
+      "experiment": {"mode": "plan", "solver": {"name": "cbc"}}
+    }`
+	y := emitCalliopeJSON(t, payload)
+	phs := section(y, "  phs:\n")
+	for _, w := range []string{"flow_out_eff: 0.87", "flow_in_eff: 0.87"} {
+		if !strings.Contains(phs, w) {
+			t.Errorf("phs: expected %q in:\n%s", w, phs)
+		}
+	}
+	if strings.Contains(phs, "storage_cap_max: 900") {
+		t.Errorf("phs: node a's reservoir leaked to the tech level:\n%s", phs)
+	}
+	solo := section(y, "  solo:\n")
+	for _, w := range []string{"flow_out_eff: 0.9", "flow_in_eff: 0.9", "storage_cap_max: 50"} {
+		if !strings.Contains(solo, w) {
+			t.Errorf("solo: expected %q in:\n%s", w, solo)
+		}
+	}
+}
+

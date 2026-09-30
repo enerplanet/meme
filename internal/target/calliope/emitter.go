@@ -626,6 +626,11 @@ func calliopeTech(t model.Technology, m *model.Model, id string, dataTables *yam
 				n.set("storage_cap_max", *t.Capacity.Max**t.Storage.MaxHours)
 			}
 			if ec := t.Storage.EnergyCapacity; ec != nil {
+				if !ec.Expandable && ec.Existing > 0 {
+					// existing, non-expandable energy capacity is fixed
+					n.set("storage_cap_max", ec.Existing)
+					n.set("storage_cap_min", ec.Existing)
+				}
 				if ec.Max != nil {
 					n.set("storage_cap_max", *ec.Max)
 				}
@@ -891,6 +896,10 @@ func calliopeCosts(n *yamlNode, t model.Technology, m *model.Model) {
 		c := t.Costs[class]
 		if c.InvestmentPerCapacity != nil {
 			n.set("cost_flow_cap", indexedCost(class, *c.InvestmentPerCapacity))
+		}
+		// Any overnight investment (per power or per energy capacity) is
+		// annualized with the interest rate.
+		if c.InvestmentPerCapacity != nil || c.InvestmentPerEnergyCapacity != nil {
 			if rate := m.EffectiveRate(t); t.CostBasis != model.CostAnnualized && rate != nil {
 				n.set("cost_interest_rate", indexedCost(class, *rate))
 			}
@@ -984,6 +993,41 @@ func calliopeTransmission(l model.Transmission, anyCO2 *bool) (*yamlNode, error)
 	return n, nil
 }
 
+// calliopeStorageOverride projects a node's own storage settings (e.g. each
+// existing pumped-hydro plant's reservoir) into its node override.
+func calliopeStorageOverride(n *yamlNode, s *model.Storage) {
+	if s == nil {
+		return
+	}
+	if ec := s.EnergyCapacity; ec != nil {
+		if !ec.Expandable && ec.Existing > 0 {
+			n.set("storage_cap_max", ec.Existing)
+			n.set("storage_cap_min", ec.Existing)
+		}
+		if ec.Max != nil {
+			n.set("storage_cap_max", *ec.Max)
+		}
+		if ec.Min != nil {
+			n.set("storage_cap_min", *ec.Min)
+		}
+	}
+	if r := storageRate(s); r != nil {
+		n.set("flow_cap_per_storage_cap_max", *r)
+	}
+	if s.DischargeEff != nil {
+		n.set("flow_out_eff", *s.DischargeEff)
+	}
+	if s.ChargeEff != nil {
+		n.set("flow_in_eff", *s.ChargeEff)
+	}
+	if s.SelfDischarge != nil {
+		n.set("storage_loss", *s.SelfDischarge)
+	}
+	if s.InitialSOC != nil {
+		n.set("storage_initial", *s.InitialSOC)
+	}
+}
+
 // storageRate resolves the single flow_cap-per-storage_cap bound Calliope
 // supports from the canonical charge/discharge rates (equal when both set;
 // enforced by ValidateJob).
@@ -1003,6 +1047,7 @@ func calliopeNodeOverride(t model.Technology, node string) *yamlNode {
 	}
 	n := newYAML()
 	calliopeCapacity(n, ov.Capacity)
+	calliopeStorageOverride(n, ov.Storage)
 	for _, class := range emit.Keys(ov.Costs) {
 		if c := ov.Costs[class]; c.InvestmentPerCapacity != nil {
 			n.set("cost_flow_cap", indexedCost(class, *c.InvestmentPerCapacity))

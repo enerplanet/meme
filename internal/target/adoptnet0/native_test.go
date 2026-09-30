@@ -124,3 +124,47 @@ func TestAdOptClimateData(t *testing.T) {
 		t.Errorf("ClimateData.csv not materialized from node.climate:\n%s", body)
 	}
 }
+
+// native.adopt-net0.technology names the database entry; the canonical fields
+// and the rest of the native block become its overrides.
+func TestAdOptNativeTechnology(t *testing.T) {
+	payload := `{
+      "model": {
+        "metadata": {"name": "sel"},
+        "time": {"start": "2025-01-01", "end": "2025-01-01T03:00", "resolution": "1H"},
+        "carriers": {"CO2captured": {}},
+        "nodes": {"sink": {}},
+        "technologies": {
+          "store": {
+            "role": "conversion", "node": "sink", "carrier_in": "CO2captured",
+            "costs": {"monetary": {"variable_om": 20}},
+            "native": {"adopt-net0": {"technology": "PermanentStorage_CO2_simple",
+                                      "Flexibility": {"injection_rate_max": 250}}}
+          }
+        }
+      },
+      "experiment": {"mode": "plan", "solver": {"name": "glpk"}}
+    }`
+	var j model.Job
+	if err := json.Unmarshal([]byte(payload), &j); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := validateFor(&j, model.TargetAdOpt); err != nil {
+		t.Fatalf("validate: %v", err)
+	}
+	dir := t.TempDir()
+	if _, err := (adoptnet0.AdOptNET0{}).Emit(&j, dir); err != nil {
+		t.Fatalf("emit: %v", err)
+	}
+	root := filepath.Join(dir, "input_data")
+	if got := readFileAbs(t, filepath.Join(root, "period1", "node_data", "sink", "Technologies.json")); !strings.Contains(got, "PermanentStorage_CO2_simple") {
+		t.Errorf("Technologies.json: %s", got)
+	}
+	p := readJSON(t, filepath.Join(root, "_meme_overrides.json"))["sink"].(map[string]any)["PermanentStorage_CO2_simple"].(map[string]any)
+	if p["Economics"].(map[string]any)["OPEX_variable"] != float64(20) || p["Flexibility"].(map[string]any)["injection_rate_max"] != float64(250) {
+		t.Errorf("overrides: %v", p)
+	}
+	if _, ok := p["technology"]; ok {
+		t.Errorf("technology key must not be patched onto the entry: %v", p)
+	}
+}

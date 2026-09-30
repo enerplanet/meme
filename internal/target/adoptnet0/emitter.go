@@ -135,6 +135,7 @@ func adoptNode(m *model.Model, nid, dir string, ts []string, overrides map[strin
 		if err := emit.MergeNativeMap(ov, e.Native.For(model.TargetAdOpt)); err != nil {
 			return fmt.Errorf("tech %q: %w", tid, err)
 		}
+		delete(ov, "technology") // selects the database entry, not a field of it
 		if len(ov) > 0 {
 			// Keyed per node: the same database tech can carry different
 			// overrides at different nodes (node_overrides).

@@ -234,16 +234,23 @@ func validateGeneric(t Target, j *model.Job) ([]string, error) {
 		}
 	}
 
-	// Transmission costs: the per-distance investment is emitted for calliope;
-	// every other cost field still has no emitter (transmission carries no
-	// lifetime/interest to annualize).
+	// Transmission costs: calliope emits investment (per capacity and per
+	// capacity-distance), fixed and variable O&M (lifetime / interest rate via
+	// native.calliope); other targets only the per-distance investment.
+	calliopeTx := t.Name() == model.TargetCalliope
 	for _, id := range sortedTransmissionIDs(m) {
 		for _, class := range sortedKeys(m.Transmission[id].Costs) {
 			c := m.Transmission[id].Costs[class]
-			other := c.InvestmentPerCapacity != nil || c.InvestmentPerEnergyCapacity != nil ||
-				c.FixedOM != nil || c.FixedOMFraction != nil || c.VariableOM != nil || c.FuelCost != nil || c.Purchase != nil
+			other := c.InvestmentPerEnergyCapacity != nil || c.FixedOMFraction != nil || c.FuelCost != nil || c.Purchase != nil
+			if !calliopeTx {
+				other = other || c.InvestmentPerCapacity != nil || c.FixedOM != nil || c.VariableOM != nil
+			}
 			if other {
-				warns = append(warns, fmt.Sprintf("transmission %q: costs other than investment_per_capacity_distance are not emitted for any target yet; capacity/efficiency/distance are honored", id))
+				supported := "investment_per_capacity_distance"
+				if calliopeTx {
+					supported = "investment_per_capacity(_distance), fixed_om and variable_om"
+				}
+				warns = append(warns, fmt.Sprintf("transmission %q: costs other than %s are not emitted for target %q yet; capacity/efficiency/distance are honored", id, supported, t.Name()))
 				break
 			}
 		}

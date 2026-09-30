@@ -96,3 +96,65 @@ func TestCalliopePerNodeSeriesTables(t *testing.T) {
 	}
 }
 
+// Transmission links carry the same capacity semantics as techs (a fixed
+// existing line is pinned, an expandable one bounded) and their monetary costs:
+// investment per capacity, fixed and variable O&M. Native passthrough supplies
+// what the canonical link has no field for (lifetime, interest rate).
+func TestCalliopeTransmissionCapacityAndCosts(t *testing.T) {
+	payload := `{
+      "model": {
+        "metadata": {"name": "links"},
+        "time": {"start": "2025-01-01", "end": "2025-01-02", "resolution": "1H"},
+        "carriers": {"electricity": {}},
+        "nodes": {"a": {}, "b": {}},
+        "technologies": {
+          "gen": {"role": "supply", "node": "a", "carrier_out": "electricity", "capacity": {"expandable": true}},
+          "load": {"role": "demand", "node": "b", "carrier_in": "electricity", "demand_profile": 10}
+        },
+        "transmission": {
+          "old_ab": {"carrier": "electricity", "from": "a", "to": "b", "bidirectional": true,
+                     "capacity": {"existing": 1300, "expandable": false}},
+          "new_ab": {"carrier": "electricity", "from": "a", "to": "b", "bidirectional": true,
+                     "capacity": {"max": 5000, "expandable": true},
+                     "costs": {"monetary": {"investment_per_capacity": 450, "fixed_om": 3, "variable_om": 0.0022}},
+                     "native": {"calliope": {"lifetime": 40, "cost_interest_rate": {"data": 0.1, "index": "monetary", "dims": "costs"}}}}
+        }
+      },
+      "experiment": {"mode": "plan", "solver": {"name": "cbc"}}
+    }`
+	y := emitCalliopeJSON(t, payload)
+	old := section(y, "  old_ab:\n")
+	for _, w := range []string{"flow_cap_max: 1300", "flow_cap_min: 1300"} {
+		if !strings.Contains(old, w) {
+			t.Errorf("existing line: expected %q in:\n%s", w, old)
+		}
+	}
+	nw := section(y, "  new_ab:\n")
+	for _, w := range []string{"flow_cap_max: 5000", "cost_flow_cap:", "data: 450", "cost_om_annual:", "data: 3",
+		"cost_flow_out:", "data: 0.0022", "lifetime: 40", "cost_interest_rate:", "data: 0.1"} {
+		if !strings.Contains(nw, w) {
+			t.Errorf("expandable line: expected %q in:\n%s", w, nw)
+		}
+	}
+}
+
+// section returns the YAML block starting at header up to the next sibling key
+// at the same indentation.
+func section(y, header string) string {
+	i := strings.Index(y, header)
+	if i < 0 {
+		return ""
+	}
+	rest := y[i+len(header):]
+	indent := len(header) - len(strings.TrimLeft(header, " "))
+	for j, line := range strings.Split(rest, "\n") {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		if len(line)-len(strings.TrimLeft(line, " ")) <= indent {
+			return strings.Join(strings.Split(rest, "\n")[:j], "\n")
+		}
+	}
+	return rest
+}
+

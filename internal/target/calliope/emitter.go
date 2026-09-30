@@ -167,7 +167,11 @@ func (Emitter) Emit(j *model.Job, outDir string) (string, error) {
 		techs.set(id, tn)
 	}
 	for _, id := range emit.Keys(m.Transmission) {
-		techs.set(id, calliopeTransmission(m.Transmission[id], &anyCO2))
+		tn, err := calliopeTransmission(m.Transmission[id], &anyCO2)
+		if err != nil {
+			return "", fmt.Errorf("transmission %q: %w", id, err)
+		}
+		techs.set(id, tn)
 	}
 
 	// trade -> market techs. Import: a supply tech selling the carrier at the
@@ -911,7 +915,7 @@ func indexedCost(class string, value float64) *yamlNode {
 	return n
 }
 
-func calliopeTransmission(l model.Transmission, anyCO2 *bool) *yamlNode {
+func calliopeTransmission(l model.Transmission, anyCO2 *bool) (*yamlNode, error) {
 	n := newYAML()
 	n.set("base_tech", "transmission")
 	n.set("carrier_in", l.Carrier)
@@ -926,9 +930,9 @@ func calliopeTransmission(l model.Transmission, anyCO2 *bool) *yamlNode {
 	if f, ok := l.Efficiency.Reduce(); ok {
 		n.set("flow_out_eff", f)
 	}
-	if l.Capacity != nil && l.Capacity.Max != nil {
-		n.set("flow_cap_max", *l.Capacity.Max)
-	}
+	// Same capacity semantics as techs: an existing, non-expandable line is
+	// pinned at its size; an expandable one is bounded.
+	calliopeCapacity(n, l.Capacity)
 	if l.Distance != nil {
 		n.set("distance", *l.Distance)
 	}
@@ -942,20 +946,39 @@ func calliopeTransmission(l model.Transmission, anyCO2 *bool) *yamlNode {
 	if l.MinFlow != nil {
 		n.set("flow_out_min_relative", *l.MinFlow)
 	}
+	outClasses, outValues := []any{}, []any{}
 	for _, class := range emit.Keys(l.Costs) {
-		if c := l.Costs[class]; c.InvestmentPerCapacityDistance != nil {
+		c := l.Costs[class]
+		if c.InvestmentPerCapacityDistance != nil {
 			n.set("cost_flow_cap_per_distance", indexedCost(class, *c.InvestmentPerCapacityDistance))
+		}
+		if c.InvestmentPerCapacity != nil {
+			n.set("cost_flow_cap", indexedCost(class, *c.InvestmentPerCapacity))
+		}
+		if c.FixedOM != nil {
+			n.set("cost_om_annual", indexedCost(class, *c.FixedOM))
+		}
+		if v, ok := c.VariableOM.Reduce(); ok {
+			outClasses, outValues = append(outClasses, class), append(outValues, v)
 		}
 	}
 	// Emissions per MWh transported ride the co2 cost class on the link flow.
 	if l.EmissionFactor != nil && *l.EmissionFactor != 0 {
-		n.set("cost_flow_out", indexedCost(emissionCostClass, *l.EmissionFactor))
+		outClasses, outValues = append(outClasses, emissionCostClass), append(outValues, *l.EmissionFactor)
 		*anyCO2 = true
+	}
+	if len(outClasses) > 0 {
+		n.set("cost_flow_out", indexedCostMulti(outClasses, outValues))
 	}
 	if !l.IsActive() {
 		n.set("active", false)
 	}
-	return n
+	// Native passthrough (e.g. lifetime / cost_interest_rate, which the
+	// canonical link has no field for).
+	if err := mergeNativeIntoYAML(n, l.Native.For(model.TargetCalliope)); err != nil {
+		return nil, err
+	}
+	return n, nil
 }
 
 // storageRate resolves the single flow_cap-per-storage_cap bound Calliope

@@ -200,3 +200,28 @@ func TestCalliopeTechLevelCapacityNotFromFirstNode(t *testing.T) {
 	}
 }
 
+// A non-expandable tech with no existing capacity is fixed at ZERO (e.g. a
+// placeholder tech with energy_cap_equals: 0), not unbounded.
+func TestCalliopeFixedZeroCapacityIsPinned(t *testing.T) {
+	payload := `{
+      "model": {
+        "metadata": {"name": "zero"},
+        "time": {"start": "2025-01-01", "end": "2025-01-02", "resolution": "1H"},
+        "carriers": {"electricity": {}},
+        "nodes": {"a": {}},
+        "technologies": {
+          "dummy": {"role": "supply", "node": "a", "carrier_out": "electricity",
+                    "capacity": {"existing": 0, "expandable": false}},
+          "load": {"role": "demand", "node": "a", "carrier_in": "electricity", "demand_profile": 10}
+        }
+      },
+      "experiment": {"mode": "plan", "solver": {"name": "cbc"}}
+    }`
+	tech := section(emitCalliopeJSON(t, payload), "  dummy:\n")
+	for _, w := range []string{"flow_cap_max: 0", "flow_cap_min: 0"} {
+		if !strings.Contains(tech, w) {
+			t.Errorf("expected %q (fixed at zero); got:\n%s", w, tech)
+		}
+	}
+}
+

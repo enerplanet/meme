@@ -862,9 +862,12 @@ func calliopeCapacity(n *yamlNode, c *model.Capacity) {
 		if min := c.EffectiveMin(); min != nil {
 			n.set("flow_cap_min", *min)
 		}
-	} else if c.Existing > 0 {
+	} else if c.Existing > 0 || (c.Min == nil && c.Max == nil && c.PerUnit == nil &&
+		c.SystemwideMin == nil && c.SystemwideMax == nil) {
 		// Existing capacity: "impossible" (default) fixes the size;
-		// "continuous" lets the optimizer retire any part of it.
+		// "continuous" lets the optimizer retire any part of it. A
+		// non-expandable block with no other bounds is fixed at its existing
+		// size even when that is 0 (a placeholder tech) — not left unbounded.
 		n.set("flow_cap_max", c.Existing)
 		if c.DecommissionMode() != "continuous" {
 			n.set("flow_cap_min", c.Existing)

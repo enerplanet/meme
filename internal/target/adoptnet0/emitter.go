@@ -82,10 +82,15 @@ func (Emitter) Emit(j *model.Job, outDir string) (string, error) {
 
 	// period folder -----------------------------------------------------------
 	period := filepath.Join(root, adoptPeriod)
-	if err := emit.WriteJSON(period, "Networks.json", map[string]any{
-		"existing": map[string]any{}, "new": []string{},
-	}); err != nil {
+	netOverrides, err := emitNetworks(m, period)
+	if err != nil {
 		return "", err
+	}
+	if len(netOverrides) > 0 {
+		// Sidecar consumed by the run step after copy_network_data.
+		if err := emit.WriteJSON(root, "_meme_network_overrides.json", netOverrides); err != nil {
+			return "", err
+		}
 	}
 	overrides := map[string]map[string]any{} // node -> tech -> economics/size overrides for the runner
 	for _, nid := range emit.Keys(m.Nodes) {

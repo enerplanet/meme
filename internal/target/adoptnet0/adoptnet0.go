@@ -70,10 +70,9 @@ func (AdOptNET0) ValidateJob(j *model.Job) ([]string, error) {
 		return nil, fmt.Errorf("allow_unmet_demand on adopt-net0 needs penalty_price (energybalance.violation is a price)")
 	}
 
-	// The emitter writes no Networks (adopt_net0 network JSONs are not mapped
-	// yet) — reject rather than solve a model that silently lost its lines.
-	if len(m.Transmission) > 0 {
-		return nil, fmt.Errorf("transmission is not supported by target %q yet (adopt_net0 Networks are not mapped); model exchange via trade or nodes.<n>.native.adopt-net0", model.TargetAdOpt)
+	// Transmission is emitted as adopt_net0 networks.
+	if _, _, err := adoptNetworks(m); err != nil {
+		return nil, err
 	}
 
 	for _, id := range emit.Keys(m.Technologies) {

@@ -22,6 +22,25 @@ for f in glob.glob(os.path.join(BASE, "*", "node_data", "*", "technology_data", 
             d[k] = v
     json.dump(d, open(f, "w"))
 
+
+def merge(dst, src):
+    for k, v in src.items():
+        if isinstance(v, dict) and isinstance(dst.get(k), dict):
+            merge(dst[k], v)
+        else:
+            dst[k] = v
+
+
+# Networks: copy the database templates, then apply _meme_network_overrides.json.
+nvp = os.path.join(BASE, "_meme_network_overrides.json")
+if os.path.exists(nvp):
+    adopt.copy_network_data(BASE)
+    nov = json.load(open(nvp))  # network -> patch
+    for f in glob.glob(os.path.join(BASE, "*", "network_data", "*.json")):
+        d = json.load(open(f))
+        merge(d, nov.get(os.path.splitext(os.path.basename(f))[0], {}))
+        json.dump(d, open(f, "w"))
+
 m = adopt.ModelHub()
 m.read_data(BASE)
 m.quick_solve()

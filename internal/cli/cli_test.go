@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func writeEnv(t *testing.T, body string) string {
@@ -130,5 +131,29 @@ func TestParseArgsFlagError(t *testing.T) {
 	t.Setenv("MEME_ENV_FILE", "")
 	if _, err := ParseArgs([]string{"-no-such-flag"}); err == nil {
 		t.Error("unknown flag must return an error, not exit")
+	}
+}
+
+// SOLVER_TIMEOUT / -solver-timeout bound each solver run (default 10m); long
+// studies (e.g. SPORES ensembles, full-year models) need more.
+func TestParseArgsSolverTimeout(t *testing.T) {
+	t.Setenv("MEME_ENV_FILE", "")
+	missing := filepath.Join(t.TempDir(), "none.env")
+	cfg, err := ParseArgs([]string{"-env-file", missing})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.SolverTimeout != 10*time.Minute {
+		t.Errorf("default solver timeout: got %v, want 10m", cfg.SolverTimeout)
+	}
+	path := filepath.Join(t.TempDir(), ".env")
+	if err := os.WriteFile(path, []byte("SOLVER_TIMEOUT=6h\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if cfg, _ = ParseArgs([]string{"-env-file", path}); cfg.SolverTimeout != 6*time.Hour {
+		t.Errorf("env SOLVER_TIMEOUT: got %v, want 6h", cfg.SolverTimeout)
+	}
+	if cfg, _ = ParseArgs([]string{"-env-file", path, "-solver-timeout", "48h"}); cfg.SolverTimeout != 48*time.Hour {
+		t.Errorf("flag -solver-timeout: got %v, want 48h", cfg.SolverTimeout)
 	}
 }

@@ -23,9 +23,8 @@ import (
 )
 
 const (
-	solverTimeout   = 10 * time.Minute // per-run solver budget
-	maxParallelJobs = 2                // concurrent jobs (each may spawn a solver)
-	jobTTL          = 24 * time.Hour   // finished jobs older than this are GC'd
+	maxParallelJobs = 2              // concurrent jobs (each may spawn a solver)
+	jobTTL          = 24 * time.Hour // finished jobs older than this are GC'd
 	gcInterval      = 15 * time.Minute
 	shutdownGrace   = 10 * time.Second
 )
@@ -43,7 +42,8 @@ func main() {
 
 	var runner service.Runner
 	if cfg.Exec {
-		runner = service.CommandRunner{Timeout: solverTimeout}
+		runner = service.CommandRunner{Timeout: cfg.SolverTimeout}
+		log.Printf("solver timeout per run: %s", cfg.SolverTimeout)
 	}
 	store := service.NewJobStore()
 	store.StartGC(jobCtx, jobTTL, gcInterval)

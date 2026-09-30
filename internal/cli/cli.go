@@ -15,8 +15,10 @@ package cli
 
 import (
 	"flag"
+	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/enerplanet/meme/internal/env"
 )
@@ -30,6 +32,8 @@ type Config struct {
 	CORSOrigins []string // browser origins allowed via CORS (nil -> CORS disabled)
 	EnvFile     string   // .env path that was consulted
 	EnvLoaded   bool     // whether that file existed and was read
+	// SolverTimeout bounds each solver run (SOLVER_TIMEOUT / -solver-timeout).
+	SolverTimeout time.Duration
 }
 
 // Parse resolves configuration from os.Args, exiting the process on a flag
@@ -74,6 +78,15 @@ func ParseArgs(args []string) (Config, error) {
 	exec := fs.Bool("exec", env.Bool(get("EXEC", ""), false), "actually run simulators (needs pypsa/calliope/adopt on PATH); default is dry-run")
 	workRoot := fs.String("work", get("WORK", ""), "root dir for emitted files (default: OS temp)")
 	apiKey := fs.String("api-key", get("API_KEY", ""), "require this api_key in every request payload (default: no authentication)")
+	timeoutDefault := 10 * time.Minute
+	if v := get("SOLVER_TIMEOUT", ""); v != "" {
+		d, err := time.ParseDuration(v)
+		if err != nil {
+			return Config{}, fmt.Errorf("SOLVER_TIMEOUT: %w", err)
+		}
+		timeoutDefault = d
+	}
+	solverTimeout := fs.Duration("solver-timeout", timeoutDefault, "per-run solver time budget (e.g. 30m, 12h); SPORES ensembles and full-year models need hours")
 	corsOrigins := fs.String("cors-origins", get("CORS_ORIGINS", ""), `comma-separated browser origins allowed via CORS: exact origins, "*", or subdomain wildcards like https://*.example.com (default: CORS disabled)`)
 
 	if err := fs.Parse(args); err != nil {
@@ -87,6 +100,8 @@ func ParseArgs(args []string) (Config, error) {
 		CORSOrigins: splitList(*corsOrigins),
 		EnvFile:     *envFile,
 		EnvLoaded:   loaded,
+
+		SolverTimeout: *solverTimeout,
 	}, nil
 }
 

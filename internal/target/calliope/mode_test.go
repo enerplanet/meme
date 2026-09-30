@@ -178,3 +178,27 @@ func TestCalliopeNoSporesWhenPlan(t *testing.T) {
 		t.Errorf("unexpected spores block for a plan-mode model:\n%s", y)
 	}
 }
+
+// First-class alternatives fields for SPORES tracking and the scoring
+// threshold (Lombardi et al. 2020 use relative_deployment with 1e-3).
+func TestCalliopeAlternativesTrackingAndThreshold(t *testing.T) {
+	j := loadSampleFor(t, model.TargetCalliope)
+	j.Experiment.Mode = model.ModeAlternatives
+	thr := 0.001
+	j.Experiment.Alternatives = &model.AlternativesOptions{
+		Number: 5, ScoringAlgorithm: "relative_deployment",
+		TrackingParameter: "tempo_spores_track", ScoreThresholdFactor: &thr,
+	}
+	y := emitCalliope(t, j)
+	for _, want := range []string{"number: 5", "scoring_algorithm: relative_deployment",
+		"tracking_parameter: tempo_spores_track", "score_threshold_factor: 0.001"} {
+		if !strings.Contains(y, want) {
+			t.Errorf("expected %q in model.yaml; got:\n%s", want, y)
+		}
+	}
+	neg := -1.0
+	j.Experiment.Alternatives.ScoreThresholdFactor = &neg
+	if _, err := validateFor(&j, model.TargetCalliope); err == nil {
+		t.Errorf("negative score_threshold_factor must be rejected")
+	}
+}

@@ -428,6 +428,12 @@ func calliopeSpores(e *model.Experiment) *yamlNode {
 		if a.ScoringAlgorithm != "" {
 			sp.set("scoring_algorithm", a.ScoringAlgorithm)
 		}
+		if a.TrackingParameter != "" {
+			sp.set("tracking_parameter", a.TrackingParameter)
+		}
+		if a.ScoreThresholdFactor != nil {
+			sp.set("score_threshold_factor", *a.ScoreThresholdFactor)
+		}
 	}
 	return sp
 }

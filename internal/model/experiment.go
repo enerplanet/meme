@@ -41,6 +41,13 @@ type AlternativesOptions struct {
 	Number           int      `json:"number,omitempty"`            // iterations after the base run
 	Slack            *float64 `json:"slack,omitempty"`             // allowed cost slack over the optimum (fraction)
 	ScoringAlgorithm string   `json:"scoring_algorithm,omitempty"` // SPORES scoring: integer | relative_deployment | random | evolving_average
+	// TrackingParameter names an input parameter (defined on techs, e.g. via
+	// native data_definitions) restricting SPORES scoring to those techs
+	// (Calliope config.solve.spores.tracking_parameter).
+	TrackingParameter string `json:"tracking_parameter,omitempty"`
+	// ScoreThresholdFactor: capacities below this (relative) threshold do not
+	// raise a tech's SPORES score (Calliope score_threshold_factor, default 0.1).
+	ScoreThresholdFactor *float64 `json:"score_threshold_factor,omitempty"`
 }
 
 // ParetoOptions configures mode "pareto" (cost/emission front; AdOpT-NET0).
@@ -234,6 +241,9 @@ func (e *Experiment) Validate() error {
 		}
 		if a.Slack != nil && *a.Slack < 0 {
 			add("experiment.alternatives.slack must not be negative")
+		}
+		if a.ScoreThresholdFactor != nil && *a.ScoreThresholdFactor < 0 {
+			add("experiment.alternatives.score_threshold_factor must not be negative")
 		}
 		if a.ScoringAlgorithm != "" && !scoringAlgorithms[a.ScoringAlgorithm] {
 			add("experiment.alternatives.scoring_algorithm %q is invalid (integer, relative_deployment, random or evolving_average)", a.ScoringAlgorithm)

@@ -48,6 +48,59 @@ type AlternativesOptions struct {
 	// ScoreThresholdFactor: capacities below this (relative) threshold do not
 	// raise a tech's SPORES score (Calliope score_threshold_factor, default 0.1).
 	ScoreThresholdFactor *float64 `json:"score_threshold_factor,omitempty"`
+	// Stages is an optional SPORES schedule (Lombardi et al. 2020): "explore"
+	// stages run the native SPORES loop (their counts replace Number);
+	// "minimise" stages then explicitly minimise the capacity of each target
+	// tech group (CountEach alternatives per target) under the same cost slack.
+	Stages []AlternativesStage `json:"stages,omitempty"`
+	// Weights of the minimise objective: Excl on the target's capacity, Nos on
+	// the accumulated SPORES score (the first run per target uses Nos = 0).
+	Weights *AlternativesWeights `json:"weights,omitempty"`
+}
+
+// AlternativesStage is one step of a SPORES schedule.
+type AlternativesStage struct {
+	Type      string     `json:"type"`                 // explore | minimise
+	Count     int        `json:"count,omitempty"`      // explore: number of iterations
+	Targets   [][]string `json:"targets,omitempty"`    // minimise: tech groups to minimise, one at a time
+	CountEach int        `json:"count_each,omitempty"` // minimise: alternatives per target
+}
+
+// AlternativesWeights weighs the minimise-stage objective terms.
+type AlternativesWeights struct {
+	Excl float64 `json:"excl"`
+	Nos  float64 `json:"nos"`
+}
+
+// HasMinimise reports whether the schedule contains minimise stages.
+func (a *AlternativesOptions) HasMinimise() bool {
+	if a == nil {
+		return false
+	}
+	for _, s := range a.Stages {
+		if s.Type == "minimise" {
+			return true
+		}
+	}
+	return false
+}
+
+// ExploreCount is the number of native SPORES iterations: the explore stages
+// of a schedule, else Number.
+func (a *AlternativesOptions) ExploreCount() int {
+	if a == nil {
+		return 0
+	}
+	if len(a.Stages) == 0 {
+		return a.Number
+	}
+	n := 0
+	for _, s := range a.Stages {
+		if s.Type == "explore" {
+			n += s.Count
+		}
+	}
+	return n
 }
 
 // ParetoOptions configures mode "pareto" (cost/emission front; AdOpT-NET0).
@@ -241,6 +294,28 @@ func (e *Experiment) Validate() error {
 		}
 		if a.Slack != nil && *a.Slack < 0 {
 			add("experiment.alternatives.slack must not be negative")
+		}
+		seenMinimise := false
+		for i, st := range a.Stages {
+			switch st.Type {
+			case "explore":
+				if seenMinimise {
+					add("experiment.alternatives.stages[%d]: explore stages must come before minimise stages (the native SPORES loop runs first)", i)
+				}
+				if st.Count < 0 {
+					add("experiment.alternatives.stages[%d].count must not be negative", i)
+				}
+			case "minimise":
+				seenMinimise = true
+				if len(st.Targets) == 0 {
+					add("experiment.alternatives.stages[%d]: a minimise stage needs targets", i)
+				}
+				if st.CountEach < 0 {
+					add("experiment.alternatives.stages[%d].count_each must not be negative", i)
+				}
+			default:
+				add("experiment.alternatives.stages[%d].type %q is invalid (explore or minimise)", i, st.Type)
+			}
 		}
 		if a.ScoreThresholdFactor != nil && *a.ScoreThresholdFactor < 0 {
 			add("experiment.alternatives.score_threshold_factor must not be negative")

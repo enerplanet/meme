@@ -192,12 +192,30 @@ func (Calliope) Emit(j *model.Job, outDir string) (string, error) {
 // result contract into output/contract.json. extract_contract.py is written
 // alongside the driver and imported by it.
 func (Calliope) Plan(j *model.Job, entrypoint string, dirs target.RunDirs) (target.RunPlan, error) {
-	cfg, err := json.Marshal(map[string]string{
+	cfgMap := map[string]string{
 		"entrypoint": entrypoint,
 		"netcdf":     filepath.Join(dirs.OutDir, "results.nc"),
 		"csv":        filepath.Join(dirs.OutDir, "csv"),
 		"contract":   filepath.Join(dirs.OutDir, "contract.json"),
-	})
+	}
+	// A SPORES schedule with minimise stages runs through the SPORES driver.
+	if a := j.Experiment.Alternatives; j.Experiment.EffectiveMode() == model.ModeAlternatives && a.HasMinimise() {
+		sched, err := json.MarshalIndent(map[string]any{"stages": a.Stages, "weights": a.Weights}, "", "  ")
+		if err != nil {
+			return target.RunPlan{}, err
+		}
+		schedPath := filepath.Join(dirs.RunDir, "spores_schedule.json")
+		if err := os.WriteFile(schedPath, sched, 0o644); err != nil {
+			return target.RunPlan{}, err
+		}
+		if err := os.WriteFile(filepath.Join(dirs.RunDir, "spores_driver.py"), []byte(scripts.CalliopeSpores), 0o644); err != nil {
+			return target.RunPlan{}, err
+		}
+		cfgMap["spores_schedule"] = schedPath
+		cfgMap["spores_driver"] = "spores_driver.py"
+		cfgMap["spores_labels"] = filepath.Join(dirs.OutDir, "spores_labels.json")
+	}
+	cfg, err := json.Marshal(cfgMap)
 	if err != nil {
 		return target.RunPlan{}, err
 	}

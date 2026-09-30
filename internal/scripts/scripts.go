@@ -40,3 +40,10 @@ var CalliopeRun string
 //
 //go:embed calliope_extract_contract.py
 var CalliopeExtractContract string
+
+// CalliopeSpores is the SPORES schedule driver (native explore loop + the
+// Lombardi et al. 2020 minimise stages), run under calliope's interpreter by
+// calliope_run.py when the job carries a SPORES schedule.
+//
+//go:embed calliope_spores.py
+var CalliopeSpores string

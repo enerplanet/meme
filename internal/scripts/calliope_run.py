@@ -38,15 +38,21 @@ def _main():
     csv = CFG["csv"]
     contract = CFG["contract"]
 
-    rc = subprocess.call(
-        ["calliope", "run", entry, "--save_netcdf", netcdf, "--save_csv", csv]
-    )
+    here = os.path.dirname(os.path.abspath(__file__))
+    if CFG.get("spores_schedule"):
+        # SPORES schedule (explore + minimise stages): the driver needs the
+        # calliope API, so it runs under calliope's own interpreter.
+        rc = subprocess.call([_calliope_python(), os.path.join(here, CFG["spores_driver"]),
+                              entry, netcdf, CFG["spores_schedule"], CFG["spores_labels"]])
+    else:
+        rc = subprocess.call(
+            ["calliope", "run", entry, "--save_netcdf", netcdf, "--save_csv", csv]
+        )
     if rc != 0:
         sys.exit(rc)
 
     # Run the extractor under calliope's own interpreter (it imports calliope to
     # read results.nc). extract_contract.py sits next to this driver.
-    here = os.path.dirname(os.path.abspath(__file__))
     extractor = os.path.join(here, "extract_contract.py")
     rc = subprocess.call([_calliope_python(), extractor, netcdf, contract])
     if rc != 0:

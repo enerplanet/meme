@@ -334,7 +334,8 @@ func (Emitter) Emit(j *model.Job, outDir string) (string, error) {
 	useMath := j.Experiment.CustomMathEnabled()
 	havePortable := len(m.Constraints) > 0 || len(m.EmissionLimits) > 0
 	renderPortable := havePortable && useMath
-	needMathFile := renderPortable || len(ms.flowTechs) > 0 || len(ms.pwTechs) > 0 || len(nativeMath) > 0
+	sporesSchedule := mode == model.ModeAlternatives && j.Experiment.Alternatives.HasMinimise()
+	needMathFile := renderPortable || len(ms.flowTechs) > 0 || len(ms.pwTechs) > 0 || len(nativeMath) > 0 || sporesSchedule
 	var extraMath []any
 	if ms.anyMILP {
 		extraMath = append(extraMath, "milp")
@@ -365,6 +366,9 @@ func (Emitter) Emit(j *model.Job, outDir string) (string, error) {
 	if needMathFile {
 		doc := calliopeMathDoc(m, ms, renderPortable)
 		mergeYAMLDeep(doc, nativeMath)
+		if sporesSchedule {
+			mergeYAMLDeep(doc, sporesMinimiseMath())
+		}
 		if err := os.WriteFile(filepath.Join(outDir, "additional_math.yaml"), []byte(yamlDoc(doc)), 0o644); err != nil {
 			return "", err
 		}
@@ -422,8 +426,8 @@ func calliopeSpores(e *model.Experiment) *yamlNode {
 		}
 	}
 	if a := e.Alternatives; a != nil {
-		if a.Number > 0 {
-			sp.set("number", a.Number)
+		if n := a.ExploreCount(); n > 0 || len(a.Stages) > 0 {
+			sp.set("number", n)
 		}
 		if a.ScoringAlgorithm != "" {
 			sp.set("scoring_algorithm", a.ScoringAlgorithm)
@@ -1135,6 +1139,36 @@ func calliopeNodeOverride(t model.Technology, node string) *yamlNode {
 type calliopeCSV struct {
 	file, tech, node, series string
 	values                   []float64
+}
+
+// sporesMinimiseMath is the extra math of a SPORES schedule's minimise stages
+// (Lombardi et al. 2020, Eq. 4): minimise the capacity of a target tech group
+// (tempo_excl_score = 1 on its node/techs), weighted against the accumulated
+// SPORES score. The SPORES driver sets the parameters and switches to this
+// objective after the native explore loop; the cost slack constraint of the
+// spores mode math stays active.
+func sporesMinimiseMath() map[string]any {
+	unmet := []any{
+		map[string]any{"where": "config.ensure_feasibility==True",
+			"expression": "sum(sum(unmet_demand - unused_supply, over=[carriers, nodes]) * timestep_weights, over=timesteps) * bigM"},
+		map[string]any{"where": "NOT config.ensure_feasibility==True", "expression": "0"},
+	}
+	return map[string]any{
+		"parameters": map[string]any{
+			"tempo_excl_score": map[string]any{"default": 0, "description": "SPORES minimise stage: 1 on the targeted node/techs"},
+			"tempo_w_nos":      map[string]any{"default": 1, "description": "SPORES minimise stage: weight of the accumulated SPORES score"},
+			"tempo_w_excl":     map[string]any{"default": 0, "description": "SPORES minimise stage: weight of the targeted capacity"},
+		},
+		"objectives": map[string]any{
+			"tempo_min_spores": map[string]any{
+				"description": "SPORES minimise stage (Lombardi et al. 2020, Eq. 4)",
+				"equations": []any{map[string]any{"expression": "tempo_w_nos * sum(flow_cap * spores_score, over=[nodes, techs, carriers]) + " +
+					"tempo_w_excl * sum(flow_cap * tempo_excl_score, over=[nodes, techs, carriers]) + $unmet_demand"}},
+				"sub_expressions": map[string]any{"unmet_demand": unmet},
+				"sense":           "minimise",
+			},
+		},
+	}
 }
 
 // techLevel is the technology whose fields become the tech-level Calliope

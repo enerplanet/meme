@@ -70,10 +70,9 @@ func (AdOptNET0) ValidateJob(j *model.Job) ([]string, error) {
 		return nil, fmt.Errorf("allow_unmet_demand on adopt-net0 needs penalty_price (energybalance.violation is a price)")
 	}
 
-	// The emitter writes no Networks (adopt_net0 network JSONs are not mapped
-	// yet) — reject rather than solve a model that silently lost its lines.
-	if len(m.Transmission) > 0 {
-		return nil, fmt.Errorf("transmission is not supported by target %q yet (adopt_net0 Networks are not mapped); model exchange via trade or nodes.<n>.native.adopt-net0", model.TargetAdOpt)
+	// Transmission is emitted as adopt_net0 networks.
+	if _, _, err := adoptNetworks(m); err != nil {
+		return nil, err
 	}
 
 	for _, id := range emit.Keys(m.Technologies) {
@@ -143,13 +142,20 @@ func (AdOptNET0) Emit(j *model.Job, outDir string) (string, error) {
 	return (Emitter{}).Emit(j, outDir)
 }
 
-// Plan writes the run.py driver into dirs.RunDir and returns the command. The
-// driver (embedded from internal/scripts/adoptnet0_run.py) copies the mapped database
-// technologies into the tree (adopt_net0 is database-driven), patches each
-// with the emitter's node-keyed overrides (_meme_overrides.json), then reads
-// and solves via ModelHub().quick_solve().
+// Plan writes run.py and adoptnet0_extract_contract.py into dirs.RunDir.
+// The driver solves via ModelHub().quick_solve(), writes HDF5 results, then
+// runs the extractor to produce dirs.OutDir/contract.json.
 func (AdOptNET0) Plan(j *model.Job, entrypoint string, dirs target.RunDirs) (target.RunPlan, error) {
-	script := fmt.Sprintf("BASE = %q\n", entrypoint) + scripts.AdOptNET0Run
+	if err := os.WriteFile(
+		filepath.Join(dirs.RunDir, "adoptnet0_extract_contract.py"),
+		[]byte(scripts.AdOptNET0ExtractContract),
+		0o644,
+	); err != nil {
+		return target.RunPlan{}, err
+	}
+	script := fmt.Sprintf("BASE = %q\nCONTRACT = %q\n",
+		entrypoint, filepath.Join(dirs.OutDir, "contract.json"),
+	) + scripts.AdOptNET0Run
 	if err := os.WriteFile(filepath.Join(dirs.RunDir, "run.py"), []byte(script), 0o644); err != nil {
 		return target.RunPlan{}, err
 	}

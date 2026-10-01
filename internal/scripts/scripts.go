@@ -19,10 +19,18 @@ var PyPSARun string
 
 // AdOptNET0Run drives AdOpT-NET0: copy the mapped database technologies into
 // the input tree, patch them with the emitter's node-keyed overrides, then
-// solve via ModelHub().quick_solve(). The emitter prepends a BASE line.
+// solve via ModelHub().quick_solve(), write HDF5 results, and extract the
+// frozen contract. The emitter prepends BASE and CONTRACT lines.
 //
 //go:embed adoptnet0_run.py
 var AdOptNET0Run string
+
+// AdOptNET0ExtractContract reads the HDF5 written by ModelHub.write_results()
+// and emits contract.json in TEMPO's frozen result shape. Written into the run
+// dir as adoptnet0_extract_contract.py and called by AdOptNET0Run.
+//
+//go:embed adoptnet0_extract_contract.py
+var AdOptNET0ExtractContract string
 
 // CalliopeRun drives Calliope 0.7: run the CLI solve (save_netcdf + save_csv),
 // then extract TEMPO's frozen result contract into contract.json. The emitter

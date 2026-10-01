@@ -15,6 +15,11 @@
 pypsa==1.2.4
 adopt_net0==0.1.10
 
+# adopt_net0 0.1.10 does `import tsam.timeseriesaggregation`, a class-based API
+# that tsam v4 removed (replaced by the `tsam.aggregate()` functional API).
+# Leave tsam unpinned and the build pulls 4.x and breaks. Hold it at <4.
+tsam<4
+
 # --- Free, open-source solver (HiGHS) ---
 # PyPSA drives it via linopy with solver name "highs".
 highspy

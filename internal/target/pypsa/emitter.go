@@ -40,6 +40,19 @@ const pypsaTargetVersion = "1.2.4"
 // separately by MaterializeTimeSeries.
 func (Emitter) Emit(j *model.Job, outDir string) (string, error) {
 	m := &j.Model
+
+	// Power-flow jobs short-circuit the dispatch emission: the top-level
+	// PowerFlow block carries the authoritative electrical network (literal
+	// lines/r/x/s_nom/v_nom + fixed p_set injections), which the normal
+	// transport-Link emission cannot express. run.py's `power_flow` mode
+	// imports exactly this folder.
+	if j.PowerFlow != nil {
+		if err := emitPowerFlow(j, outDir); err != nil {
+			return "", err
+		}
+		return outDir, nil
+	}
+
 	if err := os.MkdirAll(outDir, 0o755); err != nil {
 		return "", err
 	}

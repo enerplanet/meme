@@ -66,6 +66,13 @@ var coverageExceptions = map[model.Target]map[model.Feature]string{
 	model.TargetCalliope: {
 		model.FeatIndexedParams: "TestMultiValuedIndexedRejectedForPyPSA (indexed Value round-trip + calliope acceptance)",
 	},
+	model.TargetPyPSA: {
+		// Power flow needs the top-level power_flow block + run.py PF mode, which
+		// a JSON scenario cannot exercise hermetically (no solver). Covered by
+		// Targeted unit tests: decode (DisallowUnknownFields), the emitter writing
+		// lines/transformers/v_nom/p_set, and the run.py mode-forcing.
+		model.FeatPowerFlow: "TestPowerFlowJobDecodes/TestEmitterPowerFlowWritesNetworkCSVs/TestRunPyForcesPowerFlowMode",
+	},
 }
 
 // TestCapabilityCoverage: every capability the matrix claims must be backed by

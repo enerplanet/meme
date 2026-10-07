@@ -396,4 +396,12 @@ type Job struct {
 	APIKey     string     `json:"api_key,omitempty"`
 	Model      Model      `json:"model"`
 	Experiment Experiment `json:"experiment"`
+	// PowerFlow is an optional top-level block the pypsa target consumes
+	// directly (see internal/target/pypsa/powerflow_emit.go): a fixed
+	// injection + electrical network for an isolated, derived power-flow run.
+	// It is deliberately top-level (a sibling of model/experiment) so the
+	// canonical Model schema stays untouched; the pypsa emitter reads it and
+	// re-emits it as a solvable network, and run.py's `power_flow` mode runs
+	// lpf()/pf() over it. Absent on every normal dispatch job.
+	PowerFlow *PowerFlow `json:"power_flow,omitempty"`
 }

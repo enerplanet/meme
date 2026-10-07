@@ -34,9 +34,12 @@ func (PyPSA) Capabilities() map[model.Feature]bool {
 		model.FeatModeOperate:      true, // fixed capacities + rolling-horizon dispatch
 		model.FeatModeAlternatives: true, // MGA (optimize_mga)
 		model.FeatModeStochastic:   true, // two-stage stochastic (set_scenarios)
-		// power_flow (Lines/Transformers, KVL) is NOT claimed: no canonical field
-		// emits a lines.csv — all transmission becomes transport Links. Reclaim
-		// once the schema carries electrical parameters (r, x, s_nom).
+		// power_flow (Lines/Transformers, KVL) is CLAIMED when a job carries the
+		// top-level power_flow block: the emitter then writes lines.csv /
+		// transformers.csv / v_nom and run.py's `power_flow` mode runs lpf()/pf()
+		// and exports the web-PF CSVs. The canonical Model schema alone still
+		// cannot express a line — the block is the delivery mechanism.
+		model.FeatPowerFlow:              true,
 		model.FeatMultiCarrierConversion: true, // multi-output Links
 		model.FeatEmissionLimit:          true, // GlobalConstraint
 		model.FeatImportExport:           true, // via generators/loads + marginal_cost
@@ -229,8 +232,13 @@ func (PyPSA) Emit(j *model.Job, outDir string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if err := MaterializeTimeSeries(&j.Model, outDir); err != nil {
-		return "", fmt.Errorf("materialize time series: %w", err)
+	// The power-flow path writes its OWN p_set + snapshots; the dispatch
+	// materializer would overwrite snapshots.csv and emit orphan series for
+	// the (unused) dispatch model. Skip it for power-flow jobs.
+	if j.PowerFlow == nil {
+		if err := MaterializeTimeSeries(&j.Model, outDir); err != nil {
+			return "", fmt.Errorf("materialize time series: %w", err)
+		}
 	}
 	return entrypoint, nil
 }
@@ -267,10 +275,18 @@ func runPy(j *model.Job, inputDir, outDir string) string {
 	if o := e.Operate; o != nil && o.Horizon != "" {
 		horizon = int(emit.ParseHours(o.Horizon).Hours())
 	}
+	// Power-flow jobs force the PF mode on run.py regardless of the
+	// experiment.mode the caller set (the backend's base job carries 'plan';
+	// the presence of the top-level PowerFlow block decides). The `power_flow`
+	// branch in run.py is purely additive — all other modes are untouched.
+	mode := string(e.EffectiveMode())
+	if j.PowerFlow != nil {
+		mode = "power_flow"
+	}
 	cfgMap := map[string]any{
 		"input":     inputDir,
 		"output":    outDir,
-		"mode":      string(e.EffectiveMode()),
+		"mode":      mode,
 		"solver":    solverName(e.Solver.Name),
 		"mga_slack": slack,
 		"horizon":   horizon,

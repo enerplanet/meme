@@ -1,0 +1,11 @@
+.git
+.github
+.work
+bin
+docs
+site
+test
+examples
+.env
+environment/.env.*.local
+*.md

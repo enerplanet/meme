@@ -45,3 +45,5 @@ build/
 
 # Docker work directory
 .work
+# Local deployment overrides (secrets)
+environment/.env.*.local

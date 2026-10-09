@@ -14,7 +14,7 @@ ENV_FILE := .env.$(ENV)
 COMPOSE  := docker compose --env-file $(ENV_FILE) -f docker-compose.yml
 
 .DEFAULT_GOAL := help
-.PHONY: build test run shell help
+.PHONY: build test run shell deploy down logs help
 
 build: ## Build the environment image (Go + frameworks + solvers)
 	$(COMPOSE) build
@@ -27,6 +27,15 @@ run: ## Run the API in the container with real solvers
 
 shell: ## Interactive shell in the environment image
 	$(COMPOSE) run --rm shell
+
+deploy: ## Production: build the self-contained image and start detached (ENV=prod.local)
+	docker compose --env-file $(ENV_FILE) -f docker-compose.prod.yml up -d --build
+
+down: ## Production: stop the deployed stack
+	docker compose --env-file $(ENV_FILE) -f docker-compose.prod.yml down
+
+logs: ## Production: follow API logs
+	docker compose --env-file $(ENV_FILE) -f docker-compose.prod.yml logs -f api
 
 help: ## Show this help
 	@grep -hE '^[a-zA-Z0-9_-]+:.*?## .*$$' $(MAKEFILE_LIST) \

@@ -27,6 +27,7 @@ services:
       - EXEC=${EXEC:-true}
       - API_KEY=${API_KEY:-}
       - CORS_ORIGINS=${CORS_ORIGINS:-}
+      - SOLVER_TIMEOUT=${SOLVER_TIMEOUT:-}
     volumes:
       - ..:/src
       - go-build:/root/.cache/go-build

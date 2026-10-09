@@ -7,7 +7,9 @@
 //  1. CLI flags        (-addr, -work, -exec, -api-key, -cors-origins)
 //  2. .env file        (ADDR, WORK, EXEC, API_KEY, CORS_ORIGINS) — optional,
 //     via internal/env
-//  3. built-in default (:8080, OS temp, dry-run, no auth, no CORS)
+//  3. process env      the same variable names, for containers/systemd
+//     units that inject config without a file
+//  4. built-in default (:8080, OS temp, dry-run, no auth, no CORS)
 //
 // Go's flag package only overwrites a default when a flag is actually passed,
 // so seeding each default from the .env value gives exactly that precedence.
@@ -55,6 +57,9 @@ func ParseArgs(args []string) (Config, error) {
 	vars, loaded := env.Load(envPath)
 	get := func(key, fallback string) string {
 		if v, ok := vars[key]; ok {
+			return v
+		}
+		if v := os.Getenv(key); v != "" {
 			return v
 		}
 		return fallback

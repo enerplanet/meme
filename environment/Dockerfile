@@ -11,18 +11,21 @@
 # (`meme -exec`) so /simulate actually invokes the solvers, and integration
 # tests can validate emitted files against pinned framework versions.
 
-# ---- Go toolchain (copied into the final image) ----
+# Stages:
+#   go         Go toolchain (also used to compile the release binary)
+#   frameworks Python + PyPSA/Calliope/AdOpT + solvers (shared base)
+#   build      compiles the static `meme` binary
+#   prod       frameworks + binary, non-root, healthcheck  <- VM deployment
+#   dev        frameworks + Go toolchain, source bind-mounted  <- default (last)
+#
+#   docker build -f environment/Dockerfile --target prod .
+
+# ---- Go toolchain ----
 FROM golang:1.22-bookworm AS go
 
-# ---- Final image: Python base + Go toolchain + frameworks ----
+# ---- Python base + frameworks + solvers ----
 # Python 3.12: AdOpT-NET0 (adopt_net0) requires >=3.12.
-FROM python:3.12-slim-bookworm
-
-# Bring the Go toolchain over from the golang image.
-COPY --from=go /usr/local/go /usr/local/go
-ENV PATH="/usr/local/go/bin:/root/go/bin:${PATH}" \
-    GOPATH="/root/go" \
-    GOTOOLCHAIN="local"
+FROM python:3.12-slim-bookworm AS frameworks
 
 # System libraries the frameworks need at runtime:
 #   git            - some pip deps resolve VCS refs
@@ -66,6 +69,32 @@ print('adopt_net0', m.version('adopt_net0')); \
 print('highspy OK')" \
     && calliope --version
 
+# ---- Release binary ----
+FROM go AS build
+WORKDIR /src
+COPY go.mod ./
+COPY cmd ./cmd
+COPY internal ./internal
+RUN CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o /out/meme ./cmd/meme
+
+# ---- Production runtime (self-contained: no bind mount, no Go toolchain) ----
+FROM frameworks AS prod
+COPY --from=build /out/meme /usr/local/bin/meme
+# Unprivileged user; HOME must be writable (matplotlib/pypsa caches).
+RUN useradd --system --create-home --uid 10001 meme     && mkdir -p /data/work && chown -R meme:meme /data
+USER meme
+ENV HOME=/home/meme     PORT=8080     WORK=/data/work     EXEC=true
+VOLUME ["/data/work"]
+EXPOSE 8080
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3     CMD python -c "import os,urllib.request as u; u.urlopen('http://127.0.0.1:'+os.environ.get('PORT','8080')+'/healthz', timeout=3)"
+# No .env file is baked in: configuration comes from the environment
+# (PORT, WORK, EXEC, API_KEY, CORS_ORIGINS, SOLVER_TIMEOUT) or flags.
+ENTRYPOINT ["meme"]
+
+# ---- Development (default target; must stay last) ----
+FROM frameworks AS dev
+COPY --from=go /usr/local/go /usr/local/go
+ENV PATH="/usr/local/go/bin:/root/go/bin:${PATH}"     GOPATH="/root/go"     GOTOOLCHAIN="local"
 WORKDIR /src
 
 # Pre-warm the Go module cache when a go.mod is present at build time.

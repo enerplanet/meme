@@ -157,3 +157,23 @@ func TestParseArgsSolverTimeout(t *testing.T) {
 		t.Errorf("flag -solver-timeout: got %v, want 48h", cfg.SolverTimeout)
 	}
 }
+
+func TestProcessEnvFallback(t *testing.T) {
+	t.Setenv("MEME_ENV_FILE", filepath.Join(t.TempDir(), "absent.env"))
+	t.Setenv("PORT", "9191")
+	t.Setenv("EXEC", "true")
+	t.Setenv("API_KEY", "k")
+	t.Setenv("SOLVER_TIMEOUT", "2h")
+	cfg, err := ParseArgs(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Addr != ":9191" || !cfg.Exec || cfg.APIKey != "k" || cfg.SolverTimeout != 2*time.Hour {
+		t.Fatalf("process env not honored: %+v", cfg)
+	}
+	// A flag still wins over the process environment.
+	cfg, _ = ParseArgs([]string{"-addr", ":1"})
+	if cfg.Addr != ":1" {
+		t.Fatalf("flag should win, got %q", cfg.Addr)
+	}
+}

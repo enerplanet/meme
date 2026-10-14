@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/enerplanet/meme/internal/model"
@@ -153,7 +154,29 @@ func (s Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "job not found")
 		return
 	}
-	writeJSONResp(w, http.StatusOK, rec.View(true))
+	var win service.LogWindow
+	q := r.URL.Query()
+	if s := q.Get("since"); s != "" {
+		n, err := strconv.ParseInt(s, 10, 64)
+		if err != nil || n < 0 {
+			writeError(w, http.StatusBadRequest, "since must be a non-negative byte offset (log_offset from a previous poll)")
+			return
+		}
+		win.Since, win.HasSince = n, true
+	}
+	if s := q.Get("tail"); s != "" {
+		n, err := strconv.Atoi(s)
+		if err != nil || n <= 0 {
+			writeError(w, http.StatusBadRequest, "tail must be a positive number of lines")
+			return
+		}
+		win.Tail = n
+	}
+	if win.HasSince && win.Tail > 0 {
+		writeError(w, http.StatusBadRequest, "use either since or tail, not both")
+		return
+	}
+	writeJSONResp(w, http.StatusOK, rec.ViewWindow(win))
 }
 
 // handleResult streams the zip bundle once the job is done.

@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -75,6 +76,35 @@ func TestServerAsyncJobLifecycle(t *testing.T) {
 	}
 	if log, _ := status["log"].(string); !strings.Contains(log, "run 0") {
 		t.Errorf("status log missing run output: %q", log)
+	}
+
+	// partial log polls: ?tail= and ?since=<log_offset>
+	off, _ := status["log_offset"].(float64)
+	if off <= 0 {
+		t.Fatalf("status missing log_offset: %v", status["log_offset"])
+	}
+	tail := getJSON(t, srv.URL+"/jobs/"+id+"/status?tail=1")
+	if log, _ := tail["log"].(string); log == "" || strings.Count(strings.TrimSuffix(log, "\n"), "\n") != 0 {
+		t.Errorf("tail=1 should return one line, got %q", log)
+	}
+	if runs, _ := tail["runs"].([]any); len(runs) == 0 {
+		t.Error("tail=1 dropped the runs")
+	} else if run, _ := runs[0].(map[string]any); run["stdout"] != nil {
+		t.Error("tail=1 should leave out runs[].stdout (it repeats the log)")
+	}
+	since := getJSON(t, srv.URL+"/jobs/"+id+"/status?since="+strconv.Itoa(int(off)))
+	if log, _ := since["log"].(string); log != "" || since["log_offset"] != off {
+		t.Errorf("since=log_offset should return nothing new, got %q at %v", log, since["log_offset"])
+	}
+	for _, q := range []string{"since=-1", "tail=0", "tail=x", "since=0&tail=1"} {
+		resp, err := http.Get(srv.URL + "/jobs/" + id + "/status?" + q)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusBadRequest {
+			t.Errorf("status?%s = %d, want 400", q, resp.StatusCode)
+		}
 	}
 
 	// fetch zipped result bundle
@@ -256,6 +286,20 @@ func awaitDone(t *testing.T, base, id string) map[string]any {
 	}
 	t.Fatalf("job %s did not finish: %v", id, status)
 	return nil
+}
+
+func getJSON(t *testing.T, url string) map[string]any {
+	t.Helper()
+	resp, err := http.Get(url)
+	if err != nil {
+		t.Fatalf("GET %s: %v", url, err)
+	}
+	defer resp.Body.Close()
+	out := map[string]any{}
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		t.Fatalf("GET %s: decode: %v", url, err)
+	}
+	return out
 }
 
 func readExample(t *testing.T, name string) []byte {

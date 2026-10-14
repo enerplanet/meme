@@ -45,6 +45,9 @@ type RunResult struct {
 	// Contract is the target's normalized result contract (TEMPO's frozen
 	// shape), read from output/contract.json when the run's driver emits one.
 	Contract json.RawMessage `json:"contract,omitempty"`
+	// Streamed reports that the whole output already went to the job log
+	// line by line while the run executed (see StreamingRunner).
+	Streamed bool `json:"-"`
 }
 
 // Simulate validates, expands the sweep, and for each run emits + materializes +
@@ -88,7 +91,15 @@ func (o Orchestrator) Simulate(ctx context.Context, j *model.Job, name model.Tar
 			return results, warnings, fmt.Errorf("run %d plan: %w", i, err)
 		}
 		o.logf("run %d: %s", i, strings.Join(plan.Command, " "))
-		res := runner.Run(ctx, plan)
+		// Stream the solver's output into the job log as it prints, so a
+		// long solve shows progress in /jobs/{id}/status before it ends.
+		var res RunResult
+		if sr, ok := runner.(StreamingRunner); ok && o.Log != nil {
+			o.logf("run %d output:", i)
+			res = sr.RunStreaming(ctx, plan, o.Log)
+		} else {
+			res = runner.Run(ctx, plan)
+		}
 		res.Target = string(name)
 		res.Index = i
 		res.InputDir = dirs.InputDir
@@ -99,7 +110,7 @@ func (o Orchestrator) Simulate(ctx context.Context, j *model.Job, name model.Tar
 			res.Contract = json.RawMessage(raw)
 		}
 		o.logf("run %d: exit=%d", i, res.ExitCode)
-		if s := strings.TrimSpace(res.Stdout); s != "" {
+		if s := strings.TrimSpace(res.Stdout); s != "" && !res.Streamed {
 			o.logf("run %d output:\n%s", i, s)
 		}
 		if res.Error != "" {

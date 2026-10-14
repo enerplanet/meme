@@ -4,6 +4,7 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -20,6 +21,14 @@ import (
 // the solver instead of hanging the job forever.
 type Runner interface {
 	Run(ctx context.Context, p target.RunPlan) RunResult
+}
+
+// StreamingRunner is a Runner that can also hand the process output to a sink
+// line by line while it runs, so a long solve's progress reaches the job log
+// before the run ends.
+type StreamingRunner interface {
+	Runner
+	RunStreaming(ctx context.Context, p target.RunPlan, line func(string)) RunResult
 }
 
 // DryRunner returns the plan without executing anything — the default, so the
@@ -113,6 +122,60 @@ func (b *cappedBuffer) String() string {
 	return string(b.head) + truncationMarker(dropped) + string(tail)
 }
 
+// streamCap bounds how much output one run streams into the job log; past it
+// the sink gets a single notice and the head+tail capture takes over.
+const streamCap = 64 << 20
+
+// lineWriter splits written bytes into lines for a sink. Partial lines are
+// held until their newline (or Flush); the stdout and stderr pipe goroutines
+// share it, hence the mutex.
+type lineWriter struct {
+	mu        sync.Mutex
+	sink      func(string)
+	buf       []byte
+	sent      int
+	truncated bool
+}
+
+// Write implements io.Writer; it never fails.
+func (w *lineWriter) Write(p []byte) (int, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.buf = append(w.buf, p...)
+	for {
+		i := bytes.IndexByte(w.buf, '\n')
+		if i < 0 {
+			break
+		}
+		w.emit(w.buf[:i])
+		w.buf = w.buf[i+1:]
+	}
+	return len(p), nil
+}
+
+// Flush emits a trailing partial line.
+func (w *lineWriter) Flush() {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if len(w.buf) > 0 {
+		w.emit(w.buf)
+		w.buf = nil
+	}
+}
+
+func (w *lineWriter) emit(line []byte) {
+	if w.truncated {
+		return
+	}
+	if w.sent+len(line) > streamCap {
+		w.truncated = true
+		w.sink(fmt.Sprintf("...[live output capped at %d MiB; the run's head and tail follow when it ends]...", streamCap>>20))
+		return
+	}
+	w.sent += len(line) + 1
+	w.sink(string(bytes.TrimRight(line, "\r")))
+}
+
 // CommandRunner shells out to the plan's command and captures output. Timeout
 // (if > 0) bounds each run; an expired deadline or a cancelled context kills
 // the process group and surfaces as a non-zero run.
@@ -122,6 +185,14 @@ type CommandRunner struct {
 
 // Run implements Runner.
 func (c CommandRunner) Run(ctx context.Context, p target.RunPlan) RunResult {
+	return c.RunStreaming(ctx, p, nil)
+}
+
+// RunStreaming implements StreamingRunner: as Run, and additionally every
+// output line (stdout and stderr, as printed) goes to line while the process
+// runs. A nil line streams nothing. RunResult.Streamed reports whether the
+// whole output reached the sink.
+func (c CommandRunner) RunStreaming(ctx context.Context, p target.RunPlan, line func(string)) RunResult {
 	res := RunResult{Plan: p}
 	if len(p.Command) == 0 {
 		res.Error = "empty command"
@@ -142,6 +213,12 @@ func (c CommandRunner) Run(ctx context.Context, p target.RunPlan) RunResult {
 	stderr := newCappedBuffer(captureHead, captureTail)
 	cmd.Stdout = combined
 	cmd.Stderr = io.MultiWriter(combined, stderr)
+	var live *lineWriter
+	if line != nil {
+		live = &lineWriter{sink: line}
+		cmd.Stdout = io.MultiWriter(combined, live)
+		cmd.Stderr = io.MultiWriter(combined, stderr, live)
+	}
 	// The entrypoint (e.g. python run.py) spawns solver children that inherit
 	// the output pipes: killing only the direct child would leave a grandchild
 	// holding the pipe and block Wait forever. Run the command in its own
@@ -150,6 +227,10 @@ func (c CommandRunner) Run(ctx context.Context, p target.RunPlan) RunResult {
 	configureProcGroup(cmd)
 	cmd.WaitDelay = 3 * time.Second
 	err := cmd.Run()
+	if live != nil {
+		live.Flush()
+		res.Streamed = !live.truncated
+	}
 	res.Stdout = combined.String()
 	res.Stderr = stderr.String()
 	if ctxErr := ctx.Err(); ctxErr != nil {

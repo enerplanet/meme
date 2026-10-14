@@ -54,6 +54,7 @@ type Server struct {
 //	POST /convert?target=         emit native files synchronously
 //	POST /simulate?target=        submit an async job -> 202 {id, ...}
 //	GET  /jobs/{id}/status        job state + console log + per-run errors
+//	                              (?since=<log_offset> or ?tail=<lines> to fetch part of the log)
 //	GET  /jobs/{id}               zipped result bundle once finished
 //
 // ?target= accepts a single target ("pypsa"), a comma-separated list

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -216,6 +217,81 @@ func TestCommandRunnerSeparatesStderr(t *testing.T) {
 	}
 }
 
+// TestCommandRunnerStreamsLines: RunStreaming hands each output line (stdout
+// and stderr) to the sink while the process is still running, so a long solve
+// shows progress before it exits; a trailing partial line arrives at exit.
+func TestCommandRunnerStreamsLines(t *testing.T) {
+	var mu sync.Mutex
+	var lines []string
+	first := make(chan struct{})
+	sink := func(l string) {
+		mu.Lock()
+		defer mu.Unlock()
+		lines = append(lines, l)
+		if len(lines) == 1 {
+			close(first)
+		}
+	}
+	done := make(chan service.RunResult, 1)
+	go func() {
+		done <- service.CommandRunner{}.RunStreaming(context.Background(), target.RunPlan{
+			Command: []string{"sh", "-c", "echo one; echo two >&2; sleep 2; printf three"},
+		}, sink)
+	}()
+	select {
+	case <-first:
+	case res := <-done:
+		t.Fatalf("no line streamed before the process exited: %+v", res)
+	case <-time.After(5 * time.Second):
+		t.Fatal("no line streamed")
+	}
+	res := <-done
+	if res.ExitCode != 0 || !res.Streamed {
+		t.Fatalf("exit=%d streamed=%v err=%q", res.ExitCode, res.Streamed, res.Error)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	// stdout and stderr are separate pipes: order across them is not fixed.
+	got := append([]string(nil), lines...)
+	sort.Strings(got)
+	if strings.Join(got, ",") != "one,three,two" {
+		t.Errorf("streamed lines = %q", lines)
+	}
+	if !strings.Contains(res.Stdout, "three") {
+		t.Errorf("Stdout capture must still hold the output, got %q", res.Stdout)
+	}
+}
+
+// streamRunner is a StreamingRunner that prints two lines through the sink.
+type streamRunner struct{}
+
+func (streamRunner) Run(ctx context.Context, p target.RunPlan) service.RunResult {
+	return streamRunner{}.RunStreaming(ctx, p, nil)
+}
+
+func (streamRunner) RunStreaming(_ context.Context, p target.RunPlan, line func(string)) service.RunResult {
+	if line != nil {
+		line("solver progress 1")
+		line("solver progress 2")
+	}
+	return service.RunResult{Plan: p, Stdout: "solver progress 1\nsolver progress 2", Streamed: line != nil}
+}
+
+// TestExecutorStreamsRunOutput: with a StreamingRunner the job log carries the
+// run output once, as streamed — not again as a block after the run.
+func TestExecutorStreamsRunOutput(t *testing.T) {
+	ex := service.NewExecutor(streamRunner{}, 1)
+	rec := service.NewJobStore().Create(model.TargetPyPSA, t.TempDir(), nil)
+	ex.Execute(context.Background(), rec, loadSample(t), []model.Target{model.TargetPyPSA})
+	log := rec.LogText()
+	if n := strings.Count(log, "solver progress 1"); n != 1 {
+		t.Errorf("streamed line logged %d times, want once:\n%s", n, log)
+	}
+	if !strings.Contains(log, "run 0 output:\nsolver progress 1\nsolver progress 2\n") {
+		t.Errorf("streamed output missing from the job log:\n%s", log)
+	}
+}
+
 // TestJobLogOnDisk: the console log is written through to log.txt in the job
 // dir (not held in memory) and read back by LogText/View.
 func TestJobLogOnDisk(t *testing.T) {
@@ -260,6 +336,43 @@ func TestJobLogViewCapped(t *testing.T) {
 	}
 	if v := rec.View(true); v.Log != got {
 		t.Error("View(true) log must match LogText")
+	}
+}
+
+// TestJobLogWindow: ?since= pages through the log by byte offset, ?tail= keeps
+// the last lines, and both report the offset to poll from next.
+func TestJobLogWindow(t *testing.T) {
+	store := service.NewJobStore()
+	rec := store.Create(model.TargetPyPSA, t.TempDir(), nil)
+	rec.AppendLog("one")
+	rec.AppendLog("two")
+	rec.AppendLog("three")
+
+	full := rec.View(true)
+	if full.LogOffset == nil || *full.LogOffset != 14 {
+		t.Fatalf("View(true) log_offset = %v, want 14", full.LogOffset)
+	}
+	v := rec.ViewWindow(service.LogWindow{Since: 4, HasSince: true})
+	if v.Log != "two\nthree\n" || *v.LogOffset != 14 {
+		t.Errorf("since=4: log %q offset %d", v.Log, *v.LogOffset)
+	}
+	rec.AppendLog("four")
+	v = rec.ViewWindow(service.LogWindow{Since: *v.LogOffset, HasSince: true})
+	if v.Log != "four\n" || *v.LogOffset != 19 {
+		t.Errorf("since=14 after append: log %q offset %d", v.Log, *v.LogOffset)
+	}
+	v = rec.ViewWindow(service.LogWindow{Since: 99, HasSince: true})
+	if v.Log != "" || *v.LogOffset != 19 {
+		t.Errorf("since past the end: log %q offset %d", v.Log, *v.LogOffset)
+	}
+	for n, want := range map[int]string{1: "four\n", 2: "three\nfour\n", 9: "one\ntwo\nthree\nfour\n"} {
+		v = rec.ViewWindow(service.LogWindow{Tail: n})
+		if v.Log != want || *v.LogOffset != 19 {
+			t.Errorf("tail=%d: log %q offset %d", n, v.Log, *v.LogOffset)
+		}
+	}
+	if v = rec.ViewWindow(service.LogWindow{}); v.Log != "one\ntwo\nthree\nfour\n" {
+		t.Errorf("empty window must be the full view, got %q", v.Log)
 	}
 }
 

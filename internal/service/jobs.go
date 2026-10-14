@@ -117,9 +117,12 @@ type JobView struct {
 	Error    string      `json:"error,omitempty"`
 	Runs     []RunResult `json:"runs,omitempty"`
 	Log      string      `json:"log,omitempty"`
-	Created  *time.Time  `json:"created,omitempty"`
-	Started  *time.Time  `json:"started,omitempty"`
-	Finished *time.Time  `json:"finished,omitempty"`
+	// LogOffset is the byte offset just past the returned log text: pass it as
+	// ?since= on the next poll to fetch only what was appended.
+	LogOffset *int64     `json:"log_offset,omitempty"`
+	Created   *time.Time `json:"created,omitempty"`
+	Started   *time.Time `json:"started,omitempty"`
+	Finished  *time.Time `json:"finished,omitempty"`
 }
 
 // View returns a consistent snapshot. includeLog controls whether the (possibly
@@ -136,8 +139,105 @@ func (j *JobRecord) View(includeLog bool) JobView {
 	}
 	if includeLog {
 		v.Log = j.logText()
+		v.LogOffset = j.logSize()
 	}
 	return v
+}
+
+// LogWindow selects part of the console log for a status poll, so pollers
+// need not download the whole log every time.
+type LogWindow struct {
+	Since    int64 // byte offset to read from (with HasSince)
+	HasSince bool
+	Tail     int // last Tail lines (when > 0)
+}
+
+// ViewWindow is View(true) with the log limited to w: the bytes from w.Since
+// on (at most the same cap as the full view, so a poller pages forward via
+// LogOffset), or the last w.Tail lines. Runs' stdout/stderr (copies of what
+// the log holds) are left out. An empty window is View(true).
+func (j *JobRecord) ViewWindow(w LogWindow) JobView {
+	if !w.HasSince && w.Tail <= 0 {
+		return j.View(true)
+	}
+	v := j.View(false)
+	for i := range v.Runs {
+		// the run output is already in the log; a windowed poll stays small
+		v.Runs[i].Stdout, v.Runs[i].Stderr = "", ""
+	}
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	if w.HasSince {
+		v.Log, v.LogOffset = j.logSince(w.Since)
+	} else {
+		v.Log, v.LogOffset = j.logTail(w.Tail)
+	}
+	return v
+}
+
+func (j *JobRecord) logSize() *int64 {
+	fi, err := os.Stat(j.logPath)
+	if err != nil {
+		return nil
+	}
+	n := fi.Size()
+	return &n
+}
+
+func (j *JobRecord) logSince(off int64) (string, *int64) {
+	f, err := os.Open(j.logPath)
+	if err != nil {
+		return "", nil
+	}
+	defer f.Close()
+	fi, err := f.Stat()
+	if err != nil {
+		return "", nil
+	}
+	size := fi.Size()
+	if off < 0 {
+		off = 0
+	}
+	if off >= size {
+		return "", &size
+	}
+	n := min(size-off, int64(captureHead+captureTail))
+	b := make([]byte, n)
+	if _, err := f.ReadAt(b, off); err != nil && err != io.EOF {
+		return "", nil
+	}
+	end := off + n
+	return string(b), &end
+}
+
+func (j *JobRecord) logTail(lines int) (string, *int64) {
+	f, err := os.Open(j.logPath)
+	if err != nil {
+		return "", nil
+	}
+	defer f.Close()
+	fi, err := f.Stat()
+	if err != nil {
+		return "", nil
+	}
+	size := fi.Size()
+	n := min(size, int64(captureTail))
+	b := make([]byte, n)
+	if _, err := f.ReadAt(b, size-n); err != nil && err != io.EOF {
+		return "", nil
+	}
+	s := string(b)
+	// Walk back over `lines` newlines, ignoring the one that ends the log.
+	cut := len(strings.TrimSuffix(s, "\n"))
+	for i := 0; i < lines && cut > 0; i++ {
+		cut = strings.LastIndexByte(s[:cut], '\n')
+	}
+	if cut > 0 {
+		s = s[cut+1:]
+	} else if cut == 0 {
+		s = s[1:]
+	}
+	return s, &size
 }
 
 // LogText returns the console log (read from disk), capped to head + tail for

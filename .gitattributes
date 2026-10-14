@@ -42,3 +42,6 @@
 *.npz filter=lfs diff=lfs merge=lfs -text
 *.h5 filter=lfs diff=lfs merge=lfs -text
 *.onnx filter=lfs diff=lfs merge=lfs -text
+
+# Golden files are compared byte for byte (in Linux too): keep them LF on checkout
+internal/target/testdata/golden/** text eol=lf

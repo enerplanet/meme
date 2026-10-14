@@ -2631,6 +2631,14 @@
               "description": "Solver threads (0 = solver default).",
               "x-go": "Solver.Threads"
             },
+            "run_timeout": {
+              "type": "string",
+              "examples": [
+                "48h"
+              ],
+              "description": "The service's wall-clock budget for each run of this job, as a Go duration (\"90m\", \"48h\"). Replaces the server's SOLVER_TIMEOUT default, capped at its MAX_SOLVER_TIMEOUT (default 168h). Not passed to the solver: the service kills the run when it expires.",
+              "x-go": "Solver.RunTimeout"
+            },
             "options": {
               "type": "object",
               "additionalProperties": true,

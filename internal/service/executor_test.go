@@ -123,6 +123,27 @@ func TestCommandRunnerTimeout(t *testing.T) {
 	}
 }
 
+// TestCommandRunnerJobTimeout: a job's own run_timeout replaces the default
+// budget in both directions, and MaxTimeout caps it.
+func TestCommandRunnerJobTimeout(t *testing.T) {
+	plan := target.RunPlan{Command: []string{"sleep", "1"}}
+	// a longer job budget lets a run outlive the server default
+	r := service.CommandRunner{Timeout: 100 * time.Millisecond}
+	if res := r.Run(service.WithRunTimeout(context.Background(), 5*time.Second), plan); res.ExitCode != 0 {
+		t.Errorf("run within the job's run_timeout must succeed, got exit=%d err=%q", res.ExitCode, res.Error)
+	}
+	// MaxTimeout caps the job's budget
+	r = service.CommandRunner{Timeout: 100 * time.Millisecond, MaxTimeout: 200 * time.Millisecond}
+	if res := r.Run(service.WithRunTimeout(context.Background(), time.Hour), plan); !res.TimedOut {
+		t.Errorf("run_timeout above MaxTimeout must be capped, got exit=%d err=%q", res.ExitCode, res.Error)
+	}
+	// a shorter job budget applies too
+	r = service.CommandRunner{Timeout: time.Hour}
+	if res := r.Run(service.WithRunTimeout(context.Background(), 100*time.Millisecond), plan); !res.TimedOut {
+		t.Errorf("a shorter run_timeout must apply, got exit=%d err=%q", res.ExitCode, res.Error)
+	}
+}
+
 // TestCommandRunnerContextCancel: server shutdown (context cancellation) kills
 // the solver process instead of leaking it.
 func TestCommandRunnerContextCancel(t *testing.T) {

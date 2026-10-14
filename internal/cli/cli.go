@@ -36,6 +36,9 @@ type Config struct {
 	EnvLoaded   bool     // whether that file existed and was read
 	// SolverTimeout bounds each solver run (SOLVER_TIMEOUT / -solver-timeout).
 	SolverTimeout time.Duration
+	// MaxSolverTimeout caps a job's own experiment.solver.run_timeout
+	// (MAX_SOLVER_TIMEOUT / -max-solver-timeout); never below SolverTimeout.
+	MaxSolverTimeout time.Duration
 }
 
 // Parse resolves configuration from os.Args, exiting the process on a flag
@@ -92,10 +95,22 @@ func ParseArgs(args []string) (Config, error) {
 		timeoutDefault = d
 	}
 	solverTimeout := fs.Duration("solver-timeout", timeoutDefault, "per-run solver time budget (e.g. 30m, 12h); SPORES ensembles and full-year models need hours")
+	maxDefault := 7 * 24 * time.Hour
+	if v := get("MAX_SOLVER_TIMEOUT", ""); v != "" {
+		d, err := time.ParseDuration(v)
+		if err != nil {
+			return Config{}, fmt.Errorf("MAX_SOLVER_TIMEOUT: %w", err)
+		}
+		maxDefault = d
+	}
+	maxSolverTimeout := fs.Duration("max-solver-timeout", maxDefault, "ceiling for a job's own experiment.solver.run_timeout (never below -solver-timeout)")
 	corsOrigins := fs.String("cors-origins", get("CORS_ORIGINS", ""), `comma-separated browser origins allowed via CORS: exact origins, "*", or subdomain wildcards like https://*.example.com (default: CORS disabled)`)
 
 	if err := fs.Parse(args); err != nil {
 		return Config{}, err
+	}
+	if *maxSolverTimeout < *solverTimeout {
+		*maxSolverTimeout = *solverTimeout
 	}
 	return Config{
 		Addr:        *addr,
@@ -106,7 +121,8 @@ func ParseArgs(args []string) (Config, error) {
 		EnvFile:     *envFile,
 		EnvLoaded:   loaded,
 
-		SolverTimeout: *solverTimeout,
+		SolverTimeout:    *solverTimeout,
+		MaxSolverTimeout: *maxSolverTimeout,
 	}, nil
 }
 

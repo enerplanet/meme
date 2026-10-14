@@ -93,12 +93,17 @@ func (o Orchestrator) Simulate(ctx context.Context, j *model.Job, name model.Tar
 		o.logf("run %d: %s", i, strings.Join(plan.Command, " "))
 		// Stream the solver's output into the job log as it prints, so a
 		// long solve shows progress in /jobs/{id}/status before it ends.
+		runCtx := ctx
+		if d := run.Job.Experiment.Solver.RunTimeoutDuration(); d > 0 {
+			o.logf("run %d: job run_timeout %s", i, d)
+			runCtx = WithRunTimeout(ctx, d)
+		}
 		var res RunResult
 		if sr, ok := runner.(StreamingRunner); ok && o.Log != nil {
 			o.logf("run %d output:", i)
-			res = sr.RunStreaming(ctx, plan, o.Log)
+			res = sr.RunStreaming(runCtx, plan, o.Log)
 		} else {
-			res = runner.Run(ctx, plan)
+			res = runner.Run(runCtx, plan)
 		}
 		res.Target = string(name)
 		res.Index = i

@@ -177,3 +177,23 @@ func TestProcessEnvFallback(t *testing.T) {
 		t.Fatalf("flag should win, got %q", cfg.Addr)
 	}
 }
+
+// MAX_SOLVER_TIMEOUT / -max-solver-timeout cap a job's run_timeout (default
+// 7 days) and never sit below the default budget.
+func TestParseArgsMaxSolverTimeout(t *testing.T) {
+	t.Setenv("MEME_ENV_FILE", filepath.Join(t.TempDir(), "absent.env"))
+	cfg, err := ParseArgs(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.MaxSolverTimeout != 7*24*time.Hour {
+		t.Errorf("default max solver timeout: got %v, want 168h", cfg.MaxSolverTimeout)
+	}
+	t.Setenv("MAX_SOLVER_TIMEOUT", "48h")
+	if cfg, _ = ParseArgs(nil); cfg.MaxSolverTimeout != 48*time.Hour {
+		t.Errorf("env MAX_SOLVER_TIMEOUT: got %v, want 48h", cfg.MaxSolverTimeout)
+	}
+	if cfg, _ = ParseArgs([]string{"-solver-timeout", "72h"}); cfg.MaxSolverTimeout != 72*time.Hour {
+		t.Errorf("max below -solver-timeout must be raised to it, got %v", cfg.MaxSolverTimeout)
+	}
+}

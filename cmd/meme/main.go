@@ -42,8 +42,8 @@ func main() {
 
 	var runner service.Runner
 	if cfg.Exec {
-		runner = service.CommandRunner{Timeout: cfg.SolverTimeout}
-		log.Printf("solver timeout per run: %s", cfg.SolverTimeout)
+		runner = service.CommandRunner{Timeout: cfg.SolverTimeout, MaxTimeout: cfg.MaxSolverTimeout}
+		log.Printf("solver timeout per run: %s (a job's run_timeout may raise it to %s)", cfg.SolverTimeout, cfg.MaxSolverTimeout)
 	}
 	store := service.NewJobStore()
 	store.StartGC(jobCtx, jobTTL, gcInterval)

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"math"
 	"sort"
+	"time"
 )
 
 // MaxSweepRuns caps how many runs a sweep may expand into (the product of
@@ -25,6 +26,21 @@ type Solver struct {
 	MIPGap    *float64       `json:"mip_gap,omitempty"`    // relative MIP optimality gap
 	Threads   *int           `json:"threads,omitempty"`    // 0/absent = solver default
 	Options   map[string]any `json:"options,omitempty"`
+	// RunTimeout is the service's wall-clock budget for each run of this job
+	// (a Go duration such as "48h"), replacing the server's SOLVER_TIMEOUT
+	// default up to its MAX_SOLVER_TIMEOUT ceiling. Unlike TimeLimit it is not
+	// passed to the solver: the service kills the run when it expires.
+	RunTimeout string `json:"run_timeout,omitempty"`
+}
+
+// RunTimeoutDuration parses RunTimeout; 0 when unset or invalid (Validate
+// rejects invalid values).
+func (s Solver) RunTimeoutDuration() time.Duration {
+	d, err := time.ParseDuration(s.RunTimeout)
+	if err != nil || d <= 0 {
+		return 0
+	}
+	return d
 }
 
 // OperateOptions configures mode "operate" (receding-horizon dispatch).
@@ -349,6 +365,11 @@ func (e *Experiment) Validate() error {
 		}
 		if s.Threads != nil && *s.Threads < 0 {
 			add("experiment.solver.threads must not be negative")
+		}
+		if s.RunTimeout != "" {
+			if d, err := time.ParseDuration(s.RunTimeout); err != nil || d <= 0 {
+				add("experiment.solver.run_timeout %q must be a positive duration such as \"48h\"", s.RunTimeout)
+			}
 		}
 	}
 	for i, sc := range e.Scenarios {

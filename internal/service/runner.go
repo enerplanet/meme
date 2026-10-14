@@ -177,10 +177,36 @@ func (w *lineWriter) emit(line []byte) {
 }
 
 // CommandRunner shells out to the plan's command and captures output. Timeout
-// (if > 0) bounds each run; an expired deadline or a cancelled context kills
-// the process group and surfaces as a non-zero run.
+// (if > 0) bounds each run unless the job asks for its own budget (see
+// WithRunTimeout), which MaxTimeout (if > 0) caps; an expired deadline or a
+// cancelled context kills the process group and surfaces as a non-zero run.
 type CommandRunner struct {
-	Timeout time.Duration
+	Timeout    time.Duration
+	MaxTimeout time.Duration
+}
+
+type runTimeoutKey struct{}
+
+// WithRunTimeout attaches a job's own per-run time budget (d > 0) to ctx,
+// replacing the runner's default Timeout for runs started with it.
+func WithRunTimeout(ctx context.Context, d time.Duration) context.Context {
+	if d <= 0 {
+		return ctx
+	}
+	return context.WithValue(ctx, runTimeoutKey{}, d)
+}
+
+// timeout is the budget for a run started with ctx: the job's own (capped at
+// MaxTimeout) or the default.
+func (c CommandRunner) timeout(ctx context.Context) time.Duration {
+	d, ok := ctx.Value(runTimeoutKey{}).(time.Duration)
+	if !ok {
+		return c.Timeout
+	}
+	if c.MaxTimeout > 0 && d > c.MaxTimeout {
+		return c.MaxTimeout
+	}
+	return d
 }
 
 // Run implements Runner.
@@ -199,9 +225,9 @@ func (c CommandRunner) RunStreaming(ctx context.Context, p target.RunPlan, line 
 		res.ExitCode = -1
 		return res
 	}
-	if c.Timeout > 0 {
+	if d := c.timeout(ctx); d > 0 {
 		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, c.Timeout)
+		ctx, cancel = context.WithTimeout(ctx, d)
 		defer cancel()
 	}
 	cmd := exec.CommandContext(ctx, p.Command[0], p.Command[1:]...)

@@ -331,6 +331,8 @@ def _spores(sds, inp, base_of, link_endpoints, results_nc_path):
             "target": lab.get("target"), "iteration": lab.get("iteration", n), "slack": slack,
             "cost": float(np.nansum(_monetary(d["cost"]).values)) if "cost" in d else None,
         }
+        if "chain" in lab:  # independent explore chains (spores_explore_chains)
+            entry["chain"] = lab["chain"]
         if "flow_cap" in d:
             entry["capacities"] = by_node_tech(_capacity(d["flow_cap"], inp, base_of))
         if "storage_cap" in d:

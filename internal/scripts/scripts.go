@@ -55,3 +55,12 @@ var CalliopeExtractContract string
 //
 //go:embed calliope_spores.py
 var CalliopeSpores string
+
+// CalliopeHighs is the HiGHS bridge for Calliope (pyomo's HiGHS plugins cannot
+// drive Calliope dev7's kernel model): it swaps the pyomo backend's solve for
+// an LP export solved with highspy. Written into the run dir as
+// highs_solver.py; calliope_run.py runs it in place of `calliope run`, and
+// calliope_spores.py imports it.
+//
+//go:embed calliope_highs.py
+var CalliopeHighs string

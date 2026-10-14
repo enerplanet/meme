@@ -26,16 +26,15 @@ const extraMathName = "additional_math"
 // the emission-limit default and the constraint IR's emissions variable.
 const emissionCostClass = "co2"
 
-// calliopeSolver picks the solver name to emit. HiGHS cannot drive Calliope
-// dev7 (a pyomo/persistent-solver incompatibility), so "highs" (and the unset
-// default) map to cbc — a free, open-source solver that works with Calliope.
+// calliopeSolver picks the solver name to emit. The unset default stays cbc.
+// "highs" is emitted as is: pyomo's HiGHS plugins cannot drive Calliope dev7's
+// kernel model, so the run plan solves it through the highspy bridge
+// (scripts.CalliopeHighs) instead of the calliope CLI.
 func calliopeSolver(name string) string {
-	switch name {
-	case "", "highs":
+	if name == "" {
 		return "cbc"
-	default:
-		return name
 	}
+	return name
 }
 
 // Emitter writes a Calliope v0.7 model: a model.yaml with `config`,
@@ -449,6 +448,7 @@ func calliopeSolverOptions(s model.Solver) *yamlNode {
 	names := map[string][3]string{
 		"gurobi": {"TimeLimit", "MIPGap", "Threads"},
 		"cbc":    {"seconds", "ratioGap", "threads"},
+		"highs":  {"time_limit", "mip_rel_gap", "threads"},
 	}
 	keys, ok := names[calliopeSolver(s.Name)]
 	if !ok {

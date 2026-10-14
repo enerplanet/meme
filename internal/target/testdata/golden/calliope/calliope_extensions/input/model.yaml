@@ -73,7 +73,7 @@ data_tables:
     add_dims:
       parameters: sink_use_max
   load__sink_use_equals:
-    data: dem.csv
+    data: load__sink_use_equals.csv
     rows: timesteps
     columns: [techs, nodes]
     add_dims:

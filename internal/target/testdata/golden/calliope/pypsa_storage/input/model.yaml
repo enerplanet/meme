@@ -3,7 +3,7 @@ config:
     mode: base
     broadcast_input_data: true
   solve:
-    solver: cbc
+    solver: highs
 techs:
   batt:
     base_tech: storage

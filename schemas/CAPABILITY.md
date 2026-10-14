@@ -217,8 +217,8 @@ storage (`Storage_Battery`) map canonically. Any other non-demand tech is
 | `reporting` | ⚠ `output_dir` service-managed | ✓ `save_logs`, `shadow_prices` | ✓ `case_name` | |
 | `scenarios` | ✓ (stochastic mode) | ✗ | ✗ | |
 | `sweep` | ✓ | ✓ | ✓ | orchestrator-level: N independent runs, any target |
-| `solver.name` | ✓ highs (default) / cbc / glpk / gurobi | ✓ cbc (default; `highs` → cbc with warning) | ✓ glpk (fixed) | |
-| `solver.time_limit/mip_gap/threads` | ✓ mapped per solver (highs/gurobi/cbc; else ⚠) | ✓ mapped (gurobi/cbc; else ⚠) | ✓ `mipgap`/`timelim` (s→h)/`threads` | |
+| `solver.name` | ✓ highs (default) / cbc / glpk / gurobi | ✓ cbc (default) / highs (highspy bridge) / gurobi | ✓ glpk (fixed) | |
+| `solver.time_limit/mip_gap/threads` | ✓ mapped per solver (highs/gurobi/cbc; else ⚠) | ✓ mapped (gurobi/cbc/highs; else ⚠) | ✓ `mipgap`/`timelim` (s→h)/`threads` | |
 | `solver.options` | ✓ legacy mode options (deprecated) | ✓ legacy mode options (deprecated) | ✓ legacy mode options (deprecated) | |
 | `custom_math` | — | ✓ render toggle for constraint IR | — | ratio/piecewise math renders regardless |
 | `experiment.native` | · | · | · | reserved |

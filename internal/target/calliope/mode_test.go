@@ -10,6 +10,8 @@ import (
 	"testing"
 
 	"github.com/enerplanet/meme/internal/model"
+	"github.com/enerplanet/meme/internal/target"
+	"github.com/enerplanet/meme/internal/target/calliope"
 )
 
 // A demand time series must materialize an actual CSV (referenced in
@@ -124,29 +126,54 @@ func TestCalliopeTimeSubset(t *testing.T) {
 	}
 }
 
-// HiGHS is not usable with Calliope; the emitter substitutes cbc and validation warns.
-func TestCalliopeSolverMapsHighsToCbc(t *testing.T) {
+// HiGHS is emitted as is (solved through the highspy bridge, not pyomo's
+// plugin), with the canonical solver fields mapped to HiGHS option names and no
+// substitution warning; an unset solver still defaults to cbc.
+func TestCalliopeSolverHighs(t *testing.T) {
 	j := loadSampleFor(t, model.TargetCalliope)
-	j.Experiment.Solver.Name = "highs"
+	tl, gap, th := 3600.0, 0.01, 8
+	j.Experiment.Solver = model.Solver{Name: "highs", TimeLimit: &tl, MIPGap: &gap, Threads: &th}
 	warns, err := validateFor(&j, model.TargetCalliope)
 	if err != nil {
 		t.Fatalf("validate: %v", err)
 	}
-	found := false
 	for _, w := range warns {
-		if strings.Contains(w, "highs") && strings.Contains(w, "cbc") {
-			found = true
+		if strings.Contains(w, "highs") || strings.Contains(w, "cbc") {
+			t.Errorf("unexpected solver warning: %q", w)
 		}
 	}
-	if !found {
-		t.Errorf("expected a highs->cbc warning, got %v", warns)
-	}
 	y := emitCalliope(t, j)
-	if !strings.Contains(y, "solver: cbc") {
-		t.Errorf("expected `solver: cbc` in model.yaml, got:\n%s", y)
+	for _, want := range []string{"solver: highs", "time_limit: 3600", "mip_rel_gap: 0.01", "threads: 8"} {
+		if !strings.Contains(y, want) {
+			t.Errorf("expected %q in model.yaml, got:\n%s", want, y)
+		}
 	}
-	if strings.Contains(y, "solver: highs") {
-		t.Errorf("highs must not be emitted for Calliope")
+	if strings.Contains(y, "solver: cbc") {
+		t.Errorf("highs must not be swapped for cbc")
+	}
+
+	j.Experiment.Solver = model.Solver{}
+	if y := emitCalliope(t, j); !strings.Contains(y, "solver: cbc") {
+		t.Errorf("unset solver: expected the cbc default, got:\n%s", y)
+	}
+}
+
+// A highs run writes the highspy bridge next to run.py and points the driver
+// at it; a cbc run keeps the bare `calliope run` CLI.
+func TestCalliopeHighsPlan(t *testing.T) {
+	for _, name := range []string{"highs", "cbc"} {
+		j := loadSampleFor(t, model.TargetCalliope)
+		j.Experiment.Solver.Name = name
+		run := t.TempDir()
+		dirs := target.RunDirs{RunDir: run, InputDir: filepath.Join(run, "input"), OutDir: filepath.Join(run, "output")}
+		if _, err := (calliope.Calliope{}).Plan(&j, filepath.Join(dirs.InputDir, "model.yaml"), dirs); err != nil {
+			t.Fatal(err)
+		}
+		_, statErr := os.Stat(filepath.Join(run, "highs_solver.py"))
+		cfg := strings.SplitN(readFile(t, run, "run.py"), "\n", 2)[0]
+		if hasDriver := strings.Contains(cfg, `"highs_driver":"highs_solver.py"`); hasDriver != (name == "highs") || (statErr == nil) != (name == "highs") {
+			t.Errorf("%s: highs_solver.py written=%v, CFG=%s", name, statErr == nil, cfg)
+		}
 	}
 }
 

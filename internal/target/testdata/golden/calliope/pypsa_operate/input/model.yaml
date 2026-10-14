@@ -3,7 +3,7 @@ config:
     mode: operate
     broadcast_input_data: true
   solve:
-    solver: cbc
+    solver: highs
   build:
     operate:
       window: 12h
@@ -30,7 +30,7 @@ nodes:
       load:
 data_tables:
   load__sink_use_equals:
-    data: dem.csv
+    data: load__sink_use_equals.csv
     rows: timesteps
     columns: [techs, nodes]
     add_dims:

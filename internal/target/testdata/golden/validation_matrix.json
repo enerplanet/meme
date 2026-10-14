@@ -167,7 +167,7 @@
   },
   "calliope_extensions.json": {
     "adopt-net0": {
-      "verdict": "error: transmission is not supported by target \"adopt-net0\" yet (adopt_net0 Networks are not mapped); model exchange via trade or nodes.\u003cn\u003e.native.adopt-net0"
+      "verdict": "error: transmission \"line\": efficiency, min_flow, emission_factor and energy_consumption are not mapped for adopt-net0; set them on the network via native.adopt-net0 (e.g. Performance.energyconsumption)"
     },
     "calliope": {
       "verdict": "ok"
@@ -178,7 +178,7 @@
   },
   "calliope_hub_node.json": {
     "adopt-net0": {
-      "verdict": "error: transmission is not supported by target \"adopt-net0\" yet (adopt_net0 Networks are not mapped); model exchange via trade or nodes.\u003cn\u003e.native.adopt-net0"
+      "verdict": "error: transmission \"l1\": adopt-net0 needs a positive distance"
     },
     "calliope": {
       "verdict": "ok"
@@ -300,7 +300,7 @@
   },
   "calliope_transmission.json": {
     "adopt-net0": {
-      "verdict": "error: transmission is not supported by target \"adopt-net0\" yet (adopt_net0 Networks are not mapped); model exchange via trade or nodes.\u003cn\u003e.native.adopt-net0"
+      "verdict": "error: transmission \"line\": efficiency, min_flow, emission_factor and energy_consumption are not mapped for adopt-net0; set them on the network via native.adopt-net0 (e.g. Performance.energyconsumption)"
     },
     "calliope": {
       "verdict": "ok"
@@ -316,8 +316,7 @@
     "calliope": {
       "verdict": "ok",
       "warnings": [
-        "experiment.solver.options.mga is deprecated; use experiment.alternatives (first-class fields win when both are set)",
-        "solver \"highs\" is not usable with Calliope; emitting cbc instead"
+        "experiment.solver.options.mga is deprecated; use experiment.alternatives (first-class fields win when both are set)"
       ]
     },
     "pypsa": {
@@ -343,10 +342,7 @@
       "verdict": "error: linear constraints is not supported by target \"adopt-net0\""
     },
     "calliope": {
-      "verdict": "ok",
-      "warnings": [
-        "solver \"highs\" is not usable with Calliope; emitting cbc instead"
-      ]
+      "verdict": "ok"
     },
     "pypsa": {
       "verdict": "ok"
@@ -357,10 +353,7 @@
       "verdict": "error: linear constraints is not supported by target \"adopt-net0\""
     },
     "calliope": {
-      "verdict": "ok",
-      "warnings": [
-        "solver \"highs\" is not usable with Calliope; emitting cbc instead"
-      ]
+      "verdict": "ok"
     },
     "pypsa": {
       "verdict": "ok"
@@ -371,10 +364,7 @@
       "verdict": "error: multi-port conversion (flows) is not supported by target \"adopt-net0\""
     },
     "calliope": {
-      "verdict": "ok",
-      "warnings": [
-        "solver \"highs\" is not usable with Calliope; emitting cbc instead"
-      ]
+      "verdict": "ok"
     },
     "pypsa": {
       "verdict": "ok"
@@ -385,10 +375,7 @@
       "verdict": "error: tech \"gas_src\" (supply) has no adopt_net0 database mapping (only pv/wind/heat_pump physics and storage map); model it via nodes.\u003cnode\u003e.native.adopt-net0 naming a database technology"
     },
     "calliope": {
-      "verdict": "ok",
-      "warnings": [
-        "solver \"highs\" is not usable with Calliope; emitting cbc instead"
-      ]
+      "verdict": "ok"
     },
     "pypsa": {
       "verdict": "ok"
@@ -410,10 +397,7 @@
       "verdict": "error: tech \"ccgt\" (supply) has no adopt_net0 database mapping (only pv/wind/heat_pump physics and storage map); model it via nodes.\u003cnode\u003e.native.adopt-net0 naming a database technology"
     },
     "calliope": {
-      "verdict": "ok",
-      "warnings": [
-        "solver \"highs\" is not usable with Calliope; emitting cbc instead"
-      ]
+      "verdict": "ok"
     },
     "pypsa": {
       "verdict": "ok"
@@ -424,10 +408,7 @@
       "verdict": "error: tech \"pv\" (supply) has no adopt_net0 database mapping (only pv/wind/heat_pump physics and storage map); model it via nodes.\u003cnode\u003e.native.adopt-net0 naming a database technology"
     },
     "calliope": {
-      "verdict": "ok",
-      "warnings": [
-        "solver \"highs\" is not usable with Calliope; emitting cbc instead"
-      ]
+      "verdict": "ok"
     },
     "pypsa": {
       "verdict": "ok"
@@ -440,8 +421,7 @@
     "calliope": {
       "verdict": "ok",
       "warnings": [
-        "experiment.solver.options.operate is deprecated; use experiment.operate (first-class fields win when both are set)",
-        "solver \"highs\" is not usable with Calliope; emitting cbc instead"
+        "experiment.solver.options.operate is deprecated; use experiment.operate (first-class fields win when both are set)"
       ]
     },
     "pypsa": {
@@ -456,10 +436,7 @@
       "verdict": "error: tech \"gas\" (supply) has no adopt_net0 database mapping (only pv/wind/heat_pump physics and storage map); model it via nodes.\u003cnode\u003e.native.adopt-net0 naming a database technology"
     },
     "calliope": {
-      "verdict": "ok",
-      "warnings": [
-        "solver \"highs\" is not usable with Calliope; emitting cbc instead"
-      ]
+      "verdict": "ok"
     },
     "pypsa": {
       "verdict": "ok"
@@ -481,10 +458,7 @@
       "verdict": "error: tech \"grid\" (supply) has no adopt_net0 database mapping (only pv/wind/heat_pump physics and storage map); model it via nodes.\u003cnode\u003e.native.adopt-net0 naming a database technology"
     },
     "calliope": {
-      "verdict": "ok",
-      "warnings": [
-        "solver \"highs\" is not usable with Calliope; emitting cbc instead"
-      ]
+      "verdict": "ok"
     },
     "pypsa": {
       "verdict": "ok"
@@ -495,10 +469,7 @@
       "verdict": "ok"
     },
     "calliope": {
-      "verdict": "ok",
-      "warnings": [
-        "solver \"highs\" is not usable with Calliope; emitting cbc instead"
-      ]
+      "verdict": "ok"
     },
     "pypsa": {
       "verdict": "ok",
@@ -520,13 +491,10 @@
   },
   "pypsa_transmission.json": {
     "adopt-net0": {
-      "verdict": "error: transmission is not supported by target \"adopt-net0\" yet (adopt_net0 Networks are not mapped); model exchange via trade or nodes.\u003cn\u003e.native.adopt-net0"
+      "verdict": "error: transmission \"line\": efficiency, min_flow, emission_factor and energy_consumption are not mapped for adopt-net0; set them on the network via native.adopt-net0 (e.g. Performance.energyconsumption)"
     },
     "calliope": {
-      "verdict": "ok",
-      "warnings": [
-        "solver \"highs\" is not usable with Calliope; emitting cbc instead"
-      ]
+      "verdict": "ok"
     },
     "pypsa": {
       "verdict": "ok"
@@ -539,7 +507,6 @@
     "calliope": {
       "verdict": "ok",
       "warnings": [
-        "solver \"highs\" is not usable with Calliope; emitting cbc instead",
         "transmission line_n1_n2: native.pypsa block is ignored when emitting for \"calliope\""
       ]
     },

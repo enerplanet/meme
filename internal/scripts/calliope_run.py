@@ -39,14 +39,21 @@ def _main():
     contract = CFG["contract"]
 
     here = os.path.dirname(os.path.abspath(__file__))
+    # Unbuffered children, so solver progress reaches the job log as it prints.
+    env = dict(os.environ, PYTHONUNBUFFERED="1")
     if CFG.get("spores_schedule"):
         # SPORES schedule (explore + minimise stages): the driver needs the
         # calliope API, so it runs under calliope's own interpreter.
         rc = subprocess.call([_calliope_python(), os.path.join(here, CFG["spores_driver"]),
-                              entry, netcdf, CFG["spores_schedule"], CFG["spores_labels"]])
+                              entry, netcdf, CFG["spores_schedule"], CFG["spores_labels"]], env=env)
+    elif CFG.get("highs_driver"):
+        # solver: highs — pyomo's HiGHS plugins cannot drive calliope dev7, so
+        # the bridge solves with highspy in place of the `calliope run` CLI.
+        rc = subprocess.call([_calliope_python(), os.path.join(here, CFG["highs_driver"]),
+                              entry, netcdf, csv], env=env)
     else:
         rc = subprocess.call(
-            ["calliope", "run", entry, "--save_netcdf", netcdf, "--save_csv", csv]
+            ["calliope", "run", entry, "--save_netcdf", netcdf, "--save_csv", csv], env=env
         )
     if rc != 0:
         sys.exit(rc)

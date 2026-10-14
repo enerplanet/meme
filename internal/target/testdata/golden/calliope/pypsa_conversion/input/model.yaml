@@ -6,7 +6,7 @@ config:
       additional_math: additional_math.yaml
     extra_math: [additional_math]
   solve:
-    solver: cbc
+    solver: highs
 techs:
   chp:
     base_tech: conversion

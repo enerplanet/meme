@@ -5,7 +5,7 @@
 # One image that carries everything needed end-to-end:
 #   * Go 1.22 toolchain  -> build the stdlib-only service and run `go test`
 #   * Python 3.12        -> the three frameworks the service emits for
-#   * PyPSA + HiGHS, Calliope 0.7 + CBC, AdOpT-NET0 + GLPK (all free solvers)
+#   * PyPSA + HiGHS, Calliope 0.7 + CBC/HiGHS, AdOpT-NET0 + GLPK (all free solvers)
 #
 # With all of the above on PATH, the service can run in real-execution mode
 # (`meme -exec`) so /simulate actually invokes the solvers, and integration
@@ -30,8 +30,8 @@ FROM python:3.12-slim-bookworm AS frameworks
 # System libraries the frameworks need at runtime:
 #   git            - some pip deps resolve VCS refs
 #   build-essential- native wheels that fall back to source
-#   coinor-cbc / glpk - primary solvers for Calliope and AdOpT-NET0
-#                    respectively (HiGHS covers PyPSA only)
+#   coinor-cbc / glpk - default solvers for Calliope and AdOpT-NET0
+#                    respectively (HiGHS covers PyPSA, and Calliope on request)
 #   libspatialindex - geo dep pulled in by pypsa/calliope
 RUN apt-get update && apt-get install -y --no-install-recommends \
         git \
@@ -67,7 +67,10 @@ RUN python -c "import importlib.metadata as m; import pypsa, adopt_net0, highspy
 print('pypsa', pypsa.__version__); \
 print('adopt_net0', m.version('adopt_net0')); \
 print('highspy OK')" \
-    && calliope --version
+    && calliope --version \
+    && /opt/calliope-venv/bin/python -c "import highspy; h = highspy.Highs(); h.setOptionValue('output_flag', False); \
+assert h.setOptionValue('solver', 'hipo') == highspy.HighsStatus.kOk, 'HiPO unavailable (highspy-extras)'; \
+print('highspy', h.version(), 'with HiPO')"
 
 # ---- Release binary ----
 FROM go AS build

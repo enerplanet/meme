@@ -6,7 +6,7 @@ config:
       additional_math: additional_math.yaml
     extra_math: [additional_math]
   solve:
-    solver: cbc
+    solver: highs
 techs:
   gas_src:
     base_tech: supply
@@ -21,7 +21,10 @@ techs:
     carrier_in: gas
     carrier_out: electricity
     flow_out_eff: 0.5
-    flow_cap_max: 1000
+    flow_cap_max:
+      data: 1000
+      index: gas
+      dims: carriers
     cost_flow_out:
       data: 5
       index: monetary

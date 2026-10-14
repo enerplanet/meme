@@ -171,13 +171,8 @@ func (Calliope) ValidateJob(j *model.Job) ([]string, error) {
 		}
 	}
 
-	// HiGHS cannot drive Calliope 0.7 (a pyomo/persistent-solver
-	// incompatibility); the emitter substitutes cbc.
-	if j.Experiment.Solver.Name == "highs" {
-		warns = append(warns, "solver \"highs\" is not usable with Calliope; emitting cbc instead")
-	}
 	if s := j.Experiment.Solver; calliopeSolverOptions(s) == nil && (s.TimeLimit != nil || s.MIPGap != nil || s.Threads != nil) {
-		warns = append(warns, fmt.Sprintf("solver %q: time_limit/mip_gap/threads are not mapped for this solver on calliope (mapped: gurobi, cbc); use config.solve.solver_options via native.calliope", s.Name))
+		warns = append(warns, fmt.Sprintf("solver %q: time_limit/mip_gap/threads are not mapped for this solver on calliope (mapped: gurobi, cbc, highs); use config.solve.solver_options via native.calliope", s.Name))
 	}
 	return warns, nil
 }
@@ -190,7 +185,9 @@ func (Calliope) Emit(j *model.Job, outDir string) (string, error) {
 // Plan drives Calliope via a generated run.py that solves the CLI (saving
 // netCDF + CSV into the output directory) and then extracts TEMPO's frozen
 // result contract into output/contract.json. extract_contract.py is written
-// alongside the driver and imported by it.
+// alongside the driver and imported by it. A highs run solves through
+// highs_solver.py (the highspy bridge) instead of the CLI; the SPORES driver
+// imports the same bridge.
 func (Calliope) Plan(j *model.Job, entrypoint string, dirs target.RunDirs) (target.RunPlan, error) {
 	cfgMap := map[string]string{
 		"entrypoint": entrypoint,
@@ -214,6 +211,12 @@ func (Calliope) Plan(j *model.Job, entrypoint string, dirs target.RunDirs) (targ
 		cfgMap["spores_schedule"] = schedPath
 		cfgMap["spores_driver"] = "spores_driver.py"
 		cfgMap["spores_labels"] = filepath.Join(dirs.OutDir, "spores_labels.json")
+	}
+	if calliopeSolver(j.Experiment.Solver.Name) == "highs" {
+		if err := os.WriteFile(filepath.Join(dirs.RunDir, "highs_solver.py"), []byte(scripts.CalliopeHighs), 0o644); err != nil {
+			return target.RunPlan{}, err
+		}
+		cfgMap["highs_driver"] = "highs_solver.py"
 	}
 	cfg, err := json.Marshal(cfgMap)
 	if err != nil {

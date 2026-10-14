@@ -28,6 +28,9 @@ services:
       - work:/data/work
     ports:
       - "${HOST_PORT:-80}:${PORT:-8080}"
+    # tmpfs for the HiGHS bridge's throwaway LP (~1 GiB for a full-year
+    # Calliope model); Docker's default /dev/shm is 64 MiB.
+    shm_size: ${SHM_SIZE:-16gb}
     stop_grace_period: 30s
     init: true
 

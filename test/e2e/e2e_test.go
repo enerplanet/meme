@@ -604,13 +604,20 @@ func TestE2ECrossTargetConsistency(t *testing.T) {
 
 // anyObjectiveFromLog extracts an objective value from whichever solver wrote
 // the log: the PyPSA runner's "objective X", CBC's "Optimal - objective value
-// X" (Calliope), or Pyomo's "Lower bound: X" (AdOpT/GLPK).
+// X" (Calliope), the Calliope HiGHS bridge's "HiGHS: solve N: optimal,
+// objective X, ...", or Pyomo's "Lower bound: X" (AdOpT/GLPK).
 func anyObjectiveFromLog(log string) (float64, bool) {
 	if f, ok := objectiveFromLog(log); ok {
 		return f, true
 	}
 	for _, line := range strings.Split(log, "\n") {
 		s := strings.TrimSpace(line)
+		if _, rest, ok := strings.Cut(s, ": optimal, objective "); ok && strings.HasPrefix(s, "HiGHS: solve ") {
+			v, _, _ := strings.Cut(rest, ",")
+			if f, err := strconv.ParseFloat(strings.TrimSpace(v), 64); err == nil {
+				return f, true
+			}
+		}
 		if rest, ok := strings.CutPrefix(s, "Optimal - objective value "); ok {
 			if f, err := strconv.ParseFloat(strings.TrimSpace(rest), 64); err == nil {
 				return f, true

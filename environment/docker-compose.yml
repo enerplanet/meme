@@ -17,6 +17,7 @@ services:
       context: ..
       dockerfile: environment/Dockerfile
     image: ${IMAGE_TAG:-meme-env:latest}
+    restart: unless-stopped
     working_dir: /src
     environment:
       # Unified vars, consumed by the Makefile's run target (?= lets the

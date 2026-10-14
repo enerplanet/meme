@@ -26,7 +26,7 @@ curl -s -X POST 'localhost:8080/convert?target=calliope' \
      -d @examples/calliope_full.json | jq . # emit the native model to disk
 ```
 
-**Real solvers in Docker** (PyPSA/HiGHS, Calliope/CBC, AdOpT/GLPK — nothing to
+**Real solvers in Docker** (PyPSA/HiGHS, Calliope/CBC or HiGHS, AdOpT/GLPK — nothing to
 install on the host beyond Docker):
 
 ```bash
@@ -604,7 +604,7 @@ and piecewise math render regardless (they are model physics, not user math).
 | `emission_limits` | `global_constraints.csv` (primary_energy) | `additional_math.yaml` constraint on `cost[costs=co2]` | emission targets |
 | `constraints` (linear IR) | GlobalConstraint or `_constraints.json` | `additional_math.yaml`, registered via `config.init.math_paths`/`extra_math` (`sum(flow_cap[techs=pv]) <= …`, one member per dim; multi-member sets expand into a sum) | constraints |
 | `experiment.mode` | (native) | `config.init.mode`: plan→`base`, operate→`operate`, alternatives→`spores` (+ `config.solve.spores`) | `ConfigModel.optimization`: pareto→`objective: pareto`, monte_carlo→`monte_carlo.N > 0`; `time_aggregation: typical_days`→`typicaldays.N`. Tunable via `experiment.solver.options` (`monte_carlo.N`, `pareto.points`) |
-| `experiment.solver` | passed through (e.g. `highs`) | `highs`→`cbc` (HiGHS can't drive Calliope 0.7) | forced `glpk` (adopt supports only gurobi/glpk) |
+| `experiment.solver` | passed through (e.g. `highs`) | passed through (unset → `cbc`); `highs` solves via the highspy bridge (`highs_solver.py`) | forced `glpk` (adopt supports only gurobi/glpk) |
 | `technology` (mapped) | `Generator`/`Link`/`StorageUnit` | `techs` entry | named database tech (`Storage_Battery`, `Photovoltaic`, …) copied + economics-overridden |
 | `trade` | market generators (import/export) | supply/demand + `flow_export` | `carrier_data` import/export columns |
 | `performance: physics` | precomputed → `p_max_pu` + `_performance.json` | precomputed series | native tech type (pvlib, hydro, COP) |
@@ -618,8 +618,8 @@ and piecewise math render regardless (they are model physics, not user math).
   pinned framework versions (see `environment/`): PyPSA (HiGHS), Calliope 0.7
   (cbc, incl. plan/SPORES/custom-math/emission-limits), AdOpT-NET0.
 - **Calliope specifics** (all verified against `calliope==0.7.0.dev7`):
-  - Run mode and solver names are translated to Calliope's own (`plan→base`,
-    `alternatives→spores`; `highs→cbc`). `experiment.custom_math` renders the
+  - Run mode names are translated to Calliope's own (`plan→base`,
+    `alternatives→spores`); an unset solver defaults to `cbc`. `experiment.custom_math` renders the
     linear-constraint IR to `additional_math.yaml`, registered via
     `config.init.math_paths` + `extra_math`.
   - Emissions: `co2_intensity` on a consumed carrier becomes a per-tech
@@ -629,10 +629,130 @@ and piecewise math render regardless (they are model physics, not user math).
     a tech burning two different co2 carriers would need per-carrier indexing
     (which clashes with Calliope's built-in cost expression).
   - Inline time series are materialized to data-table CSVs at emit time.
-- **HiGHS + Calliope is unsupported** — no pyomo version bridges calliope dev7's
-  solver interface (ASL needs a nonexistent binary; the persistent/appsi paths
-  hit an `add_block`/`solver_io` bug). Use `cbc` for Calliope (free/OSS); HiGHS
-  remains the solver for PyPSA. pyomo is pinned to 6.8.2 in the Calliope venv.
+- **HiGHS + Calliope runs through a bridge** — no pyomo version's HiGHS plugin
+  can drive calliope dev7's kernel model (ASL needs a nonexistent binary; the
+  persistent/appsi paths hit an `add_block`/`solver_io` bug). So `solver: highs`
+  bypasses pyomo's solver layer: `highs_solver.py` (written into the run dir)
+  replaces the pyomo backend's solve step. The first solve writes the built
+  model as an LP file and reads it into one highspy model that is kept for the
+  run; it solves, loads the primal values (and duals, when `shadow_prices` are
+  tracked) back onto the pyomo variables, and Calliope post-processes as
+  usual. Plain runs, Calliope's native SPORES loop and the SPORES minimise
+  stages all go through it.
+  - SPORES iterations update the kept model in place instead of rewriting the
+    LP: the objective is recomputed, and only constraints/variable bounds that
+    Calliope rebuilt or whose parameters changed are refreshed (the slacked
+    cost row, in practice). Changes it cannot express in place (rebuilt or
+    fixed variables, piecewise constraints) rewrite the LP; the job log says
+    which (`HiGHS: solve N: model updated in place …` / `LP written …` /
+    `rewriting the LP (…)`).
+  - Defaults: IPX (`solver: ipx`), HiGHS's interior-point solver. HiPO
+    (`solver: hipo`, a Cholesky-based interior-point solver that needs the
+    `highspy-extras` package, in the image) is opt-in: on the Italy
+    full-year LP it takes ~24–35 s per iteration where IPX takes 300–650 s,
+    but it stagnates after 65–120 iterations at a 2–30 % gap, and HiGHS's
+    fallback (IPX from that point, then dual simplex from scratch) made no
+    progress in 14 h. IPX converges, slowly (gap 1e-2 after 140 iterations,
+    11 h). On the one-week model IPX is the faster of the two (21–34 s per
+    solve vs 25–36 s). Note that in HiGHS 1.15 `solver: ipm` means HiPO
+    when `highspy-extras` is installed. Both run essentially on one core
+    whatever `threads` says, so parallelism comes from `spores_workers`
+    below.
+  - Crossover: on for the cost-optimal solve (exact vertex results; the
+    objective matches CBC to the cent), off for SPORES solves
+    (`spores_run_crossover: "off"`, any objective other than the first
+    solve's). SPORES only needs near-optimal capacities, and on the week
+    model crossover took 1.2k–13.8k iterations per SPORE. Without it the
+    objective stays within 1e-8 (relative) and minimised targets reach 0.00
+    GW; per-node capacities differ, but they also differ between two runs
+    with crossover (IPX vs HiPO: up to 11.7 GW on one node at identical
+    cost) because the LPs are degenerate. Set `spores_run_crossover: "on"` to
+    get vertices.
+  - If an interior-point solve stalls (model status Unknown; seen once on a
+    week-model minimise SPORE without crossover), the bridge retries with
+    `user_bound_scale` + 2, then with IPX plus crossover; the job log says so
+    (`… Unknown with hipo …; solving again with …`).
+  - `time_limit`/`mip_gap`/`threads` map to HiGHS options. Any HiGHS option
+    can be set through `config.solve.solver_options` (native.calliope). MILP
+    math uses HiGHS branch-and-bound, and piecewise curves are built in
+    pyomo's incremental (binary) form because HiGHS has no SOS support.
+  - Parallel SPORES minimise stages: the driver forks worker processes right
+    after the LP is loaded (before HiGHS starts any threads). How many is
+    `spores_workers` in `config.solve.solver_options` (model-level
+    `native.calliope`: `{"config": {"solve": {"solver_options":
+    {"spores_workers": N}}}}`): `"auto"` (the default) fits as many as the
+    available memory allows (MemAvailable, or the cgroup limit), budgeting the
+    parent's resident size at that moment per worker, which is above a
+    worker's measured private memory (week: 0.5–0.9 GiB vs 2.6 GiB; full year:
+    a HiPO solve peaks at ~11 GiB vs ~42 GiB), capped at the target count and
+    the spare cores; `N` fixes the count; `1` runs the targets serially after
+    the explore iterations. The `SPORES: … worker process(es)` log line shows
+    the sizing. Each minimise target depends only on the
+    cost-optimal solution and its own earlier runs, so after the baseline
+    solve the workers take the targets (longest first) while the parent runs
+    Calliope's explore iterations; the results are merged in schedule order.
+    Workers share the built model copy-on-write. Each one's memory beyond
+    the parent's is logged as `private … GiB` on its `HiGHS: [wN] solve …`
+    lines, and its HiGHS log goes to `output/highs_wN.log`. The explore
+    iterations stay sequential (each depends on the previous one) unless
+    split into chains (next point).
+  - Independent explore chains (opt-in, changes the method):
+    `spores_explore_chains: K` splits the explore iterations into K chains of
+    about equal length that run in parallel with the minimise targets. Chain
+    0 is Calliope's native loop, shortened; chain c > 0 starts from the
+    cost-optimal scores plus a reproducible random score (uniform 0..1, seed
+    c) on every tracked node/tech, so the chains head in different
+    directions, then accumulates its own SPOREs' relative-deployment scores
+    as the native loop does. A chain avoids only its own earlier SPOREs, not
+    the other chains'. Each explore SPORE carries `chain` in the contract and
+    a global `iteration` number.
+  - Coarser time step: `experiment.time_aggregation: {"method": "resample",
+    "resolution": "3H"}` resamples the whole run (Calliope
+    `config.init.resample`), including the cost-optimal solve that sets the
+    SPORES cost slack. The slack must come from the same model, so an hourly
+    cost-optimal reference is a separate `plan` job.
+  - `keep_lp: true` in `solver_options` writes the LP exactly as HiGHS solves
+    it (after the placeholder handling below) to
+    `output/highs_solveN.mps`, with the options it was solved with in
+    `highs_solveN.opt`, so it can be benchmarked directly
+    (`highs --options_file highs_solve1.opt highs_solve1.mps`). The full-year
+    Italy LP is ~1.5 GB as MPS.
+  - Every `HiGHS: solve N: optimal …` line carries the wall time and the
+    process's peak RSS. The throwaway LP is written to `/dev/shm` when it
+    has ≥ 8 GiB free (the compose files set `shm_size: 16gb`; Docker's
+    default is 64 MiB), else to the run directory.
+  - Placeholder bounds: "unlimited" encoded as a huge number (e.g. a
+    transmission link with `existing: 1e12`) wrecks the IPM's scaling. Columns
+    fixed at |v| ≥ 1e10 are substituted out exactly (and so are columns a
+    singleton equality row then pins, such as Calliope's `link_flow_cap`);
+    remaining bounds ≥ 1e10 are relaxed to infinity. After the solve the
+    relaxed bounds are checked against the solution; if one would have bound,
+    the originals are restored and the solve repeated, so results never
+    change. The job log lists what was substituted/relaxed. Set
+    `placeholder_bound` in `solver_options` to change the 1e10 cutoff (0 turns
+    it off). Experimental: `placeholder_clamp: "auto"` (or a number) relaxes
+    to ± the largest real bound instead of infinity, so lossless, costless
+    links don't leave free columns (an unbounded optimal face, which can stall
+    an interior-point solve); a solution at the clamp is treated like a
+    binding relaxation. On the week model it removed a SPORES stall but slowed
+    the cost-optimal solve, so it is off by default.
+  - `user_bound_scale` (a power-of-two scaling of all bounds, exact) is set
+    from the largest remaining bound so it ends ≤ 1e6. Calliope bounds in
+    kW/EUR reach 1e8–1e9, and at that size IPX stalled ("no progress") short
+    of crossover and HiGHS fell back to simplex from scratch. On the Italy
+    week model this cut the cost-optimal solve from 65 s to 27 s. Setting
+    `user_bound_scale` in `solver_options` overrides it.
+  - The HiGHS log goes to `output/highs.log` and into the job log as it runs.
+    `cbc` behaves as before. pyomo stays pinned to 6.8.2 in the Calliope venv.
+- **Live job log** — with `-exec`, each run's console output is appended to
+  the job's `log.txt` line by line as the solver prints it, so
+  `GET /jobs/{id}/status` shows progress during a long solve (live streaming
+  stops after 64 MiB per run; then the run's head and tail are logged when it
+  ends). Pollers can fetch only the new part: every status carries
+  `log_offset`; pass it back as `?since=<log_offset>` to get just what was
+  appended since (up to 1 MiB per poll, paging forward), or use `?tail=<N>`
+  for the last N lines. Both also leave out `runs[].stdout`/`stderr`, which
+  repeat what the log holds.
 - **Runner commands** assume the Python tools are on PATH; `DryRunner` is the
   default so the service runs with no Python installed (`-exec` switches to
   `CommandRunner`). The `environment/` image provides all three frameworks + cbc.

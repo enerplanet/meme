@@ -9,8 +9,8 @@ A single image that carries everything needed to **build**, **test**, and
 | Python 3.12 | host for the frameworks (AdOpT-NET0 requires ≥ 3.12) |
 | **PyPSA 1.2.4**, **AdOpT-NET0 0.1.10** | in the system Python (driven via the generated `run.py`) |
 | **Calliope 0.7.0.dev7** | in its own venv (`/opt/calliope-venv`; its pins conflict with the above) — only the `calliope` CLI is exposed on `PATH` |
-| **HiGHS** (`highspy`) | solves PyPSA (`solver.name: "highs"`, the default) |
-| **CBC** (apt `coinor-cbc`) | solves Calliope — HiGHS cannot drive Calliope 0.7.dev7 (pyomo persistent-interface bug), so `highs` is mapped to `cbc` with a warning |
+| **HiGHS** (`highspy`) | solves PyPSA (`solver.name: "highs"`, the default) and Calliope with `solver.name: "highs"` (through the highspy bridge, not pyomo's plugin). The Calliope venv also has `highspy-extras`, which enables HiGHS's HiPO interior-point solver (opt-in, `solver: hipo` in `solver_options`) |
+| **CBC** (apt `coinor-cbc`) | solves Calliope by default (unset `solver.name`) and with `solver.name: "cbc"` |
 | **GLPK** (apt `glpk-utils`) | solves AdOpT-NET0 |
 
 With all of the above on `PATH`, the service runs in real-execution mode
@@ -75,6 +75,8 @@ compose or invoke the binary directly with `meme -env-file environment/.env.dev`
 | `API_KEY` | *(unset)* | *(unset)* | require this key in every request payload; unset = auth off | compose + API |
 | `CORS_ORIGINS` | *(unset)* | *(unset)* | browser origins allowed via CORS, comma-separated (`*` and `https://*.sub` wildcards); unset = CORS off | compose + API |
 | `IMAGE_TAG` | `meme-env:dev` | `meme-env:prod` | image tag | compose |
+| `SOLVER_TIMEOUT` | *(unset: 10m)* | 72h | wall-clock budget per solver run; a job can set its own with `experiment.solver.run_timeout` (e.g. `"48h"`) | API |
+| `MAX_SOLVER_TIMEOUT` | *(unset: 168h)* | *(unset: 168h)* | ceiling for a job's `run_timeout` (never below `SOLVER_TIMEOUT`) | API |
 
 Select one with `ENV=` on any of this folder's Make targets (defaults to
 `dev`):
@@ -104,8 +106,9 @@ with `ENV=staging`.
   the emitters and run scripts are validated against exactly these versions —
   Calliope in particular must stay at `0.7.0.dev7` (dev8 renames data-table
   keys). Bump deliberately and re-run the E2E suite.
-- CBC and GLPK are not fallbacks — they are the primary solvers for Calliope
-  and AdOpT respectively (see the table above). Note the solvers themselves are
+- CBC and GLPK are not fallbacks — they are the default solvers for Calliope
+  and AdOpT respectively (see the table above). For large Calliope LPs, request
+  `highs` explicitly: its interior-point method is far faster than CBC. Note the solvers themselves are
   not exact-pinned: `highspy` is unversioned in the requirements and CBC/GLPK
   come from apt — only the three framework packages carry `==` pins.
 - The `api` service writes emitted files to `/src/.work`; add that to

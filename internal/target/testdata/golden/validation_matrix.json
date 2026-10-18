@@ -209,6 +209,17 @@
       "verdict": "ok"
     }
   },
+  "calliope_operate_trade.json": {
+    "adopt-net0": {
+      "verdict": "error: mode \"operate\" is not supported by target \"adopt-net0\""
+    },
+    "calliope": {
+      "verdict": "ok"
+    },
+    "pypsa": {
+      "verdict": "error: mode \"operate\" on pypsa dispatches fixed capacities, but transmission \"line\" is expandable"
+    }
+  },
   "calliope_piecewise.json": {
     "adopt-net0": {
       "verdict": "error: tech conv: piecewise part-load performance is not supported by target \"adopt-net0\" (no native piecewise-efficiency representation)"

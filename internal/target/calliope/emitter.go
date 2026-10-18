@@ -160,7 +160,13 @@ func (Emitter) Emit(j *model.Job, outDir string) (string, error) {
 		techs.set(id, tn)
 	}
 	for _, id := range emit.Keys(m.Transmission) {
-		techs.set(id, calliopeTransmission(m.Transmission[id], &anyCO2))
+		tn := calliopeTransmission(m.Transmission[id], &anyCO2)
+		if mode == model.ModeOperate {
+			if v, ok := fixedCap(m.Transmission[id].Capacity); ok {
+				tn.set("flow_cap", v)
+			}
+		}
+		techs.set(id, tn)
 	}
 
 	// trade -> market techs. Import: a supply tech selling the carrier at the
@@ -181,6 +187,11 @@ func (Emitter) Emit(j *model.Job, outDir string) (string, error) {
 			imp.set("carrier_out", tr.Carrier)
 			if f, ok := tr.Import.Limit.Reduce(); ok {
 				imp.set("flow_cap_max", f)
+				// Operate mode fixes the import at its limit, as applyOperateCaps does
+				// for technologies; without any fixed flow_cap Calliope aborts after solving.
+				if mode == model.ModeOperate {
+					imp.set("flow_cap", f)
+				}
 			}
 			// Price and emission factor share one costs-indexed parameter:
 			// monetary carries the price, the co2 class the emission factor.

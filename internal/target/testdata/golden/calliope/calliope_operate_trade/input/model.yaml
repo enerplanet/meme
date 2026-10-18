@@ -1,0 +1,45 @@
+config:
+  init:
+    mode: operate
+    broadcast_input_data: true
+  solve:
+    solver: cbc
+  build:
+    operate:
+      window: 12h
+      horizon: 24h
+techs:
+  load:
+    base_tech: demand
+    carrier_in: electricity
+  line:
+    base_tech: transmission
+    carrier_in: electricity
+    carrier_out: electricity
+    link_from: n1
+    link_to: n2
+    flow_cap_max: 200
+    flow_cap: 200
+  grid_import:
+    base_tech: supply
+    carrier_out: electricity
+    flow_cap_max: 300
+    flow_cap: 300
+    cost_flow_out:
+      data: [60]
+      index: [monetary]
+      dims: costs
+nodes:
+  n1:
+    techs:
+      grid_import:
+  n2:
+    techs:
+      load:
+data_tables:
+  load__sink_use_equals:
+    data: dem.csv
+    rows: timesteps
+    columns: [techs, nodes]
+    add_dims:
+      parameters: sink_use_equals

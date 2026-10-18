@@ -1,0 +1,88 @@
+{
+  "model": {
+    "metadata": {
+      "name": "calliope_operate_trade"
+    },
+    "time": {
+      "start": "2025-01-01",
+      "end": "2025-01-02",
+      "resolution": "1H"
+    },
+    "carriers": {
+      "electricity": {
+        "unit": "MWh"
+      }
+    },
+    "nodes": {
+      "n1": {},
+      "n2": {}
+    },
+    "technologies": {
+      "load": {
+        "role": "demand",
+        "node": "n2",
+        "carrier_in": "electricity",
+        "demand_profile": "dem"
+      }
+    },
+    "transmission": {
+      "line": {
+        "carrier": "electricity",
+        "from": "n1",
+        "to": "n2",
+        "bidirectional": true,
+        "capacity": {
+          "expandable": true,
+          "max": 200
+        }
+      }
+    },
+    "trade": {
+      "grid": {
+        "node": "n1",
+        "carrier": "electricity",
+        "import": {
+          "limit": 300,
+          "price": 60
+        }
+      }
+    },
+    "timeseries": {
+      "dem": {
+        "source": "inline",
+        "values": [
+          70,
+          65,
+          60,
+          58,
+          60,
+          70,
+          90,
+          110,
+          120,
+          115,
+          110,
+          105,
+          100,
+          100,
+          105,
+          110,
+          120,
+          125,
+          120,
+          110,
+          100,
+          90,
+          80,
+          75
+        ]
+      }
+    }
+  },
+  "experiment": {
+    "mode": "operate",
+    "solver": {
+      "name": "cbc"
+    }
+  }
+}

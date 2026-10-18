@@ -472,6 +472,30 @@ func applyOperateCaps(n *yamlNode, t model.Technology) {
 	}
 }
 
+// hasFixedSize reports whether operate mode can fix at least one size, which
+// Calliope needs to postprocess a run.
+func hasFixedSize(m *model.Model) bool {
+	for _, t := range m.Technologies {
+		if _, ok := fixedCap(t.Capacity); ok && t.Role != model.RoleDemand {
+			return true
+		}
+	}
+	for _, l := range m.Transmission {
+		if _, ok := fixedCap(l.Capacity); ok {
+			return true
+		}
+	}
+	for _, tr := range m.Trade {
+		if tr.Import == nil {
+			continue
+		}
+		if _, ok := tr.Import.Limit.Reduce(); ok {
+			return true
+		}
+	}
+	return false
+}
+
 // fixedCap resolves the fixed capacity of a tech for operate mode: the existing
 // base if set, else the upper bound.
 func fixedCap(c *model.Capacity) (float64, bool) {

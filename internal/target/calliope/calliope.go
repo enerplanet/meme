@@ -80,6 +80,9 @@ func (Calliope) ValidateJob(j *model.Job) ([]string, error) {
 			return nil, fmt.Errorf("transmission %q: energy_consumption is only supported for pypsa (multi-port link)", id)
 		}
 	}
+	if j.Experiment.EffectiveMode() == model.ModeOperate && !hasFixedSize(m) {
+		return nil, fmt.Errorf(`mode "operate" needs at least one fixed size on calliope: give a technology or transmission capacity.existing or capacity.max, or a trade import a limit`)
+	}
 
 	for _, id := range emit.Keys(m.Technologies) {
 		t := m.Technologies[id]

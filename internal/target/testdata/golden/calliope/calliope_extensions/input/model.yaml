@@ -23,6 +23,10 @@ techs:
       data: 20
       index: monetary
       dims: costs
+    cost_depreciation_rate:
+      data: 1
+      index: monetary
+      dims: costs
   flex_load:
     base_tech: demand
     carrier_in: electricity
@@ -33,6 +37,10 @@ techs:
     flow_cap_max_systemwide: 250
     cost_flow_cap:
       data: 100
+      index: monetary
+      dims: costs
+    cost_depreciation_rate:
+      data: 1
       index: monetary
       dims: costs
     cost_source_use:

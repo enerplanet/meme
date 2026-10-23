@@ -911,16 +911,21 @@ func calliopeCapacity(n *yamlNode, c *model.Capacity) {
 // calliopeCosts emits indexed cost parameters. Overnight investment passes
 // through unchanged; Calliope annualizes internally via cost_interest_rate and
 // lifetime (so we do NOT pre-annualize here). The global discount rate wins
-// over the component interest rate. Per-flow costs (variable O&M, fuel) are
-// merged separately in calliopeFlowCosts.
+// over the component interest rate. An already-annualized basis pins
+// cost_depreciation_rate to 1 instead: Calliope 0.7 would otherwise derive
+// 1/lifetime from a zero interest rate and divide the yearly figure again.
+// Per-flow costs (variable O&M, fuel) are merged separately in
+// calliopeFlowCosts.
 func calliopeCosts(n *yamlNode, t model.Technology, m *model.Model) {
 	for _, class := range emit.Keys(t.Costs) {
 		c := t.Costs[class]
+		fixed := false
 		if c.InvestmentPerCapacity != nil {
 			n.set("cost_flow_cap", indexedCost(class, *c.InvestmentPerCapacity))
 			if rate := m.EffectiveRate(t); t.CostBasis != model.CostAnnualized && rate != nil {
 				n.set("cost_interest_rate", indexedCost(class, *rate))
 			}
+			fixed = true
 		}
 		if c.FixedOM != nil {
 			n.set("cost_om_annual", indexedCost(class, *c.FixedOM))
@@ -930,9 +935,14 @@ func calliopeCosts(n *yamlNode, t model.Technology, m *model.Model) {
 		}
 		if c.InvestmentPerEnergyCapacity != nil {
 			n.set("cost_storage_cap", indexedCost(class, *c.InvestmentPerEnergyCapacity))
+			fixed = true
 		}
 		if c.Purchase != nil {
 			n.set("cost_purchase", indexedCost(class, *c.Purchase))
+			fixed = true
+		}
+		if fixed && t.CostBasis == model.CostAnnualized {
+			n.set("cost_depreciation_rate", indexedCost(class, 1))
 		}
 	}
 }

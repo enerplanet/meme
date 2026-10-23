@@ -1,0 +1,9 @@
+{
+  "target": "pypsa",
+  "entrypoint": "${BASE}/input",
+  "command": [
+    "python",
+    "run.py"
+  ],
+  "work_dir": "${BASE}"
+}

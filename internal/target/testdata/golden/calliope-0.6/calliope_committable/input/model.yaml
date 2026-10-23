@@ -1,0 +1,50 @@
+model:
+  name: calliope_committable
+  calliope_version: 0.6.8
+  timeseries_data_path: timeseries_data
+run:
+  mode: plan
+  solver: cbc
+  objective_options:
+    cost_class:
+      monetary: 1
+    sense: minimize
+techs:
+  backup:
+    essentials:
+      name: backup
+      parent: supply
+      carrier_out: electricity
+    constraints:
+      energy_cap_equals: 1000
+    costs:
+      monetary:
+        om_prod: 500
+  gen:
+    essentials:
+      name: gen
+      parent: supply
+      carrier_out: electricity
+    constraints:
+      energy_cap_per_unit: 100
+      units_max: 3
+      energy_cap_min_use: 0.3
+      lifetime: 1
+    costs:
+      monetary:
+        purchase: 1000
+        om_prod: 5
+        interest_rate: 0
+  load:
+    essentials:
+      name: load
+      parent: demand
+      carrier_in: electricity
+locations:
+  n1:
+    techs:
+      backup:
+      gen:
+      load:
+        constraints:
+          resource: "file=load__resource.csv:n1"

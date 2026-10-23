@@ -1,0 +1,41 @@
+model:
+  name: calliope_resample
+  calliope_version: 0.6.8
+  timeseries_data_path: timeseries_data
+  time:
+    function: resample
+    function_options:
+      resolution: 3H
+run:
+  mode: plan
+  solver: cbc
+  objective_options:
+    cost_class:
+      monetary: 1
+    sense: minimize
+techs:
+  gen:
+    essentials:
+      name: gen
+      parent: supply
+      carrier_out: electricity
+    constraints:
+      energy_cap_max: 1000
+      lifetime: 25
+    costs:
+      monetary:
+        energy_cap: 300000
+        om_prod: 10
+        interest_rate: 0.05
+  load:
+    essentials:
+      name: load
+      parent: demand
+      carrier_in: electricity
+locations:
+  n1:
+    techs:
+      gen:
+      load:
+        constraints:
+          resource: "file=load__resource.csv:n1"

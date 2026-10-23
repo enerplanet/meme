@@ -1,0 +1,35 @@
+{
+  "constraints": [
+    {
+      "name": "max_pv",
+      "terms": [
+        {
+          "coefficient": 1,
+          "variable": "capacity",
+          "techs": [
+            "pv"
+          ]
+        }
+      ],
+      "sense": "<=",
+      "bound": 800
+    },
+    {
+      "name": "min_gas_power",
+      "terms": [
+        {
+          "coefficient": 1,
+          "variable": "flow_out",
+          "techs": [
+            "gasgen"
+          ],
+          "carriers": [
+            "electricity"
+          ]
+        }
+      ],
+      "sense": ">=",
+      "bound": 100
+    }
+  ]
+}

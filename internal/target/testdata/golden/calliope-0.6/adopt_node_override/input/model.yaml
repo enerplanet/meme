@@ -1,0 +1,75 @@
+model:
+  name: adopt_node_override
+  calliope_version: 0.6.8
+  timeseries_data_path: timeseries_data
+run:
+  mode: plan
+  solver: glpk
+  objective_options:
+    cost_class:
+      monetary: 1
+    sense: minimize
+  cyclic_storage: false
+techs:
+  battery:
+    essentials:
+      name: battery
+      parent: storage
+      carrier: electricity
+    constraints:
+      energy_eff: 0.95
+      storage_cap_max: 400
+      energy_cap_max: 100
+      lifetime: 15
+    costs:
+      monetary:
+        energy_cap: 100
+        om_annual: 2
+        interest_rate: 0.05
+  load1:
+    essentials:
+      name: load1
+      parent: demand
+      carrier_in: electricity
+  load2:
+    essentials:
+      name: load2
+      parent: demand
+      carrier_in: electricity
+  grid1_import:
+    essentials:
+      name: "grid1 import"
+      parent: supply
+      carrier_out: electricity
+    constraints:
+      energy_cap_max: 500
+    costs:
+      monetary:
+        om_prod: 60
+  grid2_import:
+    essentials:
+      name: "grid2 import"
+      parent: supply
+      carrier_out: electricity
+    constraints:
+      energy_cap_max: 500
+    costs:
+      monetary:
+        om_prod: 60
+locations:
+  n1:
+    techs:
+      battery:
+      load1:
+        constraints:
+          resource: "file=load1__resource.csv:n1"
+      grid1_import:
+  n2:
+    techs:
+      battery:
+        constraints:
+          energy_cap_max: 40
+      load2:
+        constraints:
+          resource: "file=load2__resource.csv:n2"
+      grid2_import:

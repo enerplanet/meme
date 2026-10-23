@@ -1,0 +1,40 @@
+model:
+  name: calliope_source_native
+  calliope_version: 0.6.8
+  timeseries_data_path: timeseries_data
+run:
+  mode: plan
+  solver: cbc
+  objective_options:
+    cost_class:
+      monetary: 1
+    sense: minimize
+techs:
+  load:
+    essentials:
+      name: load
+      parent: demand
+      carrier_in: electricity
+  pv:
+    essentials:
+      name: pv
+      parent: supply
+      carrier_out: electricity
+    constraints:
+      resource: 0.25
+      resource_unit: energy_per_area
+      resource_area_max: 5000
+      energy_cap_max: 1000
+      lifetime: 25
+    costs:
+      monetary:
+        energy_cap: 500000
+        interest_rate: 0.05
+locations:
+  n1:
+    available_area: 10000
+    techs:
+      load:
+        constraints:
+          resource: "file=load__resource.csv:n1"
+      pv:

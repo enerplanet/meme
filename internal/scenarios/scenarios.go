@@ -82,12 +82,24 @@ func SampleFor(t model.Target) (model.Job, error) {
 		return model.Job{}, err
 	}
 	switch t {
-	case model.TargetCalliope:
-		// Calliope 0.7 MILP has no start/stop-cost or up/down-time math.
+	case model.TargetCalliope, model.TargetCalliope06:
+		// Calliope MILP (0.7 and 0.6 alike) has no start/stop-cost or
+		// up/down-time math.
 		cc := j.Model.Technologies["ccgt"]
 		cc.Operation.StartUpCost = nil
 		cc.Operation.MinUptime = nil
 		j.Model.Technologies["ccgt"] = cc
+		if t == model.TargetCalliope06 {
+			// 0.6 group_constraints bound one quantity at a time: keep the
+			// single-term constraints, drop the multi-term one.
+			var keep []model.Constraint
+			for _, c := range j.Model.Constraints {
+				if len(c.Terms) == 1 {
+					keep = append(keep, c)
+				}
+			}
+			j.Model.Constraints = keep
+		}
 	case model.TargetAdOpt:
 		// adopt_net0 is database-driven: generic supply/conversion techs,
 		// portable linear constraints and transmission networks have no

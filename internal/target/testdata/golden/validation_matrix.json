@@ -6,6 +6,9 @@
     "calliope": {
       "verdict": "ok"
     },
+    "calliope-0.6": {
+      "verdict": "ok"
+    },
     "pypsa": {
       "verdict": "ok",
       "warnings": [
@@ -18,6 +21,9 @@
       "verdict": "ok"
     },
     "calliope": {
+      "verdict": "ok"
+    },
+    "calliope-0.6": {
       "verdict": "ok"
     },
     "pypsa": {
@@ -34,6 +40,9 @@
     "calliope": {
       "verdict": "error: trade \"grid\": a time-series limit is not supported for target calliope (scalar only); pypsa and adopt-net0 honor it"
     },
+    "calliope-0.6": {
+      "verdict": "error: trade \"grid\": a time-series limit is not supported for target calliope-0.6 (scalar only); pypsa and adopt-net0 honor it"
+    },
     "pypsa": {
       "verdict": "error: tech \"battery\": capacity.decommission mode \"continuous\" is not supported for pypsa (existing capacity stays fixed); adopt-net0 honors it"
     }
@@ -44,6 +53,9 @@
     },
     "calliope": {
       "verdict": "error: objective \"min_emissions\" is not supported by target \"calliope\" (the runner would silently minimize cost)"
+    },
+    "calliope-0.6": {
+      "verdict": "error: tech pv: physics model \"pv\" requires a precomputed profile for target \"calliope-0.6\" (run the model externally and set performance.precomputed)"
     },
     "pypsa": {
       "verdict": "error: objective \"min_emissions\" is not supported by target \"pypsa\" (the runner would silently minimize cost)"
@@ -59,6 +71,9 @@
     "calliope": {
       "verdict": "error: mode \"monte_carlo\" is not supported by target \"calliope\""
     },
+    "calliope-0.6": {
+      "verdict": "error: mode \"monte_carlo\" is not supported by target \"calliope-0.6\""
+    },
     "pypsa": {
       "verdict": "error: mode \"monte_carlo\" is not supported by target \"pypsa\""
     }
@@ -68,6 +83,9 @@
       "verdict": "ok"
     },
     "calliope": {
+      "verdict": "ok"
+    },
+    "calliope-0.6": {
       "verdict": "ok"
     },
     "pypsa": {
@@ -84,6 +102,9 @@
     "calliope": {
       "verdict": "error: mode \"pareto\" is not supported by target \"calliope\""
     },
+    "calliope-0.6": {
+      "verdict": "error: mode \"pareto\" is not supported by target \"calliope-0.6\""
+    },
     "pypsa": {
       "verdict": "error: mode \"pareto\" is not supported by target \"pypsa\""
     }
@@ -95,6 +116,9 @@
     "calliope": {
       "verdict": "error: tech pv: physics model \"pv\" requires a precomputed profile for target \"calliope\" (run the model externally and set performance.precomputed)"
     },
+    "calliope-0.6": {
+      "verdict": "error: tech pv: physics model \"pv\" requires a precomputed profile for target \"calliope-0.6\" (run the model externally and set performance.precomputed)"
+    },
     "pypsa": {
       "verdict": "error: tech pv: physics model \"pv\" requires a precomputed profile for target \"pypsa\" (run the model externally and set performance.precomputed)"
     }
@@ -104,6 +128,9 @@
       "verdict": "ok"
     },
     "calliope": {
+      "verdict": "ok"
+    },
+    "calliope-0.6": {
       "verdict": "ok"
     },
     "pypsa": {
@@ -117,6 +144,9 @@
     "calliope": {
       "verdict": "error: time_aggregation method \"typical_days\" is not supported by calliope (0.7 removed built-in clustering); only \"resample\" is honored"
     },
+    "calliope-0.6": {
+      "verdict": "ok"
+    },
     "pypsa": {
       "verdict": "error: time_aggregation is not supported by target \"pypsa\""
     }
@@ -128,8 +158,67 @@
     "calliope": {
       "verdict": "error: tech wind: physics model \"wind\" requires a precomputed profile for target \"calliope\" (run the model externally and set performance.precomputed)"
     },
+    "calliope-0.6": {
+      "verdict": "error: tech wind: physics model \"wind\" requires a precomputed profile for target \"calliope-0.6\" (run the model externally and set performance.precomputed)"
+    },
     "pypsa": {
       "verdict": "error: tech wind: physics model \"wind\" requires a precomputed profile for target \"pypsa\" (run the model externally and set performance.precomputed)"
+    }
+  },
+  "calliope06_group_constraints.json": {
+    "adopt-net0": {
+      "verdict": "error: linear constraints is not supported by target \"adopt-net0\""
+    },
+    "calliope": {
+      "verdict": "ok"
+    },
+    "calliope-0.6": {
+      "verdict": "ok"
+    },
+    "pypsa": {
+      "verdict": "ok"
+    }
+  },
+  "calliope06_min_emissions.json": {
+    "adopt-net0": {
+      "verdict": "error: tech \"gas_src\" (supply) has no adopt_net0 database mapping (only pv/wind/heat_pump physics and storage map); model it via nodes.\u003cnode\u003e.native.adopt-net0 naming a database technology"
+    },
+    "calliope": {
+      "verdict": "error: objective \"min_emissions\" is not supported by target \"calliope\" (the runner would silently minimize cost)"
+    },
+    "calliope-0.6": {
+      "verdict": "ok"
+    },
+    "pypsa": {
+      "verdict": "error: objective \"min_emissions\" is not supported by target \"pypsa\" (the runner would silently minimize cost)"
+    }
+  },
+  "calliope06_spores.json": {
+    "adopt-net0": {
+      "verdict": "error: mode \"alternatives\" is not supported by target \"adopt-net0\""
+    },
+    "calliope": {
+      "verdict": "ok"
+    },
+    "calliope-0.6": {
+      "verdict": "ok"
+    },
+    "pypsa": {
+      "verdict": "ok"
+    }
+  },
+  "calliope06_typical_days.json": {
+    "adopt-net0": {
+      "verdict": "error: tech \"gen\" (supply) has no adopt_net0 database mapping (only pv/wind/heat_pump physics and storage map); model it via nodes.\u003cnode\u003e.native.adopt-net0 naming a database technology"
+    },
+    "calliope": {
+      "verdict": "error: time_aggregation method \"typical_days\" is not supported by calliope (0.7 removed built-in clustering); only \"resample\" is honored"
+    },
+    "calliope-0.6": {
+      "verdict": "ok"
+    },
+    "pypsa": {
+      "verdict": "error: time_aggregation is not supported by target \"pypsa\""
     }
   },
   "calliope_committable.json": {
@@ -137,6 +226,9 @@
       "verdict": "error: committable operation is not supported by target \"adopt-net0\""
     },
     "calliope": {
+      "verdict": "ok"
+    },
+    "calliope-0.6": {
       "verdict": "ok"
     },
     "pypsa": {
@@ -150,6 +242,9 @@
     "calliope": {
       "verdict": "ok"
     },
+    "calliope-0.6": {
+      "verdict": "ok"
+    },
     "pypsa": {
       "verdict": "ok"
     }
@@ -161,6 +256,12 @@
     "calliope": {
       "verdict": "ok"
     },
+    "calliope-0.6": {
+      "verdict": "ok",
+      "warnings": [
+        "experiment.custom_math has no effect on calliope-0.6 (no custom math; constraints and emission_limits map to group_constraints)"
+      ]
+    },
     "pypsa": {
       "verdict": "ok"
     }
@@ -170,6 +271,9 @@
       "verdict": "error: transmission is not supported by target \"adopt-net0\" yet (adopt_net0 Networks are not mapped); model exchange via trade or nodes.\u003cn\u003e.native.adopt-net0"
     },
     "calliope": {
+      "verdict": "ok"
+    },
+    "calliope-0.6": {
       "verdict": "ok"
     },
     "pypsa": {
@@ -186,6 +290,12 @@
         "node coordinates are emitted only when every node has them (Calliope requires all or none); missing on [hub], so coordinates are omitted"
       ]
     },
+    "calliope-0.6": {
+      "verdict": "ok",
+      "warnings": [
+        "location coordinates are emitted only when every node has them (Calliope requires all or none); missing on [hub], so coordinates are omitted"
+      ]
+    },
     "pypsa": {
       "verdict": "ok"
     }
@@ -195,6 +305,9 @@
       "verdict": "error: tech \"pv\" (supply) has no adopt_net0 database mapping (only pv/wind/heat_pump physics and storage map); model it via nodes.\u003cnode\u003e.native.adopt-net0 naming a database technology"
     },
     "calliope": {
+      "verdict": "ok"
+    },
+    "calliope-0.6": {
       "verdict": "ok"
     },
     "pypsa": {
@@ -208,6 +321,9 @@
     "calliope": {
       "verdict": "ok"
     },
+    "calliope-0.6": {
+      "verdict": "ok"
+    },
     "pypsa": {
       "verdict": "ok"
     }
@@ -219,6 +335,9 @@
     "calliope": {
       "verdict": "ok"
     },
+    "calliope-0.6": {
+      "verdict": "error: tech conv: piecewise part-load performance is not supported by target \"calliope-0.6\" (no native piecewise-efficiency representation)"
+    },
     "pypsa": {
       "verdict": "error: tech conv: piecewise part-load performance is not supported by target \"pypsa\" (no native piecewise-efficiency representation)"
     }
@@ -228,6 +347,9 @@
       "verdict": "error: tech \"pv\" (supply) has no adopt_net0 database mapping (only pv/wind/heat_pump physics and storage map); model it via nodes.\u003cnode\u003e.native.adopt-net0 naming a database technology"
     },
     "calliope": {
+      "verdict": "ok"
+    },
+    "calliope-0.6": {
       "verdict": "ok"
     },
     "pypsa": {
@@ -241,6 +363,9 @@
     "calliope": {
       "verdict": "ok"
     },
+    "calliope-0.6": {
+      "verdict": "ok"
+    },
     "pypsa": {
       "verdict": "error: time_aggregation is not supported by target \"pypsa\""
     }
@@ -252,6 +377,12 @@
     "calliope": {
       "verdict": "ok"
     },
+    "calliope-0.6": {
+      "verdict": "ok",
+      "warnings": [
+        "experiment.custom_math has no effect on calliope-0.6 (no custom math; constraints and emission_limits map to group_constraints)"
+      ]
+    },
     "pypsa": {
       "verdict": "error: area constraints is not supported by target \"pypsa\""
     }
@@ -261,6 +392,12 @@
       "verdict": "error: mode \"alternatives\" is not supported by target \"adopt-net0\""
     },
     "calliope": {
+      "verdict": "ok",
+      "warnings": [
+        "experiment.solver.options.spores is deprecated; use experiment.alternatives (first-class fields win when both are set)"
+      ]
+    },
+    "calliope-0.6": {
       "verdict": "ok",
       "warnings": [
         "experiment.solver.options.spores is deprecated; use experiment.alternatives (first-class fields win when both are set)"
@@ -280,6 +417,9 @@
     "calliope": {
       "verdict": "ok"
     },
+    "calliope-0.6": {
+      "verdict": "ok"
+    },
     "pypsa": {
       "verdict": "ok",
       "warnings": [
@@ -292,6 +432,9 @@
       "verdict": "error: tech \"gen\" (supply) has no adopt_net0 database mapping (only pv/wind/heat_pump physics and storage map); model it via nodes.\u003cnode\u003e.native.adopt-net0 naming a database technology"
     },
     "calliope": {
+      "verdict": "ok"
+    },
+    "calliope-0.6": {
       "verdict": "ok"
     },
     "pypsa": {
@@ -308,6 +451,9 @@
     "calliope": {
       "verdict": "ok"
     },
+    "calliope-0.6": {
+      "verdict": "ok"
+    },
     "pypsa": {
       "verdict": "ok"
     }
@@ -317,6 +463,13 @@
       "verdict": "error: mode \"alternatives\" is not supported by target \"adopt-net0\""
     },
     "calliope": {
+      "verdict": "ok",
+      "warnings": [
+        "experiment.solver.options.mga is deprecated; use experiment.alternatives (first-class fields win when both are set)",
+        "solver \"highs\" is not usable with Calliope; emitting cbc instead"
+      ]
+    },
+    "calliope-0.6": {
       "verdict": "ok",
       "warnings": [
         "experiment.solver.options.mga is deprecated; use experiment.alternatives (first-class fields win when both are set)",
@@ -337,6 +490,9 @@
     "calliope": {
       "verdict": "error: tech \"coal\": start-up/shut-down costs and min up/down times are not representable in Calliope 0.7 MILP math; drop them or supply native.calliope math"
     },
+    "calliope-0.6": {
+      "verdict": "error: tech \"coal\": start-up/shut-down costs and min up/down times are not representable in Calliope 0.6 MILP constraints; drop them or supply native[\"calliope-0.6\"]"
+    },
     "pypsa": {
       "verdict": "ok"
     }
@@ -346,6 +502,12 @@
       "verdict": "error: linear constraints is not supported by target \"adopt-net0\""
     },
     "calliope": {
+      "verdict": "ok",
+      "warnings": [
+        "solver \"highs\" is not usable with Calliope; emitting cbc instead"
+      ]
+    },
+    "calliope-0.6": {
       "verdict": "ok",
       "warnings": [
         "solver \"highs\" is not usable with Calliope; emitting cbc instead"
@@ -365,6 +527,12 @@
         "solver \"highs\" is not usable with Calliope; emitting cbc instead"
       ]
     },
+    "calliope-0.6": {
+      "verdict": "ok",
+      "warnings": [
+        "solver \"highs\" is not usable with Calliope; emitting cbc instead"
+      ]
+    },
     "pypsa": {
       "verdict": "ok"
     }
@@ -374,6 +542,12 @@
       "verdict": "error: multi-port conversion (flows) is not supported by target \"adopt-net0\""
     },
     "calliope": {
+      "verdict": "ok",
+      "warnings": [
+        "solver \"highs\" is not usable with Calliope; emitting cbc instead"
+      ]
+    },
+    "calliope-0.6": {
       "verdict": "ok",
       "warnings": [
         "solver \"highs\" is not usable with Calliope; emitting cbc instead"
@@ -393,6 +567,12 @@
         "solver \"highs\" is not usable with Calliope; emitting cbc instead"
       ]
     },
+    "calliope-0.6": {
+      "verdict": "ok",
+      "warnings": [
+        "solver \"highs\" is not usable with Calliope; emitting cbc instead"
+      ]
+    },
     "pypsa": {
       "verdict": "ok"
     }
@@ -404,6 +584,9 @@
     "calliope": {
       "verdict": "error: tech \"pv\": annual_output_min/max are only supported for target pypsa (e_sum_min/e_sum_max)"
     },
+    "calliope-0.6": {
+      "verdict": "error: time.weights is not supported for calliope-0.6 (timestep weights derive from the time resolution); pypsa honors it"
+    },
     "pypsa": {
       "verdict": "ok"
     }
@@ -413,6 +596,12 @@
       "verdict": "error: tech \"ccgt\" (supply) has no adopt_net0 database mapping (only pv/wind/heat_pump physics and storage map); model it via nodes.\u003cnode\u003e.native.adopt-net0 naming a database technology"
     },
     "calliope": {
+      "verdict": "ok",
+      "warnings": [
+        "solver \"highs\" is not usable with Calliope; emitting cbc instead"
+      ]
+    },
+    "calliope-0.6": {
       "verdict": "ok",
       "warnings": [
         "solver \"highs\" is not usable with Calliope; emitting cbc instead"
@@ -432,6 +621,12 @@
         "solver \"highs\" is not usable with Calliope; emitting cbc instead"
       ]
     },
+    "calliope-0.6": {
+      "verdict": "ok",
+      "warnings": [
+        "solver \"highs\" is not usable with Calliope; emitting cbc instead"
+      ]
+    },
     "pypsa": {
       "verdict": "ok"
     }
@@ -441,6 +636,13 @@
       "verdict": "error: mode \"operate\" is not supported by target \"adopt-net0\""
     },
     "calliope": {
+      "verdict": "ok",
+      "warnings": [
+        "experiment.solver.options.operate is deprecated; use experiment.operate (first-class fields win when both are set)",
+        "solver \"highs\" is not usable with Calliope; emitting cbc instead"
+      ]
+    },
+    "calliope-0.6": {
       "verdict": "ok",
       "warnings": [
         "experiment.solver.options.operate is deprecated; use experiment.operate (first-class fields win when both are set)",
@@ -464,6 +666,12 @@
         "solver \"highs\" is not usable with Calliope; emitting cbc instead"
       ]
     },
+    "calliope-0.6": {
+      "verdict": "ok",
+      "warnings": [
+        "solver \"highs\" is not usable with Calliope; emitting cbc instead"
+      ]
+    },
     "pypsa": {
       "verdict": "ok"
     }
@@ -475,6 +683,9 @@
     "calliope": {
       "verdict": "error: mode \"stochastic\" is not supported by target \"calliope\""
     },
+    "calliope-0.6": {
+      "verdict": "error: mode \"stochastic\" is not supported by target \"calliope-0.6\""
+    },
     "pypsa": {
       "verdict": "ok"
     }
@@ -484,6 +695,12 @@
       "verdict": "error: tech \"grid\" (supply) has no adopt_net0 database mapping (only pv/wind/heat_pump physics and storage map); model it via nodes.\u003cnode\u003e.native.adopt-net0 naming a database technology"
     },
     "calliope": {
+      "verdict": "ok",
+      "warnings": [
+        "solver \"highs\" is not usable with Calliope; emitting cbc instead"
+      ]
+    },
+    "calliope-0.6": {
       "verdict": "ok",
       "warnings": [
         "solver \"highs\" is not usable with Calliope; emitting cbc instead"
@@ -503,6 +720,12 @@
         "solver \"highs\" is not usable with Calliope; emitting cbc instead"
       ]
     },
+    "calliope-0.6": {
+      "verdict": "ok",
+      "warnings": [
+        "solver \"highs\" is not usable with Calliope; emitting cbc instead"
+      ]
+    },
     "pypsa": {
       "verdict": "ok",
       "warnings": [
@@ -517,6 +740,9 @@
     "calliope": {
       "verdict": "error: trade \"market\": a time-series price is not supported for target calliope (scalar only)"
     },
+    "calliope-0.6": {
+      "verdict": "error: trade \"market\": a time-series price is not supported for target calliope-0.6 (scalar only)"
+    },
     "pypsa": {
       "verdict": "ok"
     }
@@ -526,6 +752,12 @@
       "verdict": "error: transmission is not supported by target \"adopt-net0\" yet (adopt_net0 Networks are not mapped); model exchange via trade or nodes.\u003cn\u003e.native.adopt-net0"
     },
     "calliope": {
+      "verdict": "ok",
+      "warnings": [
+        "solver \"highs\" is not usable with Calliope; emitting cbc instead"
+      ]
+    },
+    "calliope-0.6": {
       "verdict": "ok",
       "warnings": [
         "solver \"highs\" is not usable with Calliope; emitting cbc instead"
@@ -544,6 +776,13 @@
       "warnings": [
         "solver \"highs\" is not usable with Calliope; emitting cbc instead",
         "transmission line_n1_n2: native.pypsa block is ignored when emitting for \"calliope\""
+      ]
+    },
+    "calliope-0.6": {
+      "verdict": "ok",
+      "warnings": [
+        "solver \"highs\" is not usable with Calliope; emitting cbc instead",
+        "transmission line_n1_n2: native.pypsa block is ignored when emitting for \"calliope-0.6\""
       ]
     },
     "pypsa": {

@@ -1,0 +1,65 @@
+model:
+  name: calliope_conversion
+  calliope_version: 0.6.8
+  timeseries_data_path: timeseries_data
+run:
+  mode: plan
+  solver: cbc
+  objective_options:
+    cost_class:
+      monetary: 1
+    sense: minimize
+techs:
+  chp:
+    essentials:
+      name: chp
+      carrier_in: gas
+      parent: conversion_plus
+      carrier_out: electricity
+      carrier_out_2: heat
+      primary_carrier_out: electricity
+    constraints:
+      energy_eff: 0.4
+      carrier_ratios:
+        carrier_out_2:
+          heat: 1.125
+      energy_cap_max: 1000
+      lifetime: 25
+    costs:
+      monetary:
+        energy_cap: 600000
+        interest_rate: 0.06
+  eload:
+    essentials:
+      name: eload
+      parent: demand
+      carrier_in: electricity
+  gas_src:
+    essentials:
+      name: gas_src
+      parent: supply
+      carrier_out: gas
+    constraints:
+      energy_cap_max: 10000
+    costs:
+      monetary:
+        om_prod: 20
+  hload:
+    essentials:
+      name: hload
+      parent: demand
+      carrier_in: heat
+locations:
+  n1:
+    coordinates:
+      lat: 48.0
+      lon: 11.0
+    techs:
+      chp:
+      eload:
+        constraints:
+          resource: "file=eload__resource.csv:n1"
+      gas_src:
+      hload:
+        constraints:
+          resource: "file=hload__resource.csv:n1"

@@ -1,0 +1,61 @@
+model:
+  name: calliope_hub_node
+  calliope_version: 0.6.8
+  timeseries_data_path: timeseries_data
+run:
+  mode: plan
+  solver: cbc
+  objective_options:
+    cost_class:
+      monetary: 1
+    sense: minimize
+techs:
+  gen:
+    essentials:
+      name: gen
+      parent: supply
+      carrier_out: electricity
+    constraints:
+      energy_cap_max: 1000
+    costs:
+      monetary:
+        om_prod: 40
+  load:
+    essentials:
+      name: load
+      parent: demand
+      carrier_in: electricity
+  l1:
+    essentials:
+      name: l1
+      parent: transmission
+      carrier: electricity
+    constraints:
+      energy_eff: 0.97
+      energy_cap_max: 500
+  l2:
+    essentials:
+      name: l2
+      parent: transmission
+      carrier: electricity
+    constraints:
+      energy_eff: 0.97
+      energy_cap_max: 500
+locations:
+  hub:
+    techs: {}
+  n1:
+    techs:
+      gen:
+  n2:
+    techs:
+      load:
+        constraints:
+          resource: "file=load__resource.csv:n2"
+links:
+  n1,hub:
+    techs:
+      l1: {}
+  hub,n2:
+    techs:
+      l2: {}

@@ -1,0 +1,60 @@
+model:
+  name: adopt_typicaldays
+  calliope_version: 0.6.8
+  timeseries_data_path: timeseries_data
+  random_seed: 23
+  time:
+    function: apply_clustering
+    function_options:
+      clustering_func: kmeans
+      how: mean
+      k: 7
+run:
+  mode: plan
+  solver: glpk
+  objective_options:
+    cost_class:
+      monetary: 1
+    sense: minimize
+  cyclic_storage: false
+techs:
+  battery:
+    essentials:
+      name: battery
+      parent: storage
+      carrier: electricity
+    constraints:
+      energy_eff: 0.95
+      storage_cap_max: 2000
+      energy_cap_max: 500
+      lifetime: 15
+    costs:
+      monetary:
+        energy_cap: 300000
+        interest_rate: 0.06
+  load:
+    essentials:
+      name: load
+      parent: demand
+      carrier_in: electricity
+  grid_import:
+    essentials:
+      name: "grid import"
+      parent: supply
+      carrier_out: electricity
+    constraints:
+      energy_cap_max: 1000
+    costs:
+      monetary:
+        om_prod: 60
+locations:
+  n1:
+    coordinates:
+      lat: 48.8
+      lon: 12.9
+    techs:
+      battery:
+      load:
+        constraints:
+          resource: "file=load__resource.csv:n1"
+      grid_import:

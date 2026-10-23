@@ -1,0 +1,44 @@
+model:
+  name: adopt_emission
+  calliope_version: 0.6.8
+  timeseries_data_path: timeseries_data
+run:
+  mode: plan
+  solver: glpk
+  objective_options:
+    cost_class:
+      monetary: 1
+      emissions: 0
+    sense: minimize
+techs:
+  load:
+    essentials:
+      name: load
+      parent: demand
+      carrier_in: electricity
+  grid_import:
+    essentials:
+      name: "grid import"
+      parent: supply
+      carrier_out: electricity
+    constraints:
+      energy_cap_max: 1.0e+06
+    costs:
+      monetary:
+        om_prod: 50
+      emissions:
+        om_prod: 0.3
+locations:
+  n1:
+    coordinates:
+      lat: 48.8
+      lon: 12.9
+    techs:
+      load:
+        constraints:
+          resource: "file=load__resource.csv:n1"
+      grid_import:
+group_constraints:
+  co2_cap:
+    cost_max:
+      emissions: 1.0e+06

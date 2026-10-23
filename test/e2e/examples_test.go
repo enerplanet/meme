@@ -53,7 +53,7 @@ func TestE2EExamplesSolve(t *testing.T) {
 // example fails here, not at a user.
 func TestExamplePayloadsValidate(t *testing.T) {
 	cases := map[string][]model.Target{
-		"shared_full.json":   {model.TargetPyPSA, model.TargetCalliope, model.TargetAdOpt},
+		"shared_full.json":   {model.TargetPyPSA, model.TargetCalliope, model.TargetCalliope06, model.TargetAdOpt},
 		"payload_full.json":  {model.TargetPyPSA},
 		"pypsa_full.json":    {model.TargetPyPSA},
 		"calliope_full.json": {model.TargetCalliope},

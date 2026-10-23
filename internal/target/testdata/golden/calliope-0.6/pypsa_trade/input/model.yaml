@@ -1,0 +1,49 @@
+model:
+  name: pypsa_trade
+  calliope_version: 0.6.8
+  timeseries_data_path: timeseries_data
+run:
+  mode: plan
+  solver: cbc
+  objective_options:
+    cost_class:
+      monetary: 1
+      emissions: 0
+    sense: minimize
+techs:
+  load:
+    essentials:
+      name: load
+      parent: demand
+      carrier_in: electricity
+  market_import:
+    essentials:
+      name: "market import"
+      parent: supply
+      carrier_out: electricity
+    constraints:
+      energy_cap_max: 500
+    costs:
+      monetary:
+        om_prod: 60
+      emissions:
+        om_prod: 0.35
+  market_export:
+    essentials:
+      name: "market export"
+      parent: demand
+      carrier_in: electricity
+    constraints:
+      resource: -200
+      force_resource: false
+    costs:
+      monetary:
+        om_con: -30
+locations:
+  n1:
+    techs:
+      load:
+        constraints:
+          resource: "file=load__resource.csv:n1"
+      market_import:
+      market_export:

@@ -49,7 +49,7 @@ services:
       - go-mod:/root/go/pkg/mod
     command: make test
 
-  # Interactive shell with Go + all three frameworks + solvers (HiGHS/CBC/GLPK) on PATH.
+  # Interactive shell with Go + all three frameworks (both Calliope releases) + solvers (HiGHS/CBC/GLPK) on PATH.
   shell:
     image: ${IMAGE_TAG:-meme-env:latest}
     build:

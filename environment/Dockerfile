@@ -5,7 +5,8 @@
 # One image that carries everything needed end-to-end:
 #   * Go 1.22 toolchain  -> build the stdlib-only service and run `go test`
 #   * Python 3.12        -> the three frameworks the service emits for
-#   * PyPSA + HiGHS, Calliope 0.7.0 + CBC, AdOpT-NET0 + GLPK (all free solvers)
+#   * PyPSA + HiGHS, Calliope 0.7.0 and 0.6.8 + CBC, AdOpT-NET0 + GLPK
+#     (all free solvers; each Calliope release in its own venv)
 #
 # With all of the above on PATH, the service can run in real-execution mode
 # (`meme -exec`) so /simulate actually invokes the solvers, and integration
@@ -50,13 +51,29 @@ COPY environment/requirements.txt /tmp/requirements.txt
 RUN pip install --no-cache-dir --upgrade pip \
     && pip install --no-cache-dir -r /tmp/requirements.txt
 
-# Calliope 0.7.0 goes in an isolated venv (its pins conflict with the above);
-# the Go runner only calls the `calliope` CLI, so we expose just that on PATH.
+# Calliope: one isolated venv per supported release (their pins conflict with
+# each other and with the system Python). The Go runner only calls the CLIs,
+# so just those are exposed on PATH:
+#   calliope      -> 0.7.0  (target "calliope", the default)
+#   calliope-0.7  -> 0.7.0  (same binary; the version-explicit alias)
+#   calliope-0.6  -> 0.6.8  (target "calliope-0.6")
+# uv provisions the interpreters: the 0.7 venv reuses the system Python 3.12,
+# while Calliope 0.6.8's pins have no 3.12 wheels, so its venv runs on a
+# uv-managed Python 3.8 kept under /opt/uv-python (the system Python is
+# untouched). Each venv is its own layer, so a pin bump rebuilds only it.
+ENV UV_PYTHON_INSTALL_DIR=/opt/uv-python
+RUN pip install --no-cache-dir uv
+
 COPY environment/requirements-calliope-0.7.txt /tmp/requirements-calliope-0.7.txt
-RUN python -m venv /opt/calliope-venv \
-    && /opt/calliope-venv/bin/pip install --no-cache-dir --upgrade pip \
-    && /opt/calliope-venv/bin/pip install --no-cache-dir -r /tmp/requirements-calliope-0.7.txt \
-    && ln -s /opt/calliope-venv/bin/calliope /usr/local/bin/calliope
+RUN uv venv --python /usr/local/bin/python3 /opt/calliope-0.7-venv \
+    && uv pip install --python /opt/calliope-0.7-venv/bin/python --no-cache -r /tmp/requirements-calliope-0.7.txt \
+    && ln -s /opt/calliope-0.7-venv/bin/calliope /usr/local/bin/calliope \
+    && ln -s /opt/calliope-0.7-venv/bin/calliope /usr/local/bin/calliope-0.7
+
+COPY environment/requirements-calliope-0.6.txt /tmp/requirements-calliope-0.6.txt
+RUN uv venv --python 3.8 --python-preference only-managed /opt/calliope-0.6-venv \
+    && uv pip install --python /opt/calliope-0.6-venv/bin/python --no-cache -r /tmp/requirements-calliope-0.6.txt \
+    && ln -s /opt/calliope-0.6-venv/bin/calliope /usr/local/bin/calliope-0.6
 
 # Sanity-check that every framework and the solver import/resolve cleanly.
 # (adopt_net0 doesn't expose __version__, so read it from package metadata.)
@@ -64,7 +81,7 @@ RUN python -c "import importlib.metadata as m; import pypsa, adopt_net0, highspy
 print('pypsa', pypsa.__version__); \
 print('adopt_net0', m.version('adopt_net0')); \
 print('highspy OK')" \
-    && calliope --version
+    && calliope --version && calliope-0.7 --version && calliope-0.6 --version
 
 WORKDIR /src
 

@@ -92,6 +92,23 @@ func TestScenarios(t *testing.T) {
 		{"calliope_resample.json", model.TargetCalliope, []string{"resample:", "timesteps: 3h"}},
 		{"calliope_piecewise.json", model.TargetCalliope, []string{"piecewise_x", "piecewise_constraints", "breakpoints"}},
 
+		// --- Calliope 0.6 (the 0.7 scenarios it accepts, plus its own) ---
+		{"calliope_plan.json", model.TargetCalliope06, []string{"calliope_version: 0.6.8", "mode: plan", "parent: supply", "solver: cbc", "file=load__resource.csv:n1", "timeseries_data_path"}},
+		{"calliope_operate.json", model.TargetCalliope06, []string{"mode: operate", "window: 12", "horizon: 24", "energy_cap_equals: 500"}},
+		{"calliope06_spores.json", model.TargetCalliope06, []string{"mode: spores", "spores_number: 2", "slack: 0.1", "systemwide_cost_max", "spores_score"}},
+		{"calliope_resample.json", model.TargetCalliope06, []string{"function: resample", "resolution: 3H"}},
+		{"calliope06_typical_days.json", model.TargetCalliope06, []string{"apply_clustering", "clustering_func: kmeans", "k: 2", "random_seed"}},
+		{"calliope_storage.json", model.TargetCalliope06, []string{"parent: storage", "storage_cap_max: 800", "storage_initial: 0.5", "cyclic_storage: true", "storage_cap: 300"}},
+		{"calliope_source_native.json", model.TargetCalliope06, []string{"resource_unit: energy_per_area", "resource_area_max: 5000", "available_area: 10000"}},
+		{"calliope_conversion.json", model.TargetCalliope06, []string{"parent: conversion_plus", "carrier_out_2: heat", "primary_carrier_out: electricity", "energy_eff: 0.4", "heat: 1.125"}},
+		{"calliope_transmission.json", model.TargetCalliope06, []string{"parent: transmission", "n1,n2:", "distance: 50"}},
+		{"calliope_hub_node.json", model.TargetCalliope06, []string{"n1,hub:", "hub,n2:", "  hub:\n    techs: {}"}},
+		{"calliope_node_override.json", model.TargetCalliope06, []string{"energy_cap: 300000"}},
+		{"calliope_trade.json", model.TargetCalliope06, []string{"market_import", "market_export", "resource: -200", "om_con: -30", "om_prod: 60"}},
+		{"calliope_committable.json", model.TargetCalliope06, []string{"units_max: 3", "energy_cap_per_unit: 100", "energy_cap_min_use: 0.3", "purchase: 1000"}},
+		{"calliope06_group_constraints.json", model.TargetCalliope06, []string{"group_constraints:", "energy_cap_max: 800", "carrier_prod_min:", "electricity: 100", "cost_max:", "emissions: 1.0e+06", "om_con: 0.2"}},
+		{"calliope06_min_emissions.json", model.TargetCalliope06, []string{"monetary: 0", "emissions: 1", "sense: minimize"}},
+
 		// --- AdOpT-NET0 ---
 		{"adopt_demand_trade.json", model.TargetAdOpt, []string{";Demand;", "glpk"}},
 		{"adopt_storage.json", model.TargetAdOpt, []string{"Storage_Battery", "OPEX_fixed", "glpk"}},
@@ -153,6 +170,27 @@ func TestScenariosCapabilityGating(t *testing.T) {
 	// typical_days clustering was removed in Calliope 0.7; only resample maps.
 	if _, err := target.ValidateFor(&td, model.TargetCalliope); err == nil {
 		t.Errorf("adopt_typicaldays.json should be rejected for Calliope (resample only)")
+	}
+	// Calliope 0.6 has no custom math / indexed parameters / piecewise
+	// performance: the 0.7-only scenarios must be rejected by the 0.6 target
+	// with a pointed message, not emitted lossily.
+	for _, c := range []struct{ file, want string }{
+		{"calliope_piecewise.json", "piecewise"},
+		{"calliope_custommath.json", "custom_math"}, // only a warning; see below
+	} {
+		j := load(c.file)
+		_, err := target.ValidateFor(&j, model.TargetCalliope06)
+		if c.file == "calliope_custommath.json" {
+			// Single-term constraints + an emission limit DO map onto
+			// group_constraints; custom_math itself is just ignored.
+			if err != nil {
+				t.Errorf("%s should be accepted by calliope-0.6 (group_constraints), got %v", c.file, err)
+			}
+			continue
+		}
+		if err == nil || !strings.Contains(err.Error(), c.want) {
+			t.Errorf("%s should be rejected for calliope-0.6 mentioning %q, got %v", c.file, c.want, err)
+		}
 	}
 }
 

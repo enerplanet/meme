@@ -1,0 +1,55 @@
+model:
+  name: calliope_transmission
+  calliope_version: 0.6.8
+  timeseries_data_path: timeseries_data
+run:
+  mode: plan
+  solver: cbc
+  objective_options:
+    cost_class:
+      monetary: 1
+    sense: minimize
+techs:
+  gen:
+    essentials:
+      name: gen
+      parent: supply
+      carrier_out: electricity
+    constraints:
+      energy_cap_max: 1000
+    costs:
+      monetary:
+        om_prod: 40
+  load:
+    essentials:
+      name: load
+      parent: demand
+      carrier_in: electricity
+  line:
+    essentials:
+      name: line
+      parent: transmission
+      carrier: electricity
+    constraints:
+      energy_eff: 0.97
+      energy_cap_max: 500
+locations:
+  n1:
+    coordinates:
+      lat: 48.0
+      lon: 11.0
+    techs:
+      gen:
+  n2:
+    coordinates:
+      lat: 49.0
+      lon: 12.0
+    techs:
+      load:
+        constraints:
+          resource: "file=load__resource.csv:n2"
+links:
+  n1,n2:
+    techs:
+      line:
+        distance: 50

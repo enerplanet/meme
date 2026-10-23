@@ -1,0 +1,90 @@
+model:
+  name: calliope_extensions
+  calliope_version: 0.6.8
+  timeseries_data_path: timeseries_data
+run:
+  mode: plan
+  solver: cbc
+  solver_options:
+    seconds: 300
+  objective_options:
+    cost_class:
+      monetary: 1
+    sense: minimize
+  cyclic_storage: true
+  save_logs: logs
+techs:
+  battery:
+    essentials:
+      name: battery
+      parent: storage
+      carrier: electricity
+    constraints:
+      energy_eff: 0.95
+      storage_cap_max: 100
+      storage_discharge_depth: 0.1
+      energy_cap_per_storage_cap_max: 0.5
+      energy_cap_max: 50
+      lifetime: 1
+    costs:
+      monetary:
+        energy_cap: 20
+        interest_rate: 0
+  flex_load:
+    essentials:
+      name: flex_load
+      parent: demand
+      carrier_in: electricity
+    constraints:
+      force_resource: false
+  gasgen:
+    essentials:
+      name: gasgen
+      parent: supply
+      carrier_out: electricity
+    constraints:
+      energy_cap_max: 300
+      energy_cap_max_systemwide: 250
+      lifetime: 1
+    costs:
+      monetary:
+        energy_cap: 100
+        om_con: 30
+        interest_rate: 0
+  load:
+    essentials:
+      name: load
+      parent: demand
+      carrier_in: electricity
+  line:
+    essentials:
+      name: line
+      parent: transmission
+      carrier: electricity
+    constraints:
+      energy_eff: 0.98
+      energy_cap_max: 300
+      energy_eff_per_distance: 0.9999
+      lifetime: 1
+    costs:
+      monetary:
+        energy_cap_per_distance: 10
+        interest_rate: 0
+locations:
+  n1:
+    techs:
+      battery:
+      flex_load:
+        constraints:
+          resource: "file=flex_load__resource.csv:n1"
+      gasgen:
+  n2:
+    techs:
+      load:
+        constraints:
+          resource: "file=load__resource.csv:n2"
+links:
+  n1,n2:
+    techs:
+      line:
+        distance: 50

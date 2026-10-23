@@ -1,0 +1,159 @@
+{
+  "model": {
+    "metadata": {
+      "name": "calliope06_typical_days",
+      "description": "Calliope 0.6 k-means typical days: two day shapes over four days clustered to k=2"
+    },
+    "time": {
+      "start": "2025-01-01",
+      "end": "2025-01-04T23:00",
+      "resolution": "1H"
+    },
+    "carriers": {
+      "electricity": {
+        "unit": "MWh"
+      }
+    },
+    "nodes": {
+      "n1": {}
+    },
+    "technologies": {
+      "gen": {
+        "role": "supply",
+        "node": "n1",
+        "carrier_out": "electricity",
+        "capacity": {
+          "expandable": true,
+          "max": 1000
+        },
+        "lifetime": 25,
+        "interest_rate": 0.05,
+        "costs": {
+          "monetary": {
+            "investment_per_capacity": 300000,
+            "variable_om": 10
+          }
+        }
+      },
+      "load": {
+        "role": "demand",
+        "node": "n1",
+        "carrier_in": "electricity",
+        "demand_profile": "dem"
+      }
+    },
+    "timeseries": {
+      "dem": {
+        "source": "inline",
+        "values": [
+          60.0,
+          65.2,
+          70.4,
+          75.3,
+          80.0,
+          84.4,
+          88.3,
+          91.7,
+          94.6,
+          97.0,
+          98.6,
+          99.7,
+          100.0,
+          99.7,
+          98.6,
+          97.0,
+          94.6,
+          91.7,
+          88.3,
+          84.4,
+          80.0,
+          75.3,
+          70.4,
+          65.2,
+          90.0,
+          97.8,
+          105.5,
+          113.0,
+          120.0,
+          126.5,
+          132.4,
+          137.6,
+          142.0,
+          145.4,
+          148.0,
+          149.5,
+          150.0,
+          149.5,
+          148.0,
+          145.4,
+          142.0,
+          137.6,
+          132.4,
+          126.5,
+          120.0,
+          113.0,
+          105.5,
+          97.8,
+          60.0,
+          65.2,
+          70.4,
+          75.3,
+          80.0,
+          84.4,
+          88.3,
+          91.7,
+          94.6,
+          97.0,
+          98.6,
+          99.7,
+          100.0,
+          99.7,
+          98.6,
+          97.0,
+          94.6,
+          91.7,
+          88.3,
+          84.4,
+          80.0,
+          75.3,
+          70.4,
+          65.2,
+          90.0,
+          97.8,
+          105.5,
+          113.0,
+          120.0,
+          126.5,
+          132.4,
+          137.6,
+          142.0,
+          145.4,
+          148.0,
+          149.5,
+          150.0,
+          149.5,
+          148.0,
+          145.4,
+          142.0,
+          137.6,
+          132.4,
+          126.5,
+          120.0,
+          113.0,
+          105.5,
+          97.8
+        ]
+      }
+    }
+  },
+  "experiment": {
+    "mode": "plan",
+    "time_aggregation": {
+      "method": "typical_days",
+      "periods": 2
+    },
+    "solver": {
+      "name": "cbc"
+    }
+  }
+}

@@ -1,0 +1,52 @@
+model:
+  name: pypsa_constraints_sidecar
+  calliope_version: 0.6.8
+  timeseries_data_path: timeseries_data
+run:
+  mode: plan
+  solver: cbc
+  objective_options:
+    cost_class:
+      monetary: 1
+    sense: minimize
+techs:
+  gas:
+    essentials:
+      name: gas
+      parent: supply
+      carrier_out: electricity
+    constraints:
+      energy_cap_equals: 500
+    costs:
+      monetary:
+        om_prod: 5
+  load:
+    essentials:
+      name: load
+      parent: demand
+      carrier_in: electricity
+  pv:
+    essentials:
+      name: pv
+      parent: supply
+      carrier_out: electricity
+    constraints:
+      energy_cap_max: 1000
+      lifetime: 25
+    costs:
+      monetary:
+        energy_cap: 500000
+        om_prod: 0
+        interest_rate: 0.05
+locations:
+  n1:
+    techs:
+      gas:
+      load:
+        constraints:
+          resource: "file=load__resource.csv:n1"
+      pv:
+group_constraints:
+  force_pv:
+    techs: [pv]
+    energy_cap_min: 300

@@ -17,7 +17,7 @@ import (
 // with a message listing the known ones, Names() is stable and sorted, and
 // Defaults() leaves out the version variants.
 func TestRegistryResolution(t *testing.T) {
-	want := []model.Target{"adopt-net0", "calliope", "pypsa"}
+	want := []model.Target{"adopt-net0", "calliope", "calliope-0.6", "pypsa"}
 	got := target.Names()
 	if len(got) != len(want) {
 		t.Fatalf("Names() = %v, want %v", got, want)
@@ -57,18 +57,22 @@ func TestRegistryResolution(t *testing.T) {
 	}
 }
 
-// TestVersionedTargets: targets report their framework version; "calliope-0.7"
-// is an alias of the default "calliope" (resolving everywhere a name is
-// accepted, never listed as its own target), and no default is a Variant.
+// TestVersionedTargets: the Calliope releases are separate targets with their
+// own framework version; "calliope-0.7" is an alias of the default "calliope"
+// (resolving everywhere a name is accepted, never listed as its own target),
+// and "calliope-0.6" is a variant selected only by name.
 func TestVersionedTargets(t *testing.T) {
 	versions := target.Versions()
-	for name, want := range map[string]string{"calliope": "0.7.0", "pypsa": "1.2.4", "adopt-net0": "0.1.10"} {
+	for name, want := range map[string]string{"calliope": "0.7.0", "calliope-0.6": "0.6.8", "pypsa": "1.2.4", "adopt-net0": "0.1.10"} {
 		if versions[name] != want {
 			t.Errorf("Versions()[%s] = %q, want %q", name, versions[name], want)
 		}
 	}
 	if got := target.Resolve("calliope-0.7"); got != model.TargetCalliope {
 		t.Errorf("Resolve(calliope-0.7) = %s, want calliope", got)
+	}
+	if got := target.Resolve("calliope-0.6"); got != model.TargetCalliope06 {
+		t.Errorf("Resolve(calliope-0.6) = %s (a variant is its own target)", got)
 	}
 	impl, err := target.For("calliope-0.7")
 	if err != nil || impl.Name() != model.TargetCalliope {
@@ -84,6 +88,10 @@ func TestVersionedTargets(t *testing.T) {
 		if n == "calliope-0.7" {
 			t.Error("an alias must not appear in Names()")
 		}
+	}
+	v06, _ := target.For(model.TargetCalliope06)
+	if variant, ok := v06.(target.Variant); !ok || variant.VariantOf() != model.TargetCalliope {
+		t.Errorf("calliope-0.6 must be a Variant of calliope")
 	}
 	if _, ok := impl.(target.Variant); ok {
 		t.Error("the default calliope target must not be a Variant")
@@ -107,8 +115,8 @@ func TestVersionedTargets(t *testing.T) {
 // implementation's own profile exactly.
 func TestCapabilityMatrixAggregation(t *testing.T) {
 	matrix := target.CapabilityMatrix()
-	if len(matrix) != 3 {
-		t.Fatalf("matrix has %d targets, want 3", len(matrix))
+	if len(matrix) != 4 {
+		t.Fatalf("matrix has %d targets, want 4", len(matrix))
 	}
 	for _, name := range target.Names() {
 		impl, _ := target.For(name)

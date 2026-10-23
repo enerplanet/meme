@@ -1,0 +1,70 @@
+model:
+  name: calliope_custommath
+  calliope_version: 0.6.8
+  timeseries_data_path: timeseries_data
+run:
+  mode: plan
+  solver: cbc
+  objective_options:
+    cost_class:
+      monetary: 1
+      emissions: 0
+    sense: minimize
+techs:
+  gas_src:
+    essentials:
+      name: gas_src
+      parent: supply
+      carrier_out: gas
+    constraints:
+      energy_cap_max: 10000
+    costs:
+      monetary:
+        om_prod: 20
+  gasgen:
+    essentials:
+      name: gasgen
+      parent: conversion
+      carrier_in: gas
+      carrier_out: electricity
+    constraints:
+      energy_eff: 0.5
+      energy_cap_max: 1000
+    costs:
+      monetary:
+        om_prod: 5
+      emissions:
+        om_con: 0.2
+  load:
+    essentials:
+      name: load
+      parent: demand
+      carrier_in: electricity
+  pv:
+    essentials:
+      name: pv
+      parent: supply
+      carrier_out: electricity
+    constraints:
+      energy_cap_max: 1000
+      lifetime: 25
+    costs:
+      monetary:
+        energy_cap: 500000
+        interest_rate: 0.05
+locations:
+  n1:
+    techs:
+      gas_src:
+      gasgen:
+      load:
+        constraints:
+          resource: "file=load__resource.csv:n1"
+      pv:
+group_constraints:
+  co2_cap:
+    cost_max:
+      emissions: 1.0e+06
+  max_pv:
+    techs: [pv]
+    energy_cap_max: 800

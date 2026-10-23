@@ -1,7 +1,7 @@
-# Calliope 0.7 — target "calliope" — lives in its own virtualenv (see
-# Dockerfile) so its dependency set doesn't collide with PyPSA / AdOpT in the
-# system Python. The Go runner only ever calls the `calliope` CLI, so
-# isolation is lossless.
+# Calliope 0.7 — target "calliope" (alias "calliope-0.7") — lives in its own
+# virtualenv (see Dockerfile) so its dependency set doesn't collide with
+# PyPSA / AdOpT in the system Python or with the Calliope 0.6 venv. The Go
+# runner only ever calls the `calliope` CLI, so isolation is lossless.
 #
 # 0.7.0 is the first stable 0.7 release (PyPI 2026-09-01, Python >= 3.12).
 # The emitter targets its model definition: `data_tables` entries spelled

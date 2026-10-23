@@ -15,6 +15,12 @@ import (
 	"github.com/enerplanet/meme/internal/target/calliope"
 )
 
+// planDirs builds the per-run directory layout under base, as the
+// orchestrator does.
+func planDirs(base string) target.RunDirs {
+	return target.RunDirs{RunDir: base, InputDir: filepath.Join(base, "input"), OutDir: filepath.Join(base, "output")}
+}
+
 func loadSampleFor(t *testing.T, tgt model.Target) model.Job {
 	t.Helper()
 	j, err := scenarios.SampleFor(tgt)

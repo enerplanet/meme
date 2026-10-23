@@ -1,0 +1,53 @@
+model:
+  name: pypsa_generators
+  calliope_version: 0.6.8
+  timeseries_data_path: timeseries_data
+run:
+  mode: plan
+  solver: cbc
+  objective_options:
+    cost_class:
+      monetary: 1
+    sense: minimize
+techs:
+  ccgt:
+    essentials:
+      name: ccgt
+      parent: supply
+      carrier_out: electricity
+    constraints:
+      energy_cap_max: 800
+      lifetime: 25
+    costs:
+      monetary:
+        energy_cap: 800000
+        om_annual: 2000
+        om_prod: 60
+        interest_rate: 0.07
+  load:
+    essentials:
+      name: load
+      parent: demand
+      carrier_in: electricity
+  pv:
+    essentials:
+      name: pv
+      parent: supply
+      carrier_out: electricity
+    constraints:
+      energy_cap_max: 500
+      energy_cap_min: 10
+      lifetime: 25
+    costs:
+      monetary:
+        energy_cap: 600000
+        om_prod: 0
+        interest_rate: 0.05
+locations:
+  n1:
+    techs:
+      ccgt:
+      load:
+        constraints:
+          resource: "file=load__resource.csv:n1"
+      pv:

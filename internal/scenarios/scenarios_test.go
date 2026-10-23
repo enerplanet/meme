@@ -28,11 +28,13 @@ func TestCorpusIntegrity(t *testing.T) {
 		if j.Model.Metadata.Name == "" {
 			t.Errorf("%s: metadata.name empty", name)
 		}
-		if !strings.HasPrefix(name, "pypsa_") && !strings.HasPrefix(name, "calliope_") && !strings.HasPrefix(name, "adopt_") {
+		// Prefixes name the target a scenario is written for: pypsa_,
+		// calliope_ (0.7), calliope06_ (0.6-specific), adopt_.
+		if !strings.HasPrefix(name, "pypsa_") && !strings.HasPrefix(name, "calliope_") && !strings.HasPrefix(name, "calliope06_") && !strings.HasPrefix(name, "adopt_") {
 			t.Errorf("%s: file name must carry its target prefix", name)
 		}
 	}
-	for _, tgt := range []model.Target{model.TargetPyPSA, model.TargetCalliope, model.TargetAdOpt} {
+	for _, tgt := range []model.Target{model.TargetPyPSA, model.TargetCalliope, model.TargetCalliope06, model.TargetAdOpt} {
 		if _, err := scenarios.SampleFor(tgt); err != nil {
 			t.Errorf("SampleFor(%s): %v", tgt, err)
 		}

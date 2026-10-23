@@ -1,0 +1,20 @@
+# Calliope 0.6.8 — target "calliope-0.6" — lives in a second virtualenv on a
+# uv-managed Python 3.8 (see Dockerfile). Its dependency set predates Python
+# 3.12 (numpy 1.20, pandas 1.3, pyomo 6.2 and scikit-learn 0.23 ship no 3.12
+# wheels), and its model definition (model/run/techs/locations/links with
+# file= timeseries references and group_constraints) is a different dialect,
+# emitted by the calliope-0.6 target and driven through the `calliope-0.6` CLI.
+#
+# The caps mirror upstream's own requirements.txt at tag v0.6.8. The
+# scikit-learn cap is load-bearing (0.24 breaks k-means clustering, i.e.
+# time_aggregation "typical_days") and is what forces Python 3.8: 0.23.2 is
+# the last release with wheels, and they stop at cp38.
+calliope==0.6.8
+numpy>=1.20,<1.21
+pandas>=1.3,<1.4
+pyomo>=6.2,<6.3
+scikit-learn>=0.22,<0.24
+xarray>=0.20,<0.21
+ruamel.yaml>=0.16,<0.17
+click>=7,<8
+plotly>=3.10,<3.11

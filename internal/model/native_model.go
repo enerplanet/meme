@@ -14,10 +14,16 @@ import "encoding/json"
 // Using a native block makes the payload target-locked: it will emit correctly
 // only for the target whose block is populated. ValidateFor surfaces this as a
 // warning so the caller knows portability was traded away deliberately.
+//
+// Framework versions with different input dialects carry separate blocks: a
+// native.calliope fragment is Calliope 0.7 syntax and is never applied to the
+// calliope-0.6 target, which reads native["calliope-0.6"] (0.6 syntax:
+// essentials/constraints/costs) instead.
 type Native struct {
-	PyPSA    json.RawMessage `json:"pypsa,omitempty"`
-	Calliope json.RawMessage `json:"calliope,omitempty"`
-	AdOpt    json.RawMessage `json:"adopt-net0,omitempty"`
+	PyPSA      json.RawMessage `json:"pypsa,omitempty"`
+	Calliope   json.RawMessage `json:"calliope,omitempty"`
+	Calliope06 json.RawMessage `json:"calliope-0.6,omitempty"`
+	AdOpt      json.RawMessage `json:"adopt-net0,omitempty"`
 }
 
 // For returns the raw block for a target (nil-safe).
@@ -30,6 +36,8 @@ func (n *Native) For(t Target) json.RawMessage {
 		return n.PyPSA
 	case TargetCalliope:
 		return n.Calliope
+	case TargetCalliope06:
+		return n.Calliope06
 	case TargetAdOpt:
 		return n.AdOpt
 	}
@@ -40,7 +48,7 @@ func (n *Native) For(t Target) json.RawMessage {
 // native block.
 func (n *Native) otherTargets(sel Target) []Target {
 	var out []Target
-	for _, t := range []Target{TargetPyPSA, TargetCalliope, TargetAdOpt} {
+	for _, t := range []Target{TargetPyPSA, TargetCalliope, TargetCalliope06, TargetAdOpt} {
 		if t != sel && len(n.For(t)) > 0 {
 			out = append(out, t)
 		}

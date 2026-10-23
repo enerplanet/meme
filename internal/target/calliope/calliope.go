@@ -1,9 +1,18 @@
 // Copyright (c) 2026 BigGeoData & Spatial AI, Technische Hochschule Deggendorf
 // SPDX-License-Identifier: MIT
 
-// Package calliope is the Calliope 0.7 target: capability profile, validation
-// gates, the model.yaml + data-table emitter (with ratio-pinning / piecewise /
-// MILP extra math), and the CLI run plan.
+// Package calliope holds the Calliope targets, one per supported release:
+//
+//   - "calliope" (alias "calliope-0.7"): Calliope 0.7 — capability profile,
+//     validation gates, the model.yaml + data-table emitter (with
+//     ratio-pinning / piecewise / MILP extra math), and the CLI run plan
+//     (this file, emitter.go).
+//   - "calliope-0.6": Calliope 0.6 — the legacy model/run/techs/locations/links
+//     dialect with file= timeseries references and group_constraints, driven
+//     through the `calliope-0.6` CLI (v06.go, v06_emitter.go).
+//
+// Both share the dependency-free YAML writer (yaml.go) and the native-block
+// merge; each reads its own native key (native.calliope / native["calliope-0.6"]).
 package calliope
 
 import (

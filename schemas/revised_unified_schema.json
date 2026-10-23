@@ -6,7 +6,7 @@
   "x-source-schemas": {
     "adopt-net0": "adopt_net0_schema.json (AdOpT-NET0 0.1.10)",
     "pypsa": "pypsa_schema.json (PyPSA 1.2.4)",
-    "calliope": "calliope_schema.json (Calliope 0.7; pinned release 0.7.0)"
+    "calliope": "calliope_schema.json (Calliope 0.7; pinned release 0.7.0, target `calliope`; the `calliope-0.6` target emits the Calliope 0.6.8 dialect)"
   },
   "x-go-package": "github.com/enerplanet/meme/internal/model",
   "x-report": "docs/unified_schema_vs_go.md",
@@ -232,7 +232,12 @@
         "calliope": {
           "type": "object",
           "additionalProperties": true,
-          "description": "Partial of Calliope's own input schema (see calliope_schema.json $defs/techDef, $defs/nodeDef, $defs/config)."
+          "description": "Partial of Calliope 0.7's own input schema (see calliope_schema.json $defs/techDef, $defs/nodeDef, $defs/config). Read by the `calliope` target (alias `calliope-0.7`) only."
+        },
+        "calliope-0.6": {
+          "type": "object",
+          "additionalProperties": true,
+          "description": "Partial of a Calliope 0.6 tech/location definition (essentials / constraints / costs, 0.6 parameter names such as energy_cap_max, parasitic_eff, om_prod). Read by the `calliope-0.6` target only and deep-merged into the emitted mapping, so a nested block extends the emitted constraints/costs instead of replacing them."
         },
         "adopt-net0": {
           "type": "object",
@@ -256,7 +261,12 @@
         "calliope": {
           "type": "object",
           "additionalProperties": true,
-          "description": "Partial Calliope model definition; vocabulary: calliope_schema.json."
+          "description": "Partial Calliope 0.7 model definition; vocabulary: calliope_schema.json. Read by the `calliope` target (alias `calliope-0.7`) only."
+        },
+        "calliope-0.6": {
+          "type": "object",
+          "additionalProperties": true,
+          "description": "Partial Calliope 0.6 model document (model / run / techs / locations / links / group_constraints), deep-merged into the emitted model.yaml of the `calliope-0.6` target only (e.g. run.bigM, model.random_seed, extra group_constraints)."
         },
         "adopt-net0": {
           "type": "object",

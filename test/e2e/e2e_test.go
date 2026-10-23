@@ -45,6 +45,7 @@ import (
 	"github.com/enerplanet/meme/internal/model"
 	"github.com/enerplanet/meme/internal/scenarios"
 	"github.com/enerplanet/meme/internal/service"
+	"github.com/enerplanet/meme/internal/target"
 )
 
 // pollTimeout bounds one job's queued->done wait. AdOpT jobs (read_data +
@@ -338,15 +339,18 @@ func lifecycle(t *testing.T, file string, target model.Target, diskFiles, logMar
 
 // --- deep per-target lifecycle tests (the smoke tier) --------------------------
 
-// Pinned objective values for the three lifecycle scenarios, recorded from a
-// verified run on 2026-07-09 (PyPSA 1.2.4/HiGHS, Calliope 0.7.0.dev7/CBC,
-// AdOpT 0.1.10/GLPK). Each pin carries its own relative delta (rel) bounding
-// acceptable solver numerics; a drift beyond it is a translation regression.
-// value 0 disables a pin until a number has been recorded.
+// Pinned objective values for the lifecycle scenarios, recorded from verified
+// runs (PyPSA 1.2.4/HiGHS, Calliope 0.7.0/CBC and 0.6.8/CBC, AdOpT 0.1.10/GLPK).
+// Each pin carries its own relative delta (rel) bounding acceptable solver
+// numerics; a drift beyond it is a translation regression. value 0 disables a
+// pin until a number has been recorded. Both Calliope releases solve the same
+// calliope_plan.json, so their pins must agree: the two emitters translate the
+// same model into two dialects.
 var (
-	pypsaLifecycleObjective    = objectivePin{value: 4.2571474e6, rel: 1e-4}
-	calliopeLifecycleObjective = objectivePin{value: 2915.8544, rel: 1e-4}
-	adoptLifecycleObjective    = objectivePin{value: 21000, rel: 1e-4}
+	pypsaLifecycleObjective      = objectivePin{value: 4.2571474e6, rel: 1e-4}
+	calliopeLifecycleObjective   = objectivePin{value: 2915.8544, rel: 1e-4}
+	calliope06LifecycleObjective = objectivePin{value: 2915.8544, rel: 1e-4}
+	adoptLifecycleObjective      = objectivePin{value: 21000, rel: 1e-4}
 )
 
 func TestE2EPyPSALifecycle(t *testing.T) {
@@ -374,6 +378,22 @@ func TestE2ECalliopeLifecycle(t *testing.T) {
 		},
 		[]string{"Calliope run complete", "Saving NetCDF results", "exit=0"},
 		calliopeLifecycleObjective,
+	)
+}
+
+// TestE2ECalliope06Lifecycle drives the same plan scenario through the
+// Calliope 0.6 dialect and the `calliope-0.6` CLI (second venv in the image).
+func TestE2ECalliope06Lifecycle(t *testing.T) {
+	requireE2E(t)
+	t.Parallel()
+	lifecycle(t, "calliope_plan.json", model.TargetCalliope06,
+		[]string{
+			"run_0/input/model.yaml",
+			"run_0/input/timeseries_data/load__resource.csv",
+			"run_0/output/results.nc", // --save_netcdf
+		},
+		[]string{"Calliope run complete", "Saving NetCDF results", "exit=0"},
+		calliope06LifecycleObjective,
 	)
 }
 
@@ -765,6 +785,8 @@ func TestE2EAllScenarios(t *testing.T) {
 			return model.TargetPyPSA
 		case strings.HasPrefix(name, "calliope_"):
 			return model.TargetCalliope
+		case strings.HasPrefix(name, "calliope06_"):
+			return model.TargetCalliope06
 		case strings.HasPrefix(name, "adopt_"):
 			return model.TargetAdOpt
 		}
@@ -794,6 +816,42 @@ func TestE2EAllScenarios(t *testing.T) {
 			if entries, err := os.ReadDir(input); err != nil || len(entries) == 0 {
 				t.Errorf("%s: no emitted files on disk under %s", name, input)
 			}
+		})
+	}
+}
+
+// TestE2ECalliope06Corpus runs every Calliope 0.7 scenario the 0.6 target
+// accepts (the capability matrix decides) through the real `calliope-0.6`
+// CLI as well: the two emitters must both produce solvable models from the
+// same payloads. Scenarios the 0.6 gates reject (piecewise, time weights, ...)
+// are skipped here; the validation matrix golden freezes those verdicts.
+func TestE2ECalliope06Corpus(t *testing.T) {
+	requireFull(t)
+	for _, name := range scenarios.Names() {
+		if !strings.HasPrefix(name, "calliope_") {
+			continue
+		}
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			j, err := scenarios.Load(name)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := target.ValidateFor(&j, model.TargetCalliope06); err != nil {
+				t.Skipf("not accepted by calliope-0.6: %v", err)
+			}
+			srv, work := newE2EServer(t)
+			sub := submit(t, srv.URL, model.TargetCalliope06, readScenario(t, name))
+			status := awaitJob(t, srv.URL, sub["id"].(string))
+			if status["state"] != string(service.StateSucceeded) {
+				t.Fatalf("%s (calliope-0.6) failed: %v\nlog:\n%v", name, status["error"], status["log"])
+			}
+			for _, run := range runsOf(t, status) {
+				if ec, _ := run["exit_code"].(float64); ec != 0 {
+					t.Errorf("%s: run exit=%v", name, ec)
+				}
+			}
+			mustExist(t, filepath.Join(jobDirOf(t, work), "run_0", "output", "results.nc"))
 		})
 	}
 }

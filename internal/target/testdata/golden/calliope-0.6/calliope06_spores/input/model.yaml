@@ -1,0 +1,68 @@
+model:
+  name: calliope06_spores
+  calliope_version: 0.6.8
+  timeseries_data_path: timeseries_data
+run:
+  mode: spores
+  solver: cbc
+  objective_options:
+    cost_class:
+      monetary: 1
+      spores_score: 0
+    sense: minimize
+  spores_options:
+    spores_number: 2
+    slack: 0.1
+    score_cost_class: spores_score
+    slack_cost_group: systemwide_cost_max
+    objective_cost_class:
+      spores_score: 1
+      monetary: 0
+techs:
+  load:
+    essentials:
+      name: load
+      parent: demand
+      carrier_in: electricity
+  pv:
+    essentials:
+      name: pv
+      parent: supply
+      carrier_out: electricity
+    constraints:
+      energy_cap_max: 1000
+      lifetime: 25
+    costs:
+      monetary:
+        energy_cap: 500000
+        interest_rate: 0.05
+      spores_score:
+        energy_cap: 0
+        interest_rate: 1
+  wind:
+    essentials:
+      name: wind
+      parent: supply
+      carrier_out: electricity
+    constraints:
+      energy_cap_max: 1000
+      lifetime: 25
+    costs:
+      monetary:
+        energy_cap: 700000
+        interest_rate: 0.05
+      spores_score:
+        energy_cap: 0
+        interest_rate: 1
+locations:
+  n1:
+    techs:
+      load:
+        constraints:
+          resource: "file=load__resource.csv:n1"
+      pv:
+      wind:
+group_constraints:
+  systemwide_cost_max:
+    cost_max:
+      monetary: .inf

@@ -47,3 +47,33 @@ func jsonToYAML(v any) any {
 		return x
 	}
 }
+
+// mergeNativeDeepIntoYAML is the recursive variant used by the Calliope 0.6
+// emitter, whose tech/location mappings nest (essentials / constraints /
+// costs): a native object is merged key by key into an existing nested
+// mapping instead of replacing it wholesale, so `{"constraints":
+// {"parasitic_eff": 0.98}}` extends the emitted constraints rather than
+// wiping them. Scalars and arrays still replace; a native key with no
+// emitted counterpart is added.
+func mergeNativeDeepIntoYAML(n *yamlNode, raw json.RawMessage) error {
+	if len(raw) == 0 {
+		return nil
+	}
+	var m map[string]any
+	if err := json.Unmarshal(raw, &m); err != nil {
+		return fmt.Errorf("native[\"calliope-0.6\"] must be a JSON object: %w", err)
+	}
+	deepMergeMap(n, m)
+	return nil
+}
+
+func deepMergeMap(n *yamlNode, m map[string]any) {
+	for _, k := range emit.SortedKeys(m) {
+		incoming, isMap := m[k].(map[string]any)
+		if existing, ok := n.vals[k].(*yamlNode); ok && existing != nil && isMap {
+			deepMergeMap(existing, incoming)
+			continue
+		}
+		n.set(k, jsonToYAML(m[k]))
+	}
+}

@@ -68,17 +68,23 @@ map iterations are sorted), so goldens never flake.
 Gated by `MEME_E2E=1` (set by the Make targets); outside the container every
 test self-skips. Two tiers, selected with Go's standard `-short` flag:
 
-- **Smoke** (`make e2e-smoke`, ~1 min): one full lifecycle per framework
-  (submit → poll → files on disk → solver optimal → complete zip) plus one
-  `?target=all` job (3 frameworks × 2 sweep points in a single bundle). The
-  lifecycles also pin the **objective value**: each `objectivePin` carries
-  the recorded optimum and its own relative delta (`rel: 1e-4` = ±0.01%)
-  absorbing solver numerics — drift beyond it is a translation regression.
-- **Full** (`make e2e`, ~1.5 min): adds the economics pins (export revenue
+- **Smoke** (`make e2e-smoke`, ~1 min): one full lifecycle per target
+  (submit → poll → files on disk → solver optimal → complete zip) — PyPSA,
+  Calliope 0.7 (`calliope`), Calliope 0.6 (`calliope-0.6`, the second venv's
+  `calliope-0.6` CLI) and AdOpT — plus one `?target=all` job (the 3 default
+  frameworks × 2 sweep points in a single bundle; `all` never runs two
+  Calliope releases unless named). The lifecycles also pin the **objective
+  value**: each `objectivePin` carries the recorded optimum and its own
+  relative delta (`rel: 1e-4` = ±0.01%) absorbing solver numerics — drift
+  beyond it is a translation regression. The two Calliope lifecycles solve
+  the same `calliope_plan.json`, so their pins must agree.
+- **Full** (`make e2e`, ~2 min): adds the economics pins (export revenue
   sign, time-varying import prices, binding sidecar constraint), the
   cross-target consistency check (the same model must reach the same
   objective on all three frameworks ±1%), the failure path (infeasible model
-  → `state=failed`), and **every scenario in the corpus** run to optimal.
+  → `state=failed`), **every scenario in the corpus** run to optimal on its
+  prefix target, and every `calliope_*` scenario the 0.6 gates accept run
+  again on `calliope-0.6` (`TestE2ECalliope06Corpus`).
   Scenario subtests are `t.Parallel()` with an isolated server + work dir
   each; `-parallel 3` bounds concurrent solver processes.
 
@@ -86,7 +92,8 @@ test self-skips. Two tiers, selected with Go's standard `-short` flag:
 
 - **New capability / scenario**: drop a runnable payload into
   [`internal/scenarios/testdata/scenarios/`](../internal/scenarios/testdata/scenarios/)
-  (name prefix = its target: `pypsa_*`, `calliope_*`, `adopt_*`). It is
+  (name prefix = its target: `pypsa_*`, `calliope_*` (0.7), `calliope06_*`
+  (0.6-specific, e.g. k-means typical days), `adopt_*`). It is
   automatically picked up by the corpus integrity test, the emit goldens
   (run `make golden-update` once), the validation matrix, and the full E2E
   sweep. If the scenario backs a new capability-matrix claim, map it in
@@ -106,4 +113,6 @@ test self-skips. Two tiers, selected with Go's standard `-short` flag:
   repo (`.work/`) are root-owned on the host.
 - A full-suite pass certifies the exact framework/solver versions pinned in
   [`environment/requirements*.txt`](../environment/) — re-run `make e2e`
-  after any pin bump.
+  after any pin bump. Both Calliope releases are certified: the goldens under
+  `testdata/golden/calliope/` are 0.7.0 models, those under
+  `testdata/golden/calliope-0.6/` are 0.6.8 models.

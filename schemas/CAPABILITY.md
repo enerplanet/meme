@@ -14,8 +14,11 @@ honors. This document mirrors the enforced behavior:
   in the response (`warnings: [...]`).
 - **· informational** — accepted metadata with no solver effect on any target.
 
-Targets: **P** = PyPSA 1.2.4 · **C** = Calliope 0.7.0.dev7 · **A** = AdOpT-NET0 0.1.10
-(pinned in [`environment/requirements*.txt`](../environment/)).
+Targets: **P** = PyPSA 1.2.4 · **C** = Calliope 0.7.0 (target `calliope`, alias
+`calliope-0.7`) · **A** = AdOpT-NET0 0.1.10 (pinned in
+[`environment/requirements*.txt`](../environment/)). Calliope 0.6.8 is a fourth,
+explicitly selected target (`calliope-0.6`); it honors the **C** column except
+where [§3.7](#37-calliope-06-calliope-06) says otherwise.
 
 ---
 
@@ -143,10 +146,13 @@ indexed parameters are Calliope-only).
 ## 2. Native passthrough per framework
 
 Every `native` block is scoped to one target (`"native": {"pypsa": …}` is
-invisible to the other two; a warning lists blocks the selected target ignores).
-Because selection is by key, blocks for all three targets can ride in one
-payload side by side — [`examples/payload_full.json`](../examples/payload_full.json)
-demonstrates this at every scope.
+invisible to the others; a warning lists blocks the selected target ignores).
+Because selection is by key, blocks for every target can ride in one payload
+side by side — [`examples/payload_full.json`](../examples/payload_full.json)
+demonstrates this at every scope. Framework versions with different input
+dialects have separate keys: `native.calliope` is Calliope 0.7 syntax and is
+never applied by the `calliope-0.6` target, which reads
+`native["calliope-0.6"]`.
 Native values are merged **last** — verbatim, unvalidated — so they can extend
 *or override* emitted attributes. A string naming a time series is **not**
 resolved; supply real literals or full data-table definitions.
@@ -177,6 +183,20 @@ Typical native-only uses: `source_use_min` (resource floor),
 `flow_out_parasitic_eff`, `sink_use_min`, `area_use_per_flow_cap`, custom math
 files. Scalars broadcast over missing dims
 (`config.init.broadcast_input_data: true` is always emitted).
+
+### Calliope 0.6 (`native["calliope-0.6"]`)
+
+| Attach point | Lands in |
+|---|---|
+| `technologies.<id>.native` | deep-merged into the tech's `techs.<id>` mapping (`essentials` / `constraints` / `costs`), so `{"constraints": {"parasitic_eff": 0.98}}` extends the emitted constraints instead of replacing them |
+| `transmission.<id>.native` / `trade.<id>.native` | deep-merged into the generated transmission / market tech |
+| `nodes.<id>.native` | deep-merged into `locations.<id>` |
+| `model.native` / `experiment.native` | deep-merged into the whole document (`run.bigM`, `model.random_seed`, extra `group_constraints`, …) |
+
+Typical native-only uses: `resource_min_use`, `parasitic_eff`, `export_cap`,
+`energy_cap_scale`, `run.bigM`, `run.zero_threshold`, additional
+`group_constraints` (`demand_share_min`, `net_import_share_max`, …). Use 0.6
+parameter names (`energy_cap_max`, `om_prod`, `storage_cap`), not 0.7's.
 
 ### AdOpT-NET0 (`native.adopt-net0`)
 
@@ -354,6 +374,31 @@ storage (`Storage_Battery`) map canonically. Any other non-demand tech is
 
 ---
 
+### 3.7 Calliope 0.6 (`calliope-0.6`)
+
+The 0.6 target reads the same canonical payload and honors the **C** column
+above, with these differences (each enforced by `Calliope06.ValidateJob`, frozen
+in the validation-matrix golden, and exercised by the `calliope06_*` scenarios):
+
+| Property | 0.6 | Notes |
+|---|---|---|
+| `experiment.time_aggregation.method: typical_days` | ✓ | k-means representative days (`model.time.apply_clustering`, `k` = `periods`, fixed `random_seed`); `keep_full_resolution_for` ⚠ ignored. 0.7 rejects this method. |
+| `experiment.objective: min_emissions` | ✓ | `run.objective_options.cost_class: {monetary: 0, emissions: 1}`; ✗ when the model has no emission source to weight |
+| `model.constraints` | ✓ single-term only | one variable over a tech/node set → `group_constraints` (`energy_cap_*`, `carrier_prod_*`, `carrier_con_*` (negative), `storage_cap_*`, `cost_*`); coefficient folded into the bound; multi-term ✗ (use `calliope`) |
+| `experiment.custom_math` | ⚠ ignored | no custom math in 0.6; constraints always render as group constraints |
+| multi-valued indexed `Value` | ✗ | no indexed parameters in 0.6 |
+| `performance.type: piecewise` | ✗ | no native piecewise efficiency |
+| `technology.flows` | ✓ one input, ≤ 3 outputs | `conversion_plus` tiers; `carrier_ratios` relative to the primary output |
+| `time.weights` | ✗ | timestep weights derive from the time resolution |
+| `trade.export` without `limit` | ✗ | the market demand tech needs a resource bound |
+| `storage.charge_eff` ≠ `discharge_eff` | ⚠ | one `energy_eff` for both directions: emits the geometric mean (round trip preserved) |
+| `storage.cyclic` (mixed across techs) | ⚠ | `run.cyclic_storage` is model-wide; mixed settings disable it. Operate mode is never cyclic. |
+| `lifetime` / `interest_rate` with fixed costs | ✓ | both are mandatory in 0.6; absent values (or `cost_basis: annualized`) become lifetime 1 / rate 0, i.e. the figure is charged in full every year |
+| `reporting.shadow_prices` | ⚠ ignored | not available in 0.6 |
+| `alternatives.scoring_algorithm` | ⚠ ignored | 0.6 SPORES uses integer scoring |
+| `capacity.systemwide_min`, `annual_output_min/max` | ✓ | per-tech `group_constraints` (`energy_cap_min`, `carrier_prod_min/max`) |
+| `native.calliope` | ⚠ ignored | 0.7 syntax; use `native["calliope-0.6"]` |
+
 ## 4. Cross-target guarantees
 
 - A job only reaches the runner if **every** property above resolves to ✓ or ⚠
@@ -366,7 +411,9 @@ storage (`Storage_Battery`) map canonically. Any other non-demand tech is
   framework's extras in its own `native` namespace) and solves to optimal on
   all of them from a single `?target=all` submit.
 - The identical dispatch model produces the **same objective on all three
-  frameworks** (`TestE2ECrossTargetConsistency`, ±1%).
+  frameworks** (`TestE2ECrossTargetConsistency`, ±1%), and the same plan model
+  reaches the same pinned objective on **both Calliope releases**
+  (`TestE2ECalliopeLifecycle` / `TestE2ECalliope06Lifecycle`).
 - Multi-output conversion ratios are **rigid on PyPSA and Calliope alike**
   (heat/power fixed per unit of fuel); over-determined demand patterns go
   infeasible rather than silently rebalancing, and fuel is single-counted.

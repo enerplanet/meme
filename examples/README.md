@@ -41,7 +41,22 @@ curl -s -X POST 'localhost:8080/validate?target=pypsa' \
 
 ```bash
 curl -s localhost:8080/capabilities | jq .
-# -> {"targets":["pypsa","calliope","adopt-net0"], "features":{"pypsa":{"mode:stochastic":true,…},…}}
+# -> {"targets":["adopt-net0","calliope","calliope-0.6","pypsa"],   <- every selectable target
+#     "default_targets":["adopt-net0","calliope","pypsa"],           <- what ?target=all runs
+#     "aliases":{"calliope-0.7":"calliope"},                           <- version-explicit spellings
+#     "versions":{"calliope":"0.7.0","calliope-0.6":"0.6.8","pypsa":"1.2.4","adopt-net0":"0.1.10"},
+#     "features":{"pypsa":{"mode:stochastic":true,…},"calliope-0.6":{…},…}}
+```
+
+Calliope is available in two releases: `calliope` (0.7.0, also spelled
+`calliope-0.7`) and `calliope-0.6` (0.6.8, the legacy `model`/`run`/`techs`/
+`locations` dialect). The 0.6 target runs only when named — `all` means one
+run per framework at its default version:
+
+```bash
+curl -s -X POST 'localhost:8080/validate?target=calliope-0.6' -d @examples/shared_full.json | jq .
+curl -s -X POST 'localhost:8080/convert?target=calliope,calliope-0.6' -d @examples/shared_full.json | jq .entrypoints
+# -> {"calliope": ".../calliope/input/model.yaml", "calliope-0.6": ".../calliope-0.6/input/model.yaml"}
 ```
 
 ## 2. Validate (fast, no files written)

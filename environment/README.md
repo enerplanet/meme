@@ -8,9 +8,11 @@ A single image that carries everything needed to **build**, **test**, and
 | Go 1.22 toolchain | build the stdlib-only service, run `go test ./...` |
 | Python 3.12 | host for the frameworks (AdOpT-NET0 requires ≥ 3.12) |
 | **PyPSA 1.2.4**, **AdOpT-NET0 0.1.10** | in the system Python (driven via the generated `run.py`) |
-| **Calliope 0.7.0.dev7** | in its own venv (`/opt/calliope-venv`; its pins conflict with the above) — only the `calliope` CLI is exposed on `PATH` |
+| **Calliope 0.7.0** | in its own venv (`/opt/calliope-0.7-venv`, Python 3.12; its pins conflict with the above) — exposed on `PATH` as `calliope` (target `calliope`) and `calliope-0.7` (the version-explicit alias) |
+| **Calliope 0.6.8** | in a second venv (`/opt/calliope-0.6-venv`) on a **uv-managed Python 3.8** (its pins — numpy 1.20, pandas 1.3, pyomo 6.2, scikit-learn 0.23 — have no 3.12 wheels) — exposed as `calliope-0.6` (target `calliope-0.6`) |
+| **uv** | provisions the venvs and the extra interpreter (kept under `/opt/uv-python`; the system Python is untouched) |
 | **HiGHS** (`highspy`) | solves PyPSA (`solver.name: "highs"`, the default) |
-| **CBC** (apt `coinor-cbc`) | solves Calliope — HiGHS cannot drive Calliope 0.7.dev7 (pyomo persistent-interface bug), so `highs` is mapped to `cbc` with a warning |
+| **CBC** (apt `coinor-cbc`) | solves both Calliope releases — HiGHS cannot drive Calliope's pyomo backend, so `highs` is mapped to `cbc` with a warning |
 | **GLPK** (apt `glpk-utils`) | solves AdOpT-NET0 |
 
 With all of the above on `PATH`, the service runs in real-execution mode
@@ -47,11 +49,11 @@ in the root Makefile:
 make -C environment build ENV=dev   # image (frameworks + solvers + Go)
 make -C environment test  ENV=dev   # full Go suite inside the container
 make -C environment run   ENV=dev   # API with real solvers
-make -C environment shell ENV=dev   # go/python/pypsa/calliope/adopt/solvers
+make -C environment shell ENV=dev   # go/python/pypsa/calliope (0.7 + 0.6)/adopt/solvers
 
 # End-to-end tiers (real HTTP API + frameworks + solvers; defined in
 # test/Makefile, aliased at the root):
-make e2e-smoke               # 3 per-target lifecycles + one multi-target job (~1 min)
+make e2e-smoke               # 4 per-target lifecycles (incl. calliope-0.6) + one multi-target job (~1 min)
 make e2e                     # the whole scenario corpus, -parallel 3 (~1.5 min)
 ```
 
@@ -98,12 +100,21 @@ with `ENV=staging`.
 ## Notes
 
 - Framework versions are pinned in [`requirements.txt`](requirements.txt)
-  (PyPSA + AdOpT, system Python) and
-  [`requirements-calliope.txt`](requirements-calliope.txt) (Calliope venv,
-  including its pandas/pyomo compatibility caps). The pins are load-bearing:
-  the emitters and run scripts are validated against exactly these versions —
-  Calliope in particular must stay at `0.7.0.dev7` (dev8 renames data-table
-  keys). Bump deliberately and re-run the E2E suite.
+  (PyPSA + AdOpT, system Python),
+  [`requirements-calliope-0.7.txt`](requirements-calliope-0.7.txt) (the
+  `calliope` target) and
+  [`requirements-calliope-0.6.txt`](requirements-calliope-0.6.txt) (the
+  `calliope-0.6` target, with upstream's own dependency caps). The pins are
+  load-bearing: each emitter is written against one model-definition dialect
+  (0.7.0 spells data tables `table`/`add_dims.inputs` and dropped the
+  `defined()` math helper that dev7 accepted; 0.6 is a different document
+  altogether), so a Calliope bump is an emitter change, not just a pin
+  change. `GET /capabilities` reports the version each target drives. Bump
+  deliberately and re-run the E2E suite.
+- The two Calliope venvs are separate image layers, so bumping one pin
+  rebuilds only that venv. Calliope 0.6.8 needs Python ≤ 3.8 because its
+  scikit-learn cap (`<0.24`, required for k-means clustering) has no newer
+  wheels; `uv` downloads that interpreter at build time.
 - CBC and GLPK are not fallbacks — they are the primary solvers for Calliope
   and AdOpT respectively (see the table above). Note the solvers themselves are
   not exact-pinned: `highspy` is unversioned in the requirements and CBC/GLPK

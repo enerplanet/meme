@@ -5,11 +5,14 @@
 
 A dependency-free (Go standard library only) REST service that accepts one
 **canonical JSON model** and translates it into the native input formats of three
-energy-system optimization frameworks — **PyPSA**, **Calliope 0.7**, and
-**AdOpT-NET0** — then optionally runs the simulation and returns a zipped result
-bundle. A request targets **one framework, a subset, or all three at once**
-(`?target=pypsa`, `?target=pypsa,calliope`, `?target=all`); a multi-target job
-emits, executes and solves every requested model and bundles them in one zip.
+energy-system optimization frameworks — **PyPSA**, **Calliope** (0.7, and 0.6 as
+a selectable version), and **AdOpT-NET0** — then optionally runs the simulation
+and returns a zipped result bundle. A request targets **one framework, a subset,
+or all three at once** (`?target=pypsa`, `?target=pypsa,calliope`,
+`?target=all`); a multi-target job emits, executes and solves every requested
+model and bundles them in one zip. Framework versions are targets of their own:
+`calliope` is Calliope 0.7.0 (also spelled `calliope-0.7`), `calliope-0.6` is
+Calliope 0.6.8, and `GET /capabilities` lists which version each target drives.
 The Go service is a pure, stateless **translator + orchestrator**; the actual
 solvers are external Python processes it hands work to.
 
@@ -46,9 +49,10 @@ a 422 rejection) is in [`examples/README.md`](examples/README.md).
 
 **Requirements.** Host build: Go ≥ 1.22 and `make`. Real solver execution:
 Docker with compose v2 — the [`environment/`](environment/) image carries
-Python 3.12, the three frameworks and their solvers (the framework versions
-are exact-pinned and load-bearing; the solvers ride on `highspy`/apt without
-pins — see [`environment/README.md`](environment/README.md)).
+Python 3.12, the three frameworks (Calliope twice: 0.7.0 and 0.6.8, each in
+its own venv) and their solvers (the framework versions are exact-pinned and
+load-bearing; the solvers ride on `highspy`/apt without pins — see
+[`environment/README.md`](environment/README.md)).
 
 **Configuration** — precedence **CLI flag > `.env` > built-in default**
 (copy [`.env.example`](.env.example) to `.env`, or point elsewhere with
@@ -123,11 +127,12 @@ curl -si -X OPTIONS 'localhost:8080/validate?target=pypsa' \
 │   │                        embedded and exported for the target plugins
 │   ├── target/              target registry + capability-driven validation pipeline
 │   │   ├── pypsa/           plugin: gates, CSV emitter, embedded run.py driver
-│   │   ├── calliope/        plugin: gates, model.yaml + custom math, CLI run plan
+│   │   ├── calliope/        plugins: Calliope 0.7 (model.yaml + custom math) and
+│   │   │                    Calliope 0.6 (model/run/techs/locations dialect), CLI run plans
 │   │   ├── adoptnet0/       plugin: gates, input_data tree, embedded run.py driver
-│   │   ├── all/             blank-import umbrella that registers the three plugins
+│   │   ├── all/             blank-import umbrella that registers the plugin packages
 │   │   └── testdata/golden/ emitter snapshots + frozen validation matrix
-│   ├── scenarios/           embedded corpus: 38 runnable payloads + shared sample
+│   ├── scenarios/           embedded corpus: 42 runnable payloads + shared sample
 │   └── service/             Executor (bounded concurrency), Orchestrator (sweep →
 │                            emit → run), Runners (dry / command+timeout),
 │                            JobStore + GC, result-zip bundling
@@ -146,7 +151,13 @@ curl -si -X OPTIONS 'localhost:8080/validate?target=pypsa' \
 
 Each **target plugin** is self-contained (capability profile, validation
 gates, emitter, run plan) and self-registers; adding a fourth framework means
-one new package under `internal/target/` plus one blank import.
+one new package under `internal/target/` plus one blank import. A framework
+may register several **versions** as separate targets: the bare name is the
+default release, a `-<major.minor>` suffix pins another one (`calliope-0.6`),
+and a version-explicit alias of the default (`calliope-0.7`) keeps a pinned
+spelling valid when the default moves on. `?target=all` expands to the
+defaults only, so one request never runs two releases of the same framework
+unless it names them.
 
 Ready-to-run example payloads live in [`examples/`](examples/): one **maximal**
 config per framework (every supported property), plus `shared_full.json` and
@@ -161,8 +172,8 @@ single- and multi-target).
 make test           # vet + all unit/integration tests on the host (no Python)
 make test-race      # race-detector pass over the concurrent packages
 make schema-check   # examples/ + scenario corpus vs schemas/revised_unified_schema.json (python3 + jsonschema)
-make e2e-smoke      # container: 3 real-solver lifecycles + one multi-target job (~1 min)
-make e2e            # container: the full corpus on real solvers (~1.5 min)
+make e2e-smoke      # container: 4 real-solver lifecycles (incl. calliope-0.6) + one multi-target job (~1 min)
+make e2e            # container: the full corpus on real solvers, both Calliope releases (~2 min)
 make golden-update  # accept an intended emitter/validation change into the goldens
 ```
 
@@ -205,7 +216,7 @@ flowchart TD
     REG["target registry<br/>(internal/target)"]
     subgraph TGT["target packages — self-contained per framework"]
       PY["target/pypsa<br/>caps · gates · CSV emitter · run.py"]
-      CA["target/calliope<br/>caps · gates · model.yaml + math · CLI plan"]
+      CA["target/calliope<br/>0.7: model.yaml + math · 0.6: model/run/techs dialect<br/>caps · gates · CLI plans"]
       AD["target/adoptnet0<br/>caps · gates · input_data tree · run.py"]
     end
     KIT[["emit toolkit<br/>(internal/emit)"]]
@@ -215,7 +226,7 @@ flowchart TD
     RUN[["Runner: dry / command<br/>(ctx + timeout)"]]
   end
 
-  SIM["Python simulators<br/>pypsa · calliope · adopt"]
+  SIM["Python simulators<br/>pypsa · calliope (0.7) · calliope-0.6 · adopt"]
 
   Client -->|"POST /convert, /validate"| API
   Client -->|"POST /simulate?target=…"| API
@@ -254,12 +265,12 @@ simulators** are the only external processes.
 |---|---|---|
 | `internal/model` | canonical structs, `Model.Validate`, `Value`, constraint IR, `Performance`, `Native`, `Feature` | The framework-neutral vocabulary: JSON schema, structural + referential validation, shared feature names. Knows no target specifics. |
 | `internal/emit` | `WriteCSV`, `WriteJSON`, `Ftoa`, `ValScalar`/`ScalarOr`/`OptFloat`, `AnnualizedCapex`, series helpers, native merge | Shared emission toolkit the target packages build on (CRF math, deterministic writers, native passthrough merging). |
-| `internal/target` | `Target` interface, `Register`/`For`/`Names`, `ValidateFor`, `CapabilityMatrix`, `RunPlan` | The registry: resolves targets, aggregates capability profiles, and orchestrates validation (structural → generic capability gates → per-target hooks → native warnings). |
+| `internal/target` | `Target` interface (`Name`/`Version`/…), `Variant`, `Register`/`RegisterAlias`/`For`/`Resolve`/`Names`/`Defaults`/`Versions`, `ValidateFor`, `CapabilityMatrix`, `RunPlan` | The registry: resolves targets (and version aliases), separates default targets from version variants (`all` = defaults), aggregates capability profiles and framework versions, and orchestrates validation (structural → generic capability gates → per-target hooks → native warnings). |
 | `internal/scripts` | `PyPSARun`, `AdOptNET0Run` | The Python driver scripts (`pypsa_run.py`, `adoptnet0_run.py`), embedded and exported for the target packages (go:embed cannot cross package directories). |
 | `internal/target/pypsa` | `PyPSA`, `Emitter`, `MaterializeTimeSeries`, `ScenarioSets` | Everything PyPSA: capability profile, mode preconditions, CSV-folder emitter + time-varying materialization, scoped-constraint projection, stochastic translation, generated run.py driver (body from `internal/scripts/pypsa_run.py`). |
-| `internal/target/calliope` | `Calliope`, `Emitter`, math builders, YAML writer | Everything Calliope 0.7: capability profile, MILP/piecewise/series gates, model.yaml + data tables + extra math (ratio pinning, piecewise, MILP), CLI run plan, dependency-free YAML writer (fuzz-tested). |
+| `internal/target/calliope` | `Calliope` (0.7), `Calliope06` (0.6), `Emitter`, `Emitter06`, math builders, YAML writer | Both Calliope releases. 0.7 (`calliope`, alias `calliope-0.7`): capability profile, MILP/piecewise/series gates, model.yaml + data tables + extra math (ratio pinning, piecewise, MILP), `calliope` CLI plan. 0.6 (`calliope-0.6`, a version variant): its own profile (k-means typical days and a native emissions objective gained; indexed params / piecewise / custom math absent) and gates, the model/run/techs/locations/links emitter with `file=` timeseries CSVs, conversion_plus carrier tiers and group_constraints, `calliope-0.6` CLI plan. Shared dependency-free YAML writer (fuzz-tested) and native merge (flat for 0.7, deep for 0.6's nested mappings). |
 | `internal/target/adoptnet0` | `AdOptNET0`, `Emitter`, `dbTech` | Everything AdOpT-NET0: capability profile, database-mapping gate, input_data tree emitter with node-keyed overrides, generated driver (body from `internal/scripts/adoptnet0_run.py`). |
-| `internal/target/all` | blank imports | Registers the built-in targets (imported by `internal/api`). |
+| `internal/target/all` | blank imports | Registers the built-in target packages (imported by `internal/api`); the calliope package registers both of its releases. |
 | `internal/scenarios` | `Names`/`Raw`/`Load`, `Sample`/`SampleFor` | The embedded scenario corpus + per-target sample fixtures, importable from any test without relative paths. |
 | `internal/service` | `Executor`, `Orchestrator`, `Runner`/`DryRunner`/`CommandRunner`, `JobStore`+GC, `WriteBundle` | Job execution: bounded concurrency, sweep expansion, per-target run loop, context/timeout-enforced solver processes, on-disk job logs, TTL garbage collection, result-bundle layout. |
 | `internal/api` | `Server`, `NewServer`, handlers, JSON error envelope | HTTP adapter only: multi-target `?target=` resolution, size-capped decoding, `api_key` auth (constant-time; 401 envelope; redacted from the bundle), `/v1` aliasing, streaming the bundle. |
@@ -346,8 +357,11 @@ flowchart LR
 - `busGrid` + `BusID` (`target/pypsa`) — PyPSA fuses `(node, carrier)` into
   buses; the emitter materializes exactly the pairs used.
 - `emit.AnnualizedCapex` — converts overnight investment to a per-year cost via
-  the capital recovery factor when the target expects it (PyPSA); Calliope
-  passes overnight through and annualizes internally.
+  the capital recovery factor when the target expects it (PyPSA); both Calliope
+  releases pass overnight through and annualize internally (0.7 via
+  `cost_interest_rate` + `lifetime`, 0.6 via `interest_rate` + `lifetime`); an
+  already-annualized basis is pinned to a depreciation rate of 1 so the yearly
+  figure is charged unchanged.
 
 ### 3.4 Orchestrator internals
 
@@ -477,7 +491,9 @@ target-locked).
 ```jsonc
 // GET /jobs/{id}/status  (JobView). ?target= on validate/convert/simulate
 // accepts one target, a comma-separated list, or "all" — a multi-target job
-// runs every framework in turn ("target":"pypsa,calliope,adopt-net0").
+// runs every framework in turn ("target":"pypsa,calliope,adopt-net0"). "all"
+// means the default targets; a version variant ("calliope-0.6") runs only
+// when named, and a version alias ("calliope-0.7") resolves to its default.
 // With API_KEY configured, validate/convert/simulate payloads must carry a
 // matching top-level "api_key" or the request is a 401 {"error":…}.
 { "id":"…", "target":"pypsa", "state":"queued|running|succeeded|failed",
@@ -495,8 +511,11 @@ target-locked).
   "warnings":[…], "status_url":"/jobs/…/status", "result_url":"/jobs/…" }
 
 // GET /capabilities
-{ "targets":["pypsa","calliope","adopt-net0"],
-  "features":{ "pypsa":{ "mode:stochastic":true, … }, "calliope":{…}, "adopt-net0":{…} } }
+{ "targets":["adopt-net0","calliope","calliope-0.6","pypsa"],   // every selectable target
+  "default_targets":["adopt-net0","calliope","pypsa"],           // what ?target=all runs
+  "aliases":{ "calliope-0.7":"calliope" },                        // version-explicit spellings
+  "versions":{ "calliope":"0.7.0", "calliope-0.6":"0.6.8", "pypsa":"1.2.4", "adopt-net0":"0.1.10" },
+  "features":{ "pypsa":{ "mode:stochastic":true, … }, "calliope":{…}, "calliope-0.6":{…}, "adopt-net0":{…} } }
 ```
 
 ### 4.4 Result bundle (`GET /jobs/{id}` → zip)
@@ -527,15 +546,17 @@ combined log.
 | Target | Entrypoint | Contents |
 |---|---|---|
 | PyPSA | CSV folder | `network.csv` (name + pinned `pypsa_version`), `buses.csv`, `carriers.csv`, `generators.csv`, `loads.csv`, `links.csv`, `storage_units.csv`, `global_constraints.csv` (unscoped constraints only), materialized time-varying CSVs (`loads-p_set`, `generators-p_max_pu`, `generators-marginal_cost`, `links-marginal_cost`, `storage_units-inflow`), `_constraints.json` (scoped constraints, applied by run.py), `_scenarios.json` (stochastic mode), `_performance.json`, `_native.pypsa.json` |
-| Calliope 0.7 | `model.yaml` | `config` (`init.mode`/`init.resample`/`solve.solver`/`solve.spores`/`init.math_paths`+`extra_math` incl. `milp`), `techs` (incl. co2 `cost_flow_in`, trade market techs, MILP unit-commitment params, piecewise breakpoint params), `nodes`, `data_tables` + materialized series CSVs (demand, availability, source), `data_definitions.objective_cost_weights`, `additional_math.yaml` (constraint IR + flow-ratio pinning + piecewise machinery), `_constraints.json` sidecar when `custom_math=false` |
+| Calliope 0.7 (`calliope`) | `model.yaml` | `config` (`init.mode`/`init.resample`/`solve.solver`/`solve.spores`/`init.math_paths`+`extra_math` incl. `milp`), `techs` (incl. co2 `cost_flow_in` / `cost_source_use` on supply, trade market techs, MILP unit-commitment params, piecewise breakpoint params), `nodes`, `data_tables` (`table` + `add_dims.inputs`) + materialized series CSVs (demand, availability, source), `data_definitions.objective_cost_weights`, `additional_math.yaml` (constraint IR + flow-ratio pinning + piecewise machinery), `_constraints.json` sidecar when `custom_math=false` |
+| Calliope 0.6 (`calliope-0.6`) | `model.yaml` | `model` (`calliope_version`, `timeseries_data_path`, `subset_time`, `time` resample / k-means `apply_clustering`), `run` (`mode` plan/operate/spores, `solver`, `objective_options.cost_class` weights, `cyclic_storage`, `operation`, `spores_options`), `techs` (`essentials`/`constraints`/`costs`; `conversion_plus` carrier tiers + `carrier_ratios`; trade market techs; `units_max`/`energy_cap_per_unit` MILP; `emissions` cost class), `locations` (coordinates, `available_area`, per-location `file=` resources + overrides), `links` (`from,to` → transmission techs + distance), `group_constraints` (constraint IR, emission limits, annual output bounds, SPORES cost slack), `timeseries_data/*.csv` (datetime index, one column per node; demand negative) |
 | AdOpT-NET0 | `input_data/` | `Topology.json`, `ConfigModel.json` (glpk, `write_results: 1`), `NodeLocations.csv`, `_meme_overrides.json` (keyed node → tech), per-period `Networks.json`, per-node `Technologies.json` (database tech names) + `ClimateData.csv` + `CarbonCost.csv` + `carrier_data/*.csv` (`;`-delimited; demand/import/export incl. per-timestep prices) + `EnergybalanceOptions.json`. The run step copies tech data + applies overrides. |
 
 The orchestrator writes each run's Python driver as `run_i/run.py` (PyPSA:
 import → sidecar constraints → mode branch (plan / rolling-horizon operate /
 MGA / stochastic) → export `network.nc`, non-zero exit unless optimal; AdOpT:
 copy tech data → apply node-keyed overrides → `quick_solve`). Calliope runs via
-its CLI with `--save_netcdf`/`--save_csv`. The executed script ships in the
-result bundle.
+its CLI with `--save_netcdf`/`--save_csv` — `calliope` for 0.7, `calliope-0.6`
+for 0.6 (two venvs in the image). The executed script ships in the result
+bundle.
 
 ---
 
@@ -550,27 +571,28 @@ Each feature maps to a first-class schema field or a run mode. `ValidateFor`
 rejects (422) any payload that uses a feature the selected target doesn't
 support. Support is a sparse map — absence means unsupported.
 
-| Feature key | Schema field / concept | PyPSA | Calliope | AdOpT | Enforced |
-|---|---|:--:|:--:|:--:|:--:|
-| `mode:plan` | `experiment.mode` | ✓ | ✓ | ✓ | yes |
-| `mode:operate` | `experiment.mode` (fixed caps; PyPSA = rolling horizon) | ✓ | ✓ | | yes |
-| `mode:alternatives` | `experiment.mode` (PyPSA = MGA, Calliope = SPORES) | ✓ | ✓ | | yes |
-| `mode:pareto` | `experiment.mode` | | | ✓ | yes |
-| `mode:monte_carlo` | `experiment.mode` | | | ✓ | yes |
-| `mode:stochastic` | `experiment.mode` + `experiment.scenarios` (two-stage, `n.set_scenarios`) | ✓ | | | yes |
-| `time_aggregation` | `experiment.time_aggregation` (Calliope: `resample` only; AdOpT: `typical_days` only) | | ✓ | ✓ | yes (per method) |
-| `multi_carrier_conversion` | `technology.flows` (rigid ratios on both targets) | ✓ | ✓ | | yes |
-| `emission_limit` | `model.emission_limits` | ✓ | ✓ | ✓ | yes |
-| `import_export` | `model.trade` | ✓ | ✓ | ✓ | yes |
-| `committable` | `operation.committable` (Calliope = MILP integer-unit subset) | ✓ | ✓ | | yes |
-| `node_override` | `technology.node_overrides` | ✓ | ✓ | ✓ | yes |
-| `linear_constraint` | `model.constraints` (PyPSA: GlobalConstraint or run.py sidecar) | ✓ | ✓ | | yes |
-| `area_constraints` | `technology.area` | | ✓ | | yes |
-| `source_constraints` | `technology.source` | | ✓ | | yes |
-| `indexed_params` | multi-valued `Value` | | ✓ | | yes (multi-valued only) |
-| `piecewise_performance` | `performance.type: piecewise` (Calliope: fixed-capacity conversion) | | ✓ | | yes |
-| `physics_performance` | `performance.type: physics` | | | ✓ | yes (needs precomputed off AdOpT) |
-| `custom_math` | `experiment.custom_math` → `additional_math.yaml` | | ✓ | | rendered (linear IR + emission limits) |
+| Feature key | Schema field / concept | PyPSA | Calliope 0.7 | Calliope 0.6 | AdOpT | Enforced |
+|---|---|:--:|:--:|:--:|:--:|:--:|
+| `mode:plan` | `experiment.mode` | ✓ | ✓ | ✓ | ✓ | yes |
+| `mode:operate` | `experiment.mode` (fixed caps; PyPSA = rolling horizon) | ✓ | ✓ | ✓ | | yes |
+| `mode:alternatives` | `experiment.mode` (PyPSA = MGA, Calliope = SPORES) | ✓ | ✓ | ✓ | | yes |
+| `mode:pareto` | `experiment.mode` | | | | ✓ | yes |
+| `mode:monte_carlo` | `experiment.mode` | | | | ✓ | yes |
+| `mode:stochastic` | `experiment.mode` + `experiment.scenarios` (two-stage, `n.set_scenarios`) | ✓ | | | | yes |
+| `time_aggregation` | `experiment.time_aggregation` (Calliope 0.7: `resample` only; 0.6: `resample` + `typical_days` k-means; AdOpT: `typical_days` only) | | ✓ | ✓ | ✓ | yes (per method) |
+| `multi_carrier_conversion` | `technology.flows` (rigid ratios on every target; 0.6 = `conversion_plus` tiers, one input) | ✓ | ✓ | ✓ | | yes |
+| `emission_limit` | `model.emission_limits` | ✓ | ✓ | ✓ | ✓ | yes |
+| `import_export` | `model.trade` | ✓ | ✓ | ✓ | ✓ | yes |
+| `committable` | `operation.committable` (Calliope = MILP integer-unit subset) | ✓ | ✓ | ✓ | | yes |
+| `node_override` | `technology.node_overrides` | ✓ | ✓ | ✓ | ✓ | yes |
+| `linear_constraint` | `model.constraints` (PyPSA: GlobalConstraint or run.py sidecar; 0.6: single-term `group_constraints`) | ✓ | ✓ | ✓ | | yes |
+| `area_constraints` | `technology.area` | | ✓ | ✓ | | yes |
+| `source_constraints` | `technology.source` | | ✓ | ✓ | | yes |
+| `indexed_params` | multi-valued `Value` | | ✓ | | | yes (multi-valued only) |
+| `piecewise_performance` | `performance.type: piecewise` (Calliope: fixed-capacity conversion) | | ✓ | | | yes |
+| `physics_performance` | `performance.type: physics` | | | | ✓ | yes (needs precomputed off AdOpT) |
+| `custom_math` | `experiment.custom_math` → `additional_math.yaml` | | ✓ | | | rendered (linear IR + emission limits) |
+| `objective:min_emissions` | `experiment.objective` | | | ✓ | ✓ | yes |
 
 **Enforcement nuances.** Modes route through `modeFeature(mode)`. Every claimed
 cell is backed by a runnable scenario (`TestCapabilityCoverage` fails the build
@@ -584,44 +606,70 @@ rejected with a pointer to node-level `native.adopt-net0`. `power_flow`
 (Lines/Transformers, KVL) is deliberately NOT claimed for PyPSA: the schema
 carries no electrical parameters, so all transmission emits as transport Links.
 `physics_performance` off AdOpT requires a `performance.precomputed` series
-(else 422). `custom_math` is a Calliope render toggle (`experiment.custom_math`,
+(else 422). `custom_math` is a Calliope 0.7 render toggle (`experiment.custom_math`,
 default on) for the portable `constraints`/`emission_limits` IR; ratio-pinning
 and piecewise math render regardless (they are model physics, not user math).
+Calliope 0.6 has no custom math: constraints and emission limits become
+`group_constraints`, which bound one quantity (capacity, production,
+consumption, storage capacity or a cost class) over a tech/node set — so only
+single-term constraints are accepted there (the coefficient folds into the
+bound); multi-term constraints, multi-input `flows`, `time.weights`, an export
+without a limit, indexed parameters and piecewise performance are rejected
+with a pointer to the 0.7 target.
 
 ---
 
 ## 6. Canonical → framework mapping (selected)
 
-| Canonical | PyPSA | Calliope 0.7 | AdOpT-NET0 |
-|---|---|---|---|
-| node + carrier | one **Bus** per (node, carrier) | orthogonal `nodes` / carriers | orthogonal nodes / carriers |
-| `role: supply` | `Generator` | `base_tech: supply` | `Res` / physics tech |
-| `role: conversion` + `flows` | multi-output **Link** (`bus2`/`efficiency2`) | `carrier_out` list + indexed `flow_out_eff` | multi-carrier conversion |
-| `role: storage` | `StorageUnit` | `base_tech: storage` | `Storage` |
-| `transmission` | `Link` across buses | transmission tech (`link_from`/`link_to`) | `Networks` + matrices |
-| overnight cost + `lifetime`/`interest_rate` | annualized `capital_cost` (CRF) | `cost_flow_cap` + `cost_interest_rate` (annualized internally) | economics block |
-| carrier `co2_intensity` | carrier `co2_emissions` | per-tech `cost_flow_in[costs=co2]` on consumed fuels + `objective_cost_weights[co2]=0` | emission factors |
-| `emission_limits` | `global_constraints.csv` (primary_energy) | `additional_math.yaml` constraint on `cost[costs=co2]` | emission targets |
-| `constraints` (linear IR) | GlobalConstraint or `_constraints.json` | `additional_math.yaml`, registered via `config.init.math_paths`/`extra_math` (`sum(flow_cap[techs=pv]) <= …`, one member per dim; multi-member sets expand into a sum) | constraints |
-| `experiment.mode` | (native) | `config.init.mode`: plan→`base`, operate→`operate`, alternatives→`spores` (+ `config.solve.spores`) | `ConfigModel.optimization`: pareto→`objective: pareto`, monte_carlo→`monte_carlo.N > 0`; `time_aggregation: typical_days`→`typicaldays.N`. Tunable via `experiment.solver.options` (`monte_carlo.N`, `pareto.points`) |
-| `experiment.solver` | passed through (e.g. `highs`) | `highs`→`cbc` (HiGHS can't drive Calliope 0.7) | forced `glpk` (adopt supports only gurobi/glpk) |
-| `technology` (mapped) | `Generator`/`Link`/`StorageUnit` | `techs` entry | named database tech (`Storage_Battery`, `Photovoltaic`, …) copied + economics-overridden |
-| `trade` | market generators (import/export) | supply/demand + `flow_export` | `carrier_data` import/export columns |
-| `performance: physics` | precomputed → `p_max_pu` + `_performance.json` | precomputed series | native tech type (pvlib, hydro, COP) |
+| Canonical | PyPSA | Calliope 0.7 (`calliope`) | Calliope 0.6 (`calliope-0.6`) | AdOpT-NET0 |
+|---|---|---|---|---|
+| node + carrier | one **Bus** per (node, carrier) | orthogonal `nodes` / carriers | `locations` / carriers | orthogonal nodes / carriers |
+| `role: supply` | `Generator` | `base_tech: supply` | `parent: supply` (`supply_plus` when `source.cap` is set) | `Res` / physics tech |
+| `role: conversion` + `flows` | multi-output **Link** (`bus2`/`efficiency2`) | `carrier_out` list + ratio-pinning math | `parent: conversion_plus`, `carrier_out_2/_3` tiers, `carrier_ratios` relative to the primary output | multi-carrier conversion |
+| `role: storage` | `StorageUnit` | `base_tech: storage` | `parent: storage` (one `energy_eff` for both directions, model-wide `run.cyclic_storage`) | `Storage` |
+| `transmission` | `Link` across buses | transmission tech (`link_from`/`link_to`) | transmission tech placed in `links.<from>,<to>` (+ `distance`) | `Networks` + matrices |
+| time series | per-attribute CSVs | `data_tables` (`table`, `add_dims.inputs`) + CSVs | `file=<file>.csv:<node>` references into `timeseries_data/` (demand negative) | per-node CSV columns |
+| overnight cost + `lifetime`/`interest_rate` | annualized `capital_cost` (CRF) | `cost_flow_cap` + `cost_interest_rate` (annualized internally) | `costs.monetary.energy_cap` + `interest_rate` + `constraints.lifetime` (both required by 0.6; lifetime 1 / rate 0 when absent or already annualized) | economics block |
+| carrier `co2_intensity` | carrier `co2_emissions` | per-tech `cost_flow_in[costs=co2]` on consumed fuels + `objective_cost_weights[co2]=0` | `costs.emissions.om_con` on consuming techs + `run.objective_options.cost_class.emissions: 0` | emission factors |
+| `emission_limits` | `global_constraints.csv` (primary_energy) | `additional_math.yaml` constraint on `cost[costs=co2]` | `group_constraints.<name>.cost_max.emissions` | emission targets |
+| `constraints` (linear IR) | GlobalConstraint or `_constraints.json` | `additional_math.yaml`, registered via `config.init.math_paths`/`extra_math` (`sum(flow_cap[techs=pv]) <= …`, one member per dim; multi-member sets expand into a sum) | single-term → `group_constraints` (`energy_cap_*`, `carrier_prod_*`, `carrier_con_*`, `storage_cap_*`, `cost_*`) | constraints |
+| `experiment.mode` | (native) | `config.init.mode`: plan→`base`, operate→`operate`, alternatives→`spores` (+ `config.solve.spores`) | `run.mode`: plan / operate (+ `run.operation` window/horizon hours) / spores (+ `run.spores_options`, `systemwide_cost_max` group, `spores_score` costs) | `ConfigModel.optimization`: pareto→`objective: pareto`, monte_carlo→`monte_carlo.N > 0`; `time_aggregation: typical_days`→`typicaldays.N`. Tunable via `experiment.solver.options` (`monte_carlo.N`, `pareto.points`) |
+| `experiment.time_aggregation` | — | `config.init.resample` | `model.time`: `resample`, or `apply_clustering` (k-means, `k` = periods, fixed `random_seed`) | `typicaldays.N` |
+| `experiment.objective: min_emissions` | — | — | `objective_options.cost_class: {monetary: 0, emissions: 1}` | `costs_emissionlimit`/emissions objective |
+| `experiment.solver` | passed through (e.g. `highs`) | `highs`→`cbc` (HiGHS can't drive Calliope's pyomo backend) | `highs`→`cbc` | forced `glpk` (adopt supports only gurobi/glpk) |
+| `technology` (mapped) | `Generator`/`Link`/`StorageUnit` | `techs` entry | `techs` entry (`essentials`/`constraints`/`costs`) | named database tech (`Storage_Battery`, `Photovoltaic`, …) copied + economics-overridden |
+| `trade` | market generators (import/export) | supply/demand + `flow_export` | supply (`om_prod` = price) / demand (`resource: -limit`, `force_resource: false`, `om_con` = −price) | `carrier_data` import/export columns |
+| `performance: physics` | precomputed → `p_max_pu` + `_performance.json` | precomputed series | precomputed series (`resource`, `energy_per_cap`) | native tech type (pvlib, hydro, COP) |
+| `native` | `native.pypsa` | `native.calliope` (flat merge) | `native["calliope-0.6"]` (deep merge into the nested mapping) | `native.adopt-net0` |
 
 ---
 
 ## 7. Extension points & known caveats
 
-- **All three emitters produce solver-runnable output** for a faithful core; the
+- **All emitters produce solver-runnable output** for a faithful core; the
   long tail routes through `native` and sidecars. Verified end-to-end against
-  pinned framework versions (see `environment/`): PyPSA (HiGHS), Calliope 0.7
-  (cbc, incl. plan/SPORES/custom-math/emission-limits), AdOpT-NET0.
-- **Calliope specifics** (all verified against `calliope==0.7.0.dev7`):
+  pinned framework versions (see `environment/`): PyPSA (HiGHS), Calliope 0.7.0
+  and 0.6.8 (cbc, incl. plan/operate/SPORES/emission-limits), AdOpT-NET0.
+- **Calliope versions are targets.** `calliope` is Calliope 0.7.0 (alias
+  `calliope-0.7`); `calliope-0.6` is Calliope 0.6.8 — a separate emitter for
+  the legacy dialect, driven by the `calliope-0.6` CLI from a second venv in
+  the image. `?target=all` runs the default `calliope` only; name
+  `calliope-0.6` to run it (alone or alongside). The two targets have their
+  own capability profiles and native keys (`native.calliope` is 0.7 syntax,
+  `native["calliope-0.6"]` is 0.6 syntax), and `GET /capabilities` reports
+  `default_targets`, `aliases` and `versions`.
+- **Calliope 0.7 specifics** (all verified against `calliope==0.7.0`):
   - Run mode and solver names are translated to Calliope's own (`plan→base`,
     `alternatives→spores`; `highs→cbc`). `experiment.custom_math` renders the
     linear-constraint IR to `additional_math.yaml`, registered via
     `config.init.math_paths` + `extra_math`.
+  - 0.7.0 (vs. the earlier dev7 pin): data tables are spelled `table` /
+    `add_dims.inputs`; a supply tech's fuel cost is `cost_source_use`
+    (`cost_flow_in` no longer applies to supply); the `defined()` math helper
+    is gone, so ratio-pinning math iterates techs and subsets with
+    `[tech] in techs`; node coordinates must be given on all nodes or none
+    (a partial set is dropped with a warning); an already-annualized cost
+    basis pins `cost_depreciation_rate: 1`.
   - Emissions: `co2_intensity` on a consumed carrier becomes a per-tech
     `cost_flow_in[costs=co2]`, with `objective_cost_weights[co2]=0` so it is
     tracked (for `emission_limits`) but not minimized. **Limitation:** this uses
@@ -629,13 +677,34 @@ and piecewise math render regardless (they are model physics, not user math).
     a tech burning two different co2 carriers would need per-carrier indexing
     (which clashes with Calliope's built-in cost expression).
   - Inline time series are materialized to data-table CSVs at emit time.
-- **HiGHS + Calliope is unsupported** — no pyomo version bridges calliope dev7's
-  solver interface (ASL needs a nonexistent binary; the persistent/appsi paths
-  hit an `add_block`/`solver_io` bug). Use `cbc` for Calliope (free/OSS); HiGHS
-  remains the solver for PyPSA. pyomo is pinned to 6.8.2 in the Calliope venv.
+- **Calliope 0.6 specifics** (all verified against `calliope==0.6.8`):
+  - The whole model is one document: `model` (incl. `calliope_version`,
+    `timeseries_data_path`), `run`, `techs`, `locations`, `links`,
+    `group_constraints`. Time series are `file=<file>.csv:<node>` references
+    into `timeseries_data/` (demand negative, one column per node).
+  - 0.6 requires `lifetime` + `interest_rate` wherever a fixed cost appears;
+    missing values (or an annualized basis) become lifetime 1 / rate 0, i.e.
+    the figure is charged in full each year — the same outcome as 0.7's
+    default depreciation rate.
+  - Storage has one `energy_eff` for both directions (asymmetric
+    charge/discharge efficiencies emit their geometric mean, with a warning)
+    and a model-wide `run.cyclic_storage` (mixed per-tech settings warn and
+    disable it); operate mode is never cyclic.
+  - Gains over 0.7: built-in k-means typical days (`time_aggregation:
+    typical_days`, `periods` = k, fixed `random_seed`) and a native
+    emissions-minimizing objective. Absent: indexed parameters, piecewise
+    performance, custom math (constraints are single-term
+    `group_constraints`), multi-input `flows`, `time.weights`, `shadow_prices`.
+- **HiGHS + Calliope is unsupported** — Calliope's pyomo backend cannot drive
+  HiGHS (ASL needs a nonexistent binary; the persistent/appsi paths hit an
+  `add_block`/`solver_io` bug), and 0.6.8's pyomo 6.2 predates the HiGHS
+  interface entirely. Use `cbc` for both Calliope targets (free/OSS); HiGHS
+  remains the solver for PyPSA. (0.7.0 ships a direct `config.build.backend:
+  highs` without piecewise support; not wired yet.)
 - **Runner commands** assume the Python tools are on PATH; `DryRunner` is the
   default so the service runs with no Python installed (`-exec` switches to
-  `CommandRunner`). The `environment/` image provides all three frameworks + cbc.
+  `CommandRunner`). The `environment/` image provides all three frameworks
+  (both Calliope releases) + cbc.
 - **JobStore is in-memory** — jobs don't survive a restart. Finished jobs are
   GC'd after 24 h (15-min sweep, see `cmd/meme/main.go`); a persistent store is
   the production follow-up.
@@ -674,7 +743,10 @@ and piecewise math render regardless (they are model physics, not user math).
     locations, and storage all work from the canonical model directly.
 - **Adding/altering a target** is largely a data edit to the capability matrix
   plus one `Emitter` implementation; the schema, validation, and orchestrator are
-  target-agnostic.
+  target-agnostic. **Adding a framework version** is the same work under a
+  `-<major.minor>` name: register it (as a `target.Variant` of the default if
+  it must not join `all`), give it its own native key, pin it in its own
+  venv in `environment/`, and run the corpus against it.
 
 ---
 
@@ -683,12 +755,16 @@ and piecewise math render regardless (they are model physics, not user math).
 Design rule: a concept that **more than one framework** supports is a first-class
 canonical field emitted for every applicable target; a concept **only one
 framework** has is supplied through that framework's `native` block on the tech
-or node (`native.pypsa` / `native.calliope` / `native.adopt-net0`), which is
-merged into the emitted output.
+or node (`native.pypsa` / `native.calliope` / `native["calliope-0.6"]` /
+`native.adopt-net0`), which is merged into the emitted output. A framework
+version with its own input dialect has its own key: `native.calliope` is 0.7
+syntax and is never applied by the `calliope-0.6` target.
 
-All three emitters honor their `native` block at **tech and node level** (PyPSA
-also merges it into buses/carriers/links; AdOpT deep-merges it into the tech
-economics and node `Technologies.json`, and the model-level block into
+All emitters honor their `native` block at **tech and node level** (PyPSA also
+merges it into buses/carriers/links; Calliope 0.6 deep-merges it into the
+nested `essentials`/`constraints`/`costs` mapping and applies model- and
+experiment-level blocks to the whole document; AdOpT deep-merges it into the
+tech economics and node `Technologies.json`, and the model-level block into
 `ConfigModel.json`). PyPSA additionally drops a whole-model `native.pypsa` block
 into a `_native.pypsa.json` sidecar for the runner to apply.
 
@@ -794,7 +870,7 @@ directly loadable by the pinned framework (see §7), so "emits cleanly" means
 | `pypsa_constraints_sidecar` | tech-scoped constraint applied by run.py as a linopy constraint (binding, objective-checked in E2E) | `force_pv` in `_constraints.json` |
 | `pypsa_trade_price_series` | time-varying import price (objective-checked in E2E) | `market_import`, `generators-marginal_cost.csv` |
 
-### 9.2 Calliope 0.7
+### 9.2 Calliope 0.7 (`calliope`)
 
 | Scenario | Exercises | Key emitted markers |
 |---|---|---|
@@ -812,7 +888,23 @@ directly loadable by the pinned framework (see §7), so "emits cleanly" means
 | `calliope_resample` | `time_aggregation: resample` → `config.init.resample.timesteps` | `resample:`, `timesteps: 3h` |
 | `calliope_piecewise` | piecewise part-load curve → `piecewise_constraints` math on a fixed-capacity conversion | `piecewise_x`, `breakpoints` |
 
-### 9.3 AdOpT-NET0
+### 9.3 Calliope 0.6 (`calliope-0.6`)
+
+The 0.6 target runs every `calliope_*` scenario its gates accept (all of the
+above except `calliope_piecewise`, whose piecewise performance has no 0.6
+representation) through its own dialect — `TestScenarios` pins the 0.6
+markers, the goldens under `testdata/golden/calliope-0.6/` freeze the emitted
+documents, and `TestE2ECalliope06Corpus` solves them on the real `calliope-0.6`
+CLI — plus four 0.6-specific scenarios:
+
+| Scenario | Exercises | Key emitted markers |
+|---|---|---|
+| **`calliope06_typical_days`** ✎ | `time_aggregation: typical_days` → k-means representative days (0.7 dropped built-in clustering) | `apply_clustering`, `clustering_func: kmeans`, `k: 2`, `random_seed` |
+| **`calliope06_spores`** ✎ | first-class `experiment.alternatives` → `run.spores_options` + `systemwide_cost_max` group + `spores_score` costs | `mode: spores`, `spores_number: 2`, `slack: 0.1` |
+| **`calliope06_group_constraints`** ✎ | constraint IR + emission limit → `group_constraints` (capacity cap, minimum production, CO₂ cap) | `energy_cap_max: 800`, `carrier_prod_min`, `cost_max: {emissions: …}` |
+| **`calliope06_min_emissions`** ✎ | `objective: min_emissions` → `objective_options.cost_class` weights | `monetary: 0`, `emissions: 1` |
+
+### 9.4 AdOpT-NET0
 
 | Scenario | Exercises | Key emitted markers |
 |---|---|---|

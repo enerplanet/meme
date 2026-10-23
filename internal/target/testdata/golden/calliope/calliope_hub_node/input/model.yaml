@@ -36,19 +36,15 @@ nodes:
   hub:
     techs: {}
   n1:
-    latitude: 48.0
-    longitude: 11.0
     techs:
       gen:
   n2:
-    latitude: 49.0
-    longitude: 12.0
     techs:
       load:
 data_tables:
   load__sink_use_equals:
-    data: load_sink_use_equals.csv
+    table: load_sink_use_equals.csv
     rows: timesteps
     columns: [techs, nodes]
     add_dims:
-      parameters: sink_use_equals
+      inputs: sink_use_equals

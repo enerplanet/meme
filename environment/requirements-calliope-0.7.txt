@@ -1,0 +1,19 @@
+# Calliope 0.7 — target "calliope" — lives in its own virtualenv (see
+# Dockerfile) so its dependency set doesn't collide with PyPSA / AdOpT in the
+# system Python. The Go runner only ever calls the `calliope` CLI, so
+# isolation is lossless.
+#
+# 0.7.0 is the first stable 0.7 release (PyPI 2026-09-01, Python >= 3.12).
+# The emitter targets its model definition: `data_tables` entries spelled
+# `table` + `add_dims.inputs`, `config.init.mode`, custom math registered via
+# `config.init.math_paths` + `extra_math`, `cost_source_use` on supply techs,
+# and node coordinates on all nodes or none. Upstream pins its dependencies on
+# their lower bounds only (numpy >= 2, pandas >= 2.1.3, xarray >= 2026.4,
+# pyomo >= 6.8.2, pydantic >= 2.11.4); the E2E suite certifies whatever that
+# resolves to at image-build time, so bump deliberately and re-run `make e2e`.
+calliope==0.7.0
+
+# HiGHS inside the Calliope venv (Calliope 0.7.0 ships a direct `highs`
+# backend). The emitter still drives CBC through pyomo (`solve.solver: cbc`,
+# apt-installed) because the pyomo/HiGHS path is unusable with Calliope.
+highspy

@@ -35,7 +35,7 @@ techs:
       data: 100
       index: monetary
       dims: costs
-    cost_flow_in:
+    cost_source_use:
       data: 30
       index: monetary
       dims: costs
@@ -67,14 +67,14 @@ nodes:
       load:
 data_tables:
   flex_load__sink_use_max:
-    data: flex_load_sink_use_max.csv
+    table: flex_load_sink_use_max.csv
     rows: timesteps
     columns: [techs, nodes]
     add_dims:
-      parameters: sink_use_max
+      inputs: sink_use_max
   load__sink_use_equals:
-    data: dem.csv
+    table: dem.csv
     rows: timesteps
     columns: [techs, nodes]
     add_dims:
-      parameters: sink_use_equals
+      inputs: sink_use_equals

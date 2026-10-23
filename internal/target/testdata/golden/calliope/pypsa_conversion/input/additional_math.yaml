@@ -1,18 +1,18 @@
 constraints:
   meme_ratio_chp_out_electricity:
     description: "energymodel fixed flow ratio"
-    foreach: [nodes, timesteps]
-    where: "defined(techs=[chp], within=nodes, how=all)"
+    foreach: [nodes, techs, timesteps]
+    where: "[chp] in techs"
     equations:
       - 
-        expression: "flow_out[techs=chp, carriers=electricity] == 0.4 * flow_in[techs=chp, carriers=gas]"
+        expression: "flow_out[carriers=electricity] == 0.4 * flow_in[carriers=gas]"
   meme_ratio_chp_out_heat:
     description: "energymodel fixed flow ratio"
-    foreach: [nodes, timesteps]
-    where: "defined(techs=[chp], within=nodes, how=all)"
+    foreach: [nodes, techs, timesteps]
+    where: "[chp] in techs"
     equations:
       - 
-        expression: "flow_out[techs=chp, carriers=heat] == 0.45 * flow_in[techs=chp, carriers=gas]"
+        expression: "flow_out[carriers=heat] == 0.45 * flow_in[carriers=gas]"
   balance_conversion:
     description: "Fix the relationship between a `conversion` technology's outflow and consumption."
     foreach: [nodes, techs, timesteps]

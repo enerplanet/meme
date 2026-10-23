@@ -5,7 +5,7 @@
 # One image that carries everything needed end-to-end:
 #   * Go 1.22 toolchain  -> build the stdlib-only service and run `go test`
 #   * Python 3.12        -> the three frameworks the service emits for
-#   * PyPSA + HiGHS, Calliope 0.7 + CBC, AdOpT-NET0 + GLPK (all free solvers)
+#   * PyPSA + HiGHS, Calliope 0.7.0 + CBC, AdOpT-NET0 + GLPK (all free solvers)
 #
 # With all of the above on PATH, the service can run in real-execution mode
 # (`meme -exec`) so /simulate actually invokes the solvers, and integration
@@ -50,12 +50,12 @@ COPY environment/requirements.txt /tmp/requirements.txt
 RUN pip install --no-cache-dir --upgrade pip \
     && pip install --no-cache-dir -r /tmp/requirements.txt
 
-# Calliope 0.7 goes in an isolated venv (its pins conflict with the above); the
-# Go runner only calls the `calliope` CLI, so we expose just that on PATH.
-COPY environment/requirements-calliope.txt /tmp/requirements-calliope.txt
+# Calliope 0.7.0 goes in an isolated venv (its pins conflict with the above);
+# the Go runner only calls the `calliope` CLI, so we expose just that on PATH.
+COPY environment/requirements-calliope-0.7.txt /tmp/requirements-calliope-0.7.txt
 RUN python -m venv /opt/calliope-venv \
     && /opt/calliope-venv/bin/pip install --no-cache-dir --upgrade pip \
-    && /opt/calliope-venv/bin/pip install --no-cache-dir --pre -r /tmp/requirements-calliope.txt \
+    && /opt/calliope-venv/bin/pip install --no-cache-dir -r /tmp/requirements-calliope-0.7.txt \
     && ln -s /opt/calliope-venv/bin/calliope /usr/local/bin/calliope
 
 # Sanity-check that every framework and the solver import/resolve cleanly.

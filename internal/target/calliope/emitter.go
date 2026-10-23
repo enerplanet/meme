@@ -26,9 +26,10 @@ const extraMathName = "additional_math"
 // the emission-limit default and the constraint IR's emissions variable.
 const emissionCostClass = "co2"
 
-// calliopeSolver picks the solver name to emit. HiGHS cannot drive Calliope
-// dev7 (a pyomo/persistent-solver incompatibility), so "highs" (and the unset
-// default) map to cbc — a free, open-source solver that works with Calliope.
+// calliopeSolver picks the solver name to emit. HiGHS cannot drive Calliope's
+// pyomo backend (a pyomo/persistent-solver incompatibility), so "highs" (and
+// the unset default) map to cbc — the free, open-source solver Calliope
+// recommends for full math functionality.
 func calliopeSolver(name string) string {
 	switch name {
 	case "", "highs":
@@ -244,11 +245,15 @@ func (Emitter) Emit(j *model.Job, outDir string) (string, error) {
 	root.set("techs", techs)
 
 	// nodes -------------------------------------------------------------------
+	// Calliope 0.7.0 requires latitude/longitude on all nodes or on none, so
+	// coordinates are emitted only when every node carries them (ValidateJob
+	// warns when a partial set is dropped).
+	allCoords := allNodesHaveCoords(m)
 	nodes := newYAML()
 	for _, id := range emit.Keys(m.Nodes) {
 		n := m.Nodes[id]
 		nn := newYAML()
-		if n.Coords != nil {
+		if allCoords {
 			// Force float rendering so Calliope sees matching lat/lon types even
 			// when a coordinate is a whole number (49.0, not int-like 49).
 			nn.set("latitude", yamlFloat(n.Coords.Lat))
@@ -358,6 +363,20 @@ func (Emitter) Emit(j *model.Job, outDir string) (string, error) {
 		}
 	}
 	return path, nil
+}
+
+// allNodesHaveCoords reports whether every node defines coordinates (Calliope
+// 0.7.0 accepts latitude/longitude on all nodes or on none).
+func allNodesHaveCoords(m *model.Model) bool {
+	if len(m.Nodes) == 0 {
+		return false
+	}
+	for _, n := range m.Nodes {
+		if n.Coords == nil {
+			return false
+		}
+	}
+	return true
 }
 
 // calliopeMode translates a canonical run mode into Calliope 0.7's own
@@ -722,11 +741,12 @@ func calliopeOperation(n *yamlNode, op *model.Operation) {
 
 // calliopeFlowCosts builds the merged per-flow cost parameters. cost_flow_out
 // carries each class's variable O&M plus the co2 class for a tech-level
-// emission factor; cost_flow_in carries each class's fuel cost plus the co2
-// class for the consumed carrier's co2 intensity (mirroring PyPSA's carrier
-// co2_emissions on the fuel-consumption basis). Both are indexed by costs
-// only — Calliope sums cost_flow_*|flow_* over carriers, so a costs-only rate
-// charges the tech's whole flow; exact for single-fuel techs (the common
+// emission factor; cost_flow_in (cost_source_use on supply techs, which
+// consume a source rather than a carrier) carries each class's fuel cost plus
+// the co2 class for the consumed carrier's co2 intensity (mirroring PyPSA's
+// carrier co2_emissions on the fuel-consumption basis). Both are indexed by
+// costs only — Calliope sums cost_flow_*|flow_* over carriers, so a costs-only
+// rate charges the tech's whole flow; exact for single-fuel techs (the common
 // case). Returns true if any co2 cost was added.
 func calliopeFlowCosts(n *yamlNode, t model.Technology, m *model.Model) bool {
 	anyCO2 := false
@@ -776,7 +796,15 @@ func calliopeFlowCosts(n *yamlNode, t model.Technology, m *model.Model) bool {
 		n.set("cost_flow_out", indexedCostMulti(outClasses, outValues))
 	}
 	if len(inClasses) > 0 {
-		n.set("cost_flow_in", indexedCostMulti(inClasses, inValues))
+		// Calliope 0.7.0 prices a supply tech's consumption on source_use and
+		// ignores cost_flow_in there (with a warning): the fuel cost per MWh
+		// consumed is a cost per unit of source_use. Every other base tech
+		// consumes a carrier and keeps cost_flow_in.
+		param := "cost_flow_in"
+		if t.Role == model.RoleSupply {
+			param = "cost_source_use"
+		}
+		n.set(param, indexedCostMulti(inClasses, inValues))
 	}
 	return anyCO2
 }
@@ -1006,13 +1034,15 @@ type calliopeCSV struct {
 // data_tables block and records the CSV to materialize. The file is a
 // timesteps-indexed table with `columns: [techs, nodes]` — a shape Calliope
 // reads directly (the tech and node are named in the first two header rows).
+// Calliope 0.7.0 spells the file key `table` and the parameter dimension
+// `inputs` (dev7: `data` / `parameters`).
 func addDataTable(dt *yamlNode, csvs *[]calliopeCSV, tech, node, param, seriesID string) {
 	entry := newYAML()
-	entry.set("data", seriesID+".csv")
+	entry.set("table", seriesID+".csv")
 	entry.set("rows", "timesteps")
 	entry.set("columns", []any{"techs", "nodes"})
 	add := newYAML()
-	add.set("parameters", param)
+	add.set("inputs", param)
 	entry.set("add_dims", add)
 	dt.set(tech+"__"+param, entry)
 	*csvs = append(*csvs, calliopeCSV{file: seriesID + ".csv", tech: tech, node: node, series: seriesID})
@@ -1023,11 +1053,11 @@ func addDataTable(dt *yamlNode, csvs *[]calliopeCSV, tech, node, param, seriesID
 func addScalarDataTable(dt *yamlNode, csvs *[]calliopeCSV, tech, node, param string, v float64, m *model.Model) {
 	file := tech + "_" + param + ".csv"
 	entry := newYAML()
-	entry.set("data", file)
+	entry.set("table", file)
 	entry.set("rows", "timesteps")
 	entry.set("columns", []any{"techs", "nodes"})
 	add := newYAML()
-	add.set("parameters", param)
+	add.set("inputs", param)
 	entry.set("add_dims", add)
 	dt.set(tech+"__"+param, entry)
 
@@ -1101,12 +1131,16 @@ func calliopeMathDoc(m *model.Model, ms *calliopeMathState, renderPortable bool)
 			if f.Direction == model.FlowIn {
 				varName = "flow_in"
 			}
-			expr := fmt.Sprintf("%s[techs=%s, carriers=%s] == %s * flow_in[techs=%s, carriers=%s]",
-				varName, ft.id, f.Carrier, emit.Ftoa(f.Ratio), ft.id, ft.ref)
+			// The constraint iterates techs and subsets to this one ("[id] in
+			// techs"); foreach already restricts to the nodes where the tech is
+			// active. (Calliope 0.7.0 removed the `defined()` helper that dev7
+			// used to pick those nodes.)
+			expr := fmt.Sprintf("%s[carriers=%s] == %s * flow_in[carriers=%s]",
+				varName, f.Carrier, emit.Ftoa(f.Ratio), ft.ref)
 			n := newYAML()
 			n.set("description", "energymodel fixed flow ratio")
-			n.set("foreach", []any{"nodes", "timesteps"})
-			n.set("where", fmt.Sprintf("defined(techs=[%s], within=nodes, how=all)", ft.id))
+			n.set("foreach", []any{"nodes", "techs", "timesteps"})
+			n.set("where", fmt.Sprintf("[%s] in techs", ft.id))
 			eq := newYAML()
 			eq.set("expression", expr)
 			n.set("equations", []any{eq})

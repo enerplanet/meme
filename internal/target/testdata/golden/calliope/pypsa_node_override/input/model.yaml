@@ -44,14 +44,14 @@ nodes:
           dims: costs
 data_tables:
   l1__sink_use_equals:
-    data: l1_sink_use_equals.csv
+    table: l1_sink_use_equals.csv
     rows: timesteps
     columns: [techs, nodes]
     add_dims:
-      parameters: sink_use_equals
+      inputs: sink_use_equals
   l2__sink_use_equals:
-    data: l2_sink_use_equals.csv
+    table: l2_sink_use_equals.csv
     rows: timesteps
     columns: [techs, nodes]
     add_dims:
-      parameters: sink_use_equals
+      inputs: sink_use_equals

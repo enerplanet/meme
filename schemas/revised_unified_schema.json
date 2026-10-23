@@ -6,7 +6,7 @@
   "x-source-schemas": {
     "adopt-net0": "adopt_net0_schema.json (AdOpT-NET0 0.1.10)",
     "pypsa": "pypsa_schema.json (PyPSA 1.2.4)",
-    "calliope": "calliope_schema.json (Calliope 0.7.0.dev7)"
+    "calliope": "calliope_schema.json (Calliope 0.7; pinned release 0.7.0)"
   },
   "x-go-package": "github.com/enerplanet/meme/internal/model",
   "x-report": "docs/unified_schema_vs_go.md",

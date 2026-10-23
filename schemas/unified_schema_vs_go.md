@@ -1,7 +1,7 @@
 # Unified schema vs. the meme Go implementation
 
 Comparison of [`unified_schema.json`](unified_schema.json) (revision 1, the framework-driven
-unification of AdOpT-NET0 0.1.10 / PyPSA 1.2.4 / Calliope 0.7.0.dev7) against meme's canonical
+unification of AdOpT-NET0 0.1.10 / PyPSA 1.2.4 / Calliope 0.7.0) against meme's canonical
 Go model (`internal/model`), and the decision log for
 [`revised_unified_schema.json`](revised_unified_schema.json) (revision 2), which converges the two.
 

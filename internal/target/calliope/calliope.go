@@ -75,6 +75,19 @@ func (Calliope) ValidateJob(j *model.Job) ([]string, error) {
 	if m.Time.Weights.IsSeries() {
 		return nil, fmt.Errorf("time.weights as a series is not supported for calliope (scalar only); pypsa honors it")
 	}
+	// Calliope 0.7.0 accepts latitude/longitude on all nodes or on none; a
+	// partial set is dropped rather than failing the run.
+	if !allNodesHaveCoords(m) {
+		var missing []string
+		for _, id := range emit.Keys(m.Nodes) {
+			if m.Nodes[id].Coords == nil {
+				missing = append(missing, id)
+			}
+		}
+		if len(missing) < len(m.Nodes) {
+			warns = append(warns, fmt.Sprintf("node coordinates are emitted only when every node has them (Calliope requires all or none); missing on %v, so coordinates are omitted", missing))
+		}
+	}
 	for _, id := range emit.Keys(m.Transmission) {
 		if m.Transmission[id].EnergyConsumption != nil {
 			return nil, fmt.Errorf("transmission %q: energy_consumption is only supported for pypsa (multi-port link)", id)

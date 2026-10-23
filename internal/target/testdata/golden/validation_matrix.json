@@ -181,7 +181,10 @@
       "verdict": "error: transmission is not supported by target \"adopt-net0\" yet (adopt_net0 Networks are not mapped); model exchange via trade or nodes.\u003cn\u003e.native.adopt-net0"
     },
     "calliope": {
-      "verdict": "ok"
+      "verdict": "ok",
+      "warnings": [
+        "node coordinates are emitted only when every node has them (Calliope requires all or none); missing on [hub], so coordinates are omitted"
+      ]
     },
     "pypsa": {
       "verdict": "ok"

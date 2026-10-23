@@ -62,14 +62,14 @@ nodes:
       grid2_import:
 data_tables:
   load1__sink_use_equals:
-    data: load1_sink_use_equals.csv
+    table: load1_sink_use_equals.csv
     rows: timesteps
     columns: [techs, nodes]
     add_dims:
-      parameters: sink_use_equals
+      inputs: sink_use_equals
   load2__sink_use_equals:
-    data: load2_sink_use_equals.csv
+    table: load2_sink_use_equals.csv
     rows: timesteps
     columns: [techs, nodes]
     add_dims:
-      parameters: sink_use_equals
+      inputs: sink_use_equals

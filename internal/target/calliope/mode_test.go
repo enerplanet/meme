@@ -24,8 +24,8 @@ func TestCalliopeMaterializesDemandCSV(t *testing.T) {
 	}
 	var csv string
 	for _, line := range strings.Split(model, "\n") {
-		if i := strings.Index(line, "data: "); i >= 0 && strings.HasSuffix(strings.TrimSpace(line), ".csv") {
-			csv = strings.TrimSpace(line[i+len("data: "):])
+		if i := strings.Index(line, "table: "); i >= 0 && strings.HasSuffix(strings.TrimSpace(line), ".csv") {
+			csv = strings.TrimSpace(line[i+len("table: "):])
 			break
 		}
 	}

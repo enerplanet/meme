@@ -40,14 +40,14 @@ nodes:
       pv:
 data_tables:
   load__sink_use_equals:
-    data: dem.csv
+    table: dem.csv
     rows: timesteps
     columns: [techs, nodes]
     add_dims:
-      parameters: sink_use_equals
+      inputs: sink_use_equals
   pv__source_use_max:
-    data: pv_cf.csv
+    table: pv_cf.csv
     rows: timesteps
     columns: [techs, nodes]
     add_dims:
-      parameters: source_use_max
+      inputs: source_use_max

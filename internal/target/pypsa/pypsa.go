@@ -26,6 +26,10 @@ func init() { target.Register(PyPSA{}) }
 // Name implements target.Target.
 func (PyPSA) Name() model.Target { return model.TargetPyPSA }
 
+// Version implements target.Target: the PyPSA release the emitter writes
+// (network.csv pypsa_version) and the E2E suite certifies.
+func (PyPSA) Version() string { return pypsaTargetVersion }
+
 // Capabilities is the enforced feature profile. Every claimed feature is
 // backed by a runnable scenario (see the capability-coverage test).
 func (PyPSA) Capabilities() map[model.Feature]bool {

@@ -49,7 +49,8 @@ type Server struct {
 // NewServer returns an http.Handler exposing (also aliased under /v1/):
 //
 //	GET  /healthz                 liveness
-//	GET  /capabilities            capability matrix (target -> feature -> bool)
+//	GET  /capabilities            targets, default targets, aliases, framework
+//	                              versions, capability matrix (target -> feature -> bool)
 //	POST /validate?target=        validate a Job (warnings or 4xx)
 //	POST /convert?target=         emit native files synchronously
 //	POST /simulate?target=        submit an async job -> 202 {id, ...}
@@ -59,7 +60,9 @@ type Server struct {
 // ?target= accepts a single target ("pypsa"), a comma-separated list
 // ("pypsa,calliope"), or "all": one request validates/emits/runs every
 // requested framework; multi-target bundles nest per-target under
-// files/<target>/.
+// files/<target>/. "all" expands to the default targets (one per framework);
+// version variants ("calliope-0.6") run only when named, and version-explicit
+// aliases ("calliope-0.7") resolve to their default.
 //
 // When CORS is enabled (see CORSConfig), a wrapping middleware answers
 // preflight OPTIONS on every route and decorates responses with the
@@ -87,8 +90,11 @@ func NewServer(s Server) http.Handler {
 	})
 	route("GET /capabilities", func(w http.ResponseWriter, r *http.Request) {
 		writeJSONResp(w, http.StatusOK, map[string]any{
-			"targets":  target.Names(),
-			"features": target.CapabilityMatrix(),
+			"targets":         target.Names(),    // every selectable target
+			"default_targets": target.Defaults(), // what ?target=all runs
+			"aliases":         target.Aliases(),  // version-explicit names -> target
+			"versions":        target.Versions(), // target -> framework version
+			"features":        target.CapabilityMatrix(),
 		})
 	})
 	route("POST /validate", s.handleValidate)

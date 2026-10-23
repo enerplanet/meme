@@ -14,7 +14,8 @@ import (
 )
 
 // TestRegistryResolution: every built-in target resolves, unknown names fail
-// with a message listing the known ones, and Names() is stable and sorted.
+// with a message listing the known ones, Names() is stable and sorted, and
+// Defaults() leaves out the version variants.
 func TestRegistryResolution(t *testing.T) {
 	want := []model.Target{"adopt-net0", "calliope", "pypsa"}
 	got := target.Names()
@@ -24,6 +25,16 @@ func TestRegistryResolution(t *testing.T) {
 	for i := range want {
 		if got[i] != want[i] {
 			t.Fatalf("Names() = %v, want %v (sorted)", got, want)
+		}
+	}
+	wantDefaults := []model.Target{"adopt-net0", "calliope", "pypsa"}
+	if gotDefaults := target.Defaults(); len(gotDefaults) != len(wantDefaults) {
+		t.Fatalf("Defaults() = %v, want %v", gotDefaults, wantDefaults)
+	} else {
+		for i := range wantDefaults {
+			if gotDefaults[i] != wantDefaults[i] {
+				t.Fatalf("Defaults() = %v, want %v", gotDefaults, wantDefaults)
+			}
 		}
 	}
 	for _, name := range want {
@@ -43,6 +54,52 @@ func TestRegistryResolution(t *testing.T) {
 	}
 	if target.Known("nonsense") {
 		t.Error("Known(nonsense) = true")
+	}
+}
+
+// TestVersionedTargets: targets report their framework version; "calliope-0.7"
+// is an alias of the default "calliope" (resolving everywhere a name is
+// accepted, never listed as its own target), and no default is a Variant.
+func TestVersionedTargets(t *testing.T) {
+	versions := target.Versions()
+	for name, want := range map[string]string{"calliope": "0.7.0", "pypsa": "1.2.4", "adopt-net0": "0.1.10"} {
+		if versions[name] != want {
+			t.Errorf("Versions()[%s] = %q, want %q", name, versions[name], want)
+		}
+	}
+	if got := target.Resolve("calliope-0.7"); got != model.TargetCalliope {
+		t.Errorf("Resolve(calliope-0.7) = %s, want calliope", got)
+	}
+	impl, err := target.For("calliope-0.7")
+	if err != nil || impl.Name() != model.TargetCalliope {
+		t.Fatalf("For(calliope-0.7) = %v, %v; want the calliope target", impl, err)
+	}
+	if !target.Known("calliope-0.7") {
+		t.Error("Known(calliope-0.7) = false")
+	}
+	if aliases := target.Aliases(); aliases["calliope-0.7"] != model.TargetCalliope || len(aliases) != 1 {
+		t.Errorf("Aliases() = %v, want {calliope-0.7: calliope}", aliases)
+	}
+	for _, n := range target.Names() {
+		if n == "calliope-0.7" {
+			t.Error("an alias must not appear in Names()")
+		}
+	}
+	if _, ok := impl.(target.Variant); ok {
+		t.Error("the default calliope target must not be a Variant")
+	}
+	// Validation through an alias runs against the aliased target: the
+	// native-block warnings name the canonical target, not the alias.
+	j, err := scenarios.SampleFor(model.TargetCalliope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	warns, err := target.ValidateFor(&j, "calliope-0.7")
+	if err != nil {
+		t.Fatalf("ValidateFor via alias: %v", err)
+	}
+	if joined := strings.Join(warns, "\n"); !strings.Contains(joined, `ignored when emitting for "calliope"`) {
+		t.Errorf("alias validation should report the canonical target in its warnings, got %v", warns)
 	}
 }
 

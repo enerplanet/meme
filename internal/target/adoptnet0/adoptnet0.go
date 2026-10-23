@@ -18,6 +18,10 @@ import (
 	"github.com/enerplanet/meme/internal/target"
 )
 
+// adoptTargetVersion is the adopt_net0 release the emitter and run script
+// are validated against (pinned in environment/requirements.txt).
+const adoptTargetVersion = "0.1.10"
+
 // AdOptNET0 implements target.Target.
 type AdOptNET0 struct{}
 
@@ -25,6 +29,9 @@ func init() { target.Register(AdOptNET0{}) }
 
 // Name implements target.Target.
 func (AdOptNET0) Name() model.Target { return model.TargetAdOpt }
+
+// Version implements target.Target.
+func (AdOptNET0) Version() string { return adoptTargetVersion }
 
 // Capabilities is the enforced feature profile. committable,
 // piecewise_performance, linear_constraint and generic (multi-carrier)

@@ -22,6 +22,7 @@ func ValidateFor(j *model.Job, name model.Target) (warnings []string, err error)
 	if err != nil {
 		return nil, err
 	}
+	name = t.Name() // an alias resolves to the registered name
 	// Inline per-timestep arrays become registry series before anything reads
 	// them, so validation and the emitters see exactly one series shape.
 	if e := j.Model.InternInlineSeries(); e != nil {

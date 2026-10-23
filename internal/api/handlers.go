@@ -226,17 +226,20 @@ func redactAPIKey(raw []byte) []byte {
 }
 
 // parseTargets resolves the ?target= parameter: "pypsa", "pypsa,calliope", or
-// "all" (every registered target). Duplicates collapse, order is preserved.
+// "all" (the default targets — one per framework; version variants such as
+// "calliope-0.6" are selected by name). Version-explicit aliases
+// ("calliope-0.7") canonicalize to their registered name, so duplicates
+// collapse after resolution; order is preserved.
 func parseTargets(q string) ([]model.Target, error) {
 	if q == "all" {
-		return target.Names(), nil
+		return target.Defaults(), nil
 	}
 	seen := map[model.Target]bool{}
 	var out []model.Target
 	for _, part := range strings.Split(q, ",") {
-		t := model.Target(strings.TrimSpace(part))
+		t := target.Resolve(model.Target(strings.TrimSpace(part)))
 		if !target.Known(t) {
-			return nil, fmt.Errorf("unknown target %q (use one of %v, a comma-separated list, or \"all\")", t, target.Names())
+			return nil, fmt.Errorf("unknown target %q (use one of %v, a comma-separated list, or \"all\" for the defaults %v)", t, target.Names(), target.Defaults())
 		}
 		if !seen[t] {
 			seen[t] = true

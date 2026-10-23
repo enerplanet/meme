@@ -15,13 +15,24 @@ import (
 	"github.com/enerplanet/meme/internal/target"
 )
 
-// Calliope implements target.Target.
+// calliopeVersion is the Calliope 0.7 release the default target's emitter is
+// validated against (pinned in environment/requirements-calliope-0.7.txt).
+const calliopeVersion = "0.7.0"
+
+// Calliope implements target.Target for Calliope 0.7.
 type Calliope struct{}
 
-func init() { target.Register(Calliope{}) }
+func init() {
+	target.Register(Calliope{})
+	// The version-explicit spelling of the default Calliope target.
+	target.RegisterAlias("calliope-0.7", model.TargetCalliope)
+}
 
 // Name implements target.Target.
 func (Calliope) Name() model.Target { return model.TargetCalliope }
+
+// Version implements target.Target.
+func (Calliope) Version() string { return calliopeVersion }
 
 // Capabilities is the enforced feature profile. Every claimed feature is
 // backed by a runnable scenario (see the capability-coverage test).

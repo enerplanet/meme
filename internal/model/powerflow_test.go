@@ -253,3 +253,245 @@ func TestExperimentPowerFlowValidate(t *testing.T) {
 		t.Errorf("expected a mode-mismatch warning for power_flow, got %v", e.OptionWarnings())
 	}
 }
+
+// reactiveModel extends the electrical network with every reactive-power and
+// voltage-control field: a slack set-point, a PV generator, a derived-Q load,
+// a set-point load, a shunt, a controlled link to an island, and the branch
+// refinements.
+func reactiveModel() model.Model {
+	m := electricalModel()
+	m.Nodes["mv1"] = model.Node{Electrical: &model.NodeElectrical{VNom: 20, Shunt: &model.Shunt{G: 0, B: 0.001}}}
+	m.Nodes["mv3"] = model.Node{Electrical: &model.NodeElectrical{VNom: 20}}
+	m.Timeseries["q2"] = model.TimeSeries{Source: "inline", Values: []float64{2, 2.3, 2.6, 2}}
+	grid := m.Technologies["grid"]
+	grid.Electrical = &model.TechElectrical{VoltageSetpoint: fp(1.02)}
+	m.Technologies["grid"] = grid
+	pv := m.Technologies["pv"]
+	pv.Electrical = &model.TechElectrical{Control: model.ControlPV, VoltageSetpoint: fp(1.0)}
+	m.Technologies["pv"] = pv
+	load := m.Technologies["load"]
+	load.Electrical = &model.TechElectrical{PowerFactor: fp(0.95)}
+	m.Technologies["load"] = load
+	m.Technologies["load2"] = model.Technology{Role: model.RoleDemand, Node: model.StringList{"mv2"}, CarrierIn: model.StringList{"el"},
+		DemandProfile: model.Series("dem"), Electrical: &model.TechElectrical{ReactiveDispatch: model.Series("q2")}}
+	m.Technologies["dg"] = model.Technology{Role: model.RoleSupply, Node: model.StringList{"mv3"}, CarrierOut: model.StringList{"el"},
+		Capacity: &model.Capacity{Existing: 5}, Dispatch: model.Num(1), Electrical: &model.TechElectrical{PowerFactor: fp(0.9)}}
+	l12 := m.Transmission["l12"]
+	l12.Distance = fp(10)
+	l12.Electrical = &model.TransmissionElectrical{Kind: model.ElectricalLine, RPerLength: fp(0.12), XPerLength: fp(0.35), SNom: fp(20), B: fp(0.0001)}
+	m.Transmission["l12"] = l12
+	trafo := m.Transmission["trafo"]
+	trafo.Electrical.PhaseShift = fp(2.5)
+	m.Transmission["trafo"] = trafo
+	m.Transmission["hvdc"] = model.Transmission{Carrier: "el", From: "mv2", To: "mv3", Bidirectional: true,
+		Capacity: &model.Capacity{Existing: 30}, Dispatch: model.Num(3)}
+	return m
+}
+
+func TestReactiveFieldsJSON(t *testing.T) {
+	raw := `{"role":"supply","node":"a","carrier_out":"el","capacity":{"existing":5},"dispatch":2,
+	         "electrical":{"reactive_dispatch":[0.5,0.6],"control":"pv","voltage_setpoint":1.01},
+	         "node_overrides":{"a":{"electrical":{"power_factor":0.9,"leading":true}}}}`
+	var tech model.Technology
+	if err := json.Unmarshal([]byte(raw), &tech); err != nil {
+		t.Fatal(err)
+	}
+	e := tech.Electrical
+	if e == nil || !e.ReactiveDispatch.IsInline() || e.Control != model.ControlPV || *e.VoltageSetpoint != 1.01 {
+		t.Errorf("technology electrical not decoded: %+v", e)
+	}
+	if ov := tech.NodeOverrides["a"].Electrical; ov == nil || *ov.PowerFactor != 0.9 || !ov.Leading {
+		t.Errorf("override electrical not decoded: %+v", ov)
+	}
+	var n model.Node
+	if err := json.Unmarshal([]byte(`{"electrical":{"v_nom":20,"shunt":{"g":0,"b":0.001}}}`), &n); err != nil {
+		t.Fatal(err)
+	}
+	if n.Electrical.Shunt == nil || n.Electrical.Shunt.B != 0.001 {
+		t.Errorf("shunt not decoded: %+v", n.Electrical)
+	}
+	var l model.Transmission
+	if err := json.Unmarshal([]byte(`{"carrier":"el","from":"a","to":"b","bidirectional":true,"dispatch":"flow",
+	    "electrical":{"kind":"line","r_per_length":0.12,"x_per_length":0.35,"b":0.0001,"g":0,"phase_shift":2.5}}`), &l); err != nil {
+		t.Fatal(err)
+	}
+	if l.Dispatch.SeriesID() != "flow" || *l.Electrical.RPerLength != 0.12 || *l.Electrical.B != 0.0001 || *l.Electrical.PhaseShift != 2.5 {
+		t.Errorf("transmission fields not decoded: %+v %+v", l.Dispatch, l.Electrical)
+	}
+	out, _ := json.Marshal(tech)
+	for _, key := range []string{`"control":"pv"`, `"voltage_setpoint":1.01`, `"power_factor":0.9`, `"leading":true`} {
+		if !strings.Contains(string(out), key) {
+			t.Errorf("encoded technology lacks %s: %s", key, out)
+		}
+	}
+}
+
+// The reference reactive network validates; the derived impedance and the
+// derived reactive power resolve as documented.
+func TestReactiveModelValidatesAndDerives(t *testing.T) {
+	m := reactiveModel()
+	if err := m.Validate(); err != nil {
+		t.Fatalf("reactive model should validate: %v", err)
+	}
+	r, x := m.Transmission["l12"].Electrical.Impedance(m.Transmission["l12"].Distance)
+	if r != 1.2 || x != 3.5 {
+		t.Errorf("per-length impedance over 10 km: got r %g x %g, want 1.2 3.5", r, x)
+	}
+	r, x = m.Transmission["trafo"].Electrical.Impedance(nil)
+	if r != 0.01 || x != 0.1 {
+		t.Errorf("literal impedance must pass through: got r %g x %g", r, x)
+	}
+	// Q = P tan(acos pf): a 10 MW load at 0.95 draws 3.2868 MVAr; leading flips the sign.
+	f := (&model.TechElectrical{PowerFactor: fp(0.95)}).ReactiveFactor()
+	if f < 0.3286 || f > 0.3288 {
+		t.Errorf("reactive factor at pf 0.95: got %g, want 0.32868", f)
+	}
+	if g := (&model.TechElectrical{PowerFactor: fp(0.95), Leading: true}).ReactiveFactor(); g >= 0 || g < -0.3288 {
+		t.Errorf("leading power factor must give a negative factor, got %g", g)
+	}
+	if g := (&model.TechElectrical{}).ReactiveFactor(); g != 0 {
+		t.Errorf("no power factor means no derived Q, got %g", g)
+	}
+}
+
+func TestReactiveFieldChecks(t *testing.T) {
+	cases := []struct {
+		name string
+		mut  func(m *model.Model)
+		want string
+	}{
+		{"power factor above one", func(m *model.Model) {
+			t := m.Technologies["load"]
+			t.Electrical.PowerFactor = fp(1.2)
+			m.Technologies["load"] = t
+		},
+			`tech "load": electrical.power_factor must be within (0,1]`},
+		{"power factor zero", func(m *model.Model) {
+			t := m.Technologies["load"]
+			t.Electrical.PowerFactor = fp(0)
+			m.Technologies["load"] = t
+		},
+			`tech "load": electrical.power_factor must be within (0,1]`},
+		{"both ways to give Q", func(m *model.Model) {
+			t := m.Technologies["load"]
+			t.Electrical.ReactiveDispatch = model.Num(1)
+			m.Technologies["load"] = t
+		},
+			`tech "load": electrical.reactive_dispatch and electrical.power_factor are mutually exclusive`},
+		{"leading without power factor", func(m *model.Model) {
+			t := m.Technologies["load2"]
+			t.Electrical.Leading = true
+			m.Technologies["load2"] = t
+		},
+			`tech "load2": electrical.leading needs electrical.power_factor`},
+		{"unknown control", func(m *model.Model) {
+			t := m.Technologies["pv"]
+			t.Electrical.Control = "pq2"
+			m.Technologies["pv"] = t
+		},
+			`tech "pv": electrical.control "pq2" is invalid (pq or pv)`},
+		{"control on a load", func(m *model.Model) {
+			t := m.Technologies["load"]
+			t.Electrical.Control = model.ControlPV
+			m.Technologies["load"] = t
+		},
+			`tech "load": electrical.control applies to supply technologies`},
+		{"voltage set-point on a load", func(m *model.Model) {
+			t := m.Technologies["load"]
+			t.Electrical.VoltageSetpoint = fp(1)
+			m.Technologies["load"] = t
+		},
+			`tech "load": electrical.voltage_setpoint applies to supply technologies`},
+		{"non-positive voltage set-point", func(m *model.Model) {
+			t := m.Technologies["pv"]
+			t.Electrical.VoltageSetpoint = fp(0)
+			m.Technologies["pv"] = t
+		},
+			`tech "pv": electrical.voltage_setpoint must be positive`},
+		{"reactive fields on a conversion", func(m *model.Model) {
+			m.Technologies["boiler"] = model.Technology{Role: model.RoleConversion, Node: model.StringList{"mv1"}, CarrierIn: model.StringList{"el"},
+				CarrierOut: model.StringList{"heat"}, Capacity: &model.Capacity{Existing: 2}, Dispatch: model.Num(1),
+				Electrical: &model.TechElectrical{PowerFactor: fp(0.9)}}
+		}, `tech "boiler": electrical reactive fields apply to supply, demand and storage; a conversion transfers active power only`},
+		{"undefined reactive series", func(m *model.Model) {
+			t := m.Technologies["load2"]
+			t.Electrical.ReactiveDispatch = model.Series("missing")
+			m.Technologies["load2"] = t
+		},
+			`tech "load2": time-series "missing" not defined`},
+		{"negative shunt conductance", func(m *model.Model) {
+			m.Nodes["mv1"] = model.Node{Electrical: &model.NodeElectrical{VNom: 20, Shunt: &model.Shunt{G: -1}}}
+		},
+			`node "mv1": electrical.shunt.g must not be negative`},
+		{"dispatch and impedance on one arc", func(m *model.Model) { l := m.Transmission["l12"]; l.Dispatch = model.Num(1); m.Transmission["l12"] = l },
+			`transmission "l12": dispatch and electrical are mutually exclusive (a line's flow is a result of the power flow)`},
+		{"undefined arc dispatch series", func(m *model.Model) {
+			l := m.Transmission["hvdc"]
+			l.Dispatch = model.Series("missing")
+			m.Transmission["hvdc"] = l
+		},
+			`transmission "hvdc": time-series "missing" not defined`},
+		{"line admittance on a transformer", func(m *model.Model) {
+			l := m.Transmission["trafo"]
+			l.Electrical.B = fp(0.1)
+			m.Transmission["trafo"] = l
+		},
+			`transmission "trafo": electrical.b and electrical.g apply to a line only`},
+		{"phase shift on a line", func(m *model.Model) {
+			l := m.Transmission["l12"]
+			l.Electrical.PhaseShift = fp(1)
+			m.Transmission["l12"] = l
+		},
+			`transmission "l12": electrical.phase_shift applies to a transformer only`},
+		{"per-length without distance", func(m *model.Model) { l := m.Transmission["l12"]; l.Distance = nil; m.Transmission["l12"] = l },
+			`transmission "l12": electrical.r_per_length and electrical.x_per_length need distance`},
+		{"per-length and literal together", func(m *model.Model) { l := m.Transmission["l12"]; l.Electrical.X = 3; m.Transmission["l12"] = l },
+			`transmission "l12": give either electrical.r and x or electrical.r_per_length and x_per_length, not both`},
+		{"non-positive per-length reactance", func(m *model.Model) {
+			l := m.Transmission["l12"]
+			l.Electrical.XPerLength = fp(0)
+			m.Transmission["l12"] = l
+		},
+			`transmission "l12": electrical.x_per_length must be positive`},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			m := reactiveModel()
+			c.mut(&m)
+			wantValidateErr(t, &m, c.want)
+		})
+	}
+}
+
+// Reactive series and arc dispatch intern like every other inline array, and
+// the override electrical block replaces the base block in At.
+func TestReactiveInternAndOverride(t *testing.T) {
+	m := reactiveModel()
+	load := m.Technologies["load2"]
+	load.Electrical.ReactiveDispatch = &model.Value{Inline: []float64{1, 2, 3, 4}}
+	m.Technologies["load2"] = load
+	pv := m.Technologies["pv"]
+	pv.NodeOverrides = map[string]model.NodeOverride{"mv2": {Electrical: &model.TechElectrical{Control: model.ControlPQ, ReactiveDispatch: &model.Value{Inline: []float64{0, 0, 1, 1}}}}}
+	m.Technologies["pv"] = pv
+	hvdc := m.Transmission["hvdc"]
+	hvdc.Dispatch = &model.Value{Inline: []float64{3, 3, 2, 2}}
+	m.Transmission["hvdc"] = hvdc
+	if err := m.InternInlineSeries(); err != nil {
+		t.Fatal(err)
+	}
+	if got := m.Technologies["load2"].Electrical.ReactiveDispatch.SeriesID(); got != "_inline:tech:load2:reactive_dispatch" {
+		t.Errorf("reactive series not interned: %q", got)
+	}
+	if got := m.Technologies["pv"].NodeOverrides["mv2"].Electrical.ReactiveDispatch.SeriesID(); got != "_inline:tech:pv:mv2:reactive_dispatch" {
+		t.Errorf("override reactive series not interned: %q", got)
+	}
+	if got := m.Transmission["hvdc"].Dispatch.SeriesID(); got != "_inline:transmission:hvdc:dispatch" {
+		t.Errorf("arc dispatch not interned: %q", got)
+	}
+	if at := m.Technologies["pv"].At("mv2"); at.Electrical.Control != model.ControlPQ || at.Electrical.VoltageSetpoint != nil {
+		t.Errorf("At must take the override electrical block wholesale, got %+v", at.Electrical)
+	}
+	if err := m.Validate(); err != nil {
+		t.Fatalf("interned reactive model should validate: %v", err)
+	}
+}

@@ -716,6 +716,37 @@
                 "pypsa": "buses.<node>::<carrier>.v_nom (bus carrier AC)",
                 "calliope": null
               }
+            },
+            "shunt": {
+              "type": "object",
+              "additionalProperties": false,
+              "description": "Fixed shunt admittance at the node's AC bus, in siemens (PyPSA ShuntImpedance). A power-flow input: ignored with a warning wherever no power flow runs (Calliope, AdOpT-NET0, PyPSA optimization modes; ADR-0009).",
+              "properties": {
+                "g": {
+                  "type": "number",
+                  "minimum": 0,
+                  "default": 0,
+                  "description": "Shunt conductance, S.",
+                  "x-go": "Shunt.G",
+                  "x-map": {
+                    "adopt-net0": null,
+                    "pypsa": "shunt_impedances.<node>::shunt.g",
+                    "calliope": null
+                  }
+                },
+                "b": {
+                  "type": "number",
+                  "default": 0,
+                  "description": "Shunt susceptance, S (positive = capacitive).",
+                  "x-go": "Shunt.B",
+                  "x-map": {
+                    "adopt-net0": null,
+                    "pypsa": "shunt_impedances.<node>::shunt.b",
+                    "calliope": null
+                  }
+                }
+              },
+              "x-go": "NodeElectrical.Shunt (Shunt)"
             }
           },
           "x-go": "Node.Electrical (NodeElectrical)"
@@ -1058,13 +1089,80 @@
         },
         "dispatch": {
           "$ref": "#/$defs/Value",
-          "description": "Fixed active-power output per timestep (MW) a power flow injects (mode power_flow): output for supply and conversion (at the reference input), discharge (negative = charging) for storage; demand uses demand_profile. A power-flow input: rejected in every optimization mode, where the solver decides dispatch (pin it with operation.equals_pu there).",
+          "description": "Fixed active-power output per timestep (MW) a power flow injects (mode power_flow): output for supply and conversion (at the reference input), discharge (negative = charging) for storage; demand uses demand_profile. A power-flow input: ignored with a warning wherever no power flow runs (the solver decides dispatch in an optimization; pin it with operation.equals_pu there; ADR-0009).",
           "x-go": "Technology.Dispatch",
           "x-map": {
             "adopt-net0": null,
             "pypsa": "generators / storage_units / links p_set (static, or <component>-p_set.csv for a series)",
             "calliope": null
           }
+        },
+        "electrical": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Reactive-power and voltage behaviour of the technology in a power flow (mode power_flow). Q comes as reactive_dispatch or is derived from the active set-point at power_factor in the component's own direction (a load consumes, a generator supplies; leading flips the sign); the two are mutually exclusive. control and voltage_setpoint belong to supply technologies. A conversion carries no reactive fields (a PyPSA Link transfers active power). A power-flow input: ignored with a warning wherever no power flow runs (Calliope, AdOpT-NET0, PyPSA optimization modes; ADR-0009).",
+          "properties": {
+            "reactive_dispatch": {
+              "$ref": "#/$defs/Value",
+              "description": "Reactive set-point per timestep, MVAr (PyPSA q_set; a series becomes <component>-q_set.csv).",
+              "x-go": "TechElectrical.ReactiveDispatch",
+              "x-map": {
+                "adopt-net0": null,
+                "pypsa": "generators / loads / storage_units q_set",
+                "calliope": null
+              }
+            },
+            "power_factor": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "maximum": 1,
+              "description": "Power factor; Q = P tan(acos pf) per snapshot, in the component's own direction.",
+              "x-go": "TechElectrical.PowerFactor",
+              "x-map": {
+                "adopt-net0": null,
+                "pypsa": "q_set derived from p_set by the emitter",
+                "calliope": null
+              }
+            },
+            "leading": {
+              "type": "boolean",
+              "default": false,
+              "description": "Capacitive behaviour: the derived Q changes sign.",
+              "x-go": "TechElectrical.Leading",
+              "x-map": {
+                "adopt-net0": null,
+                "pypsa": "sign of the derived q_set",
+                "calliope": null
+              }
+            },
+            "control": {
+              "type": "string",
+              "enum": [
+                "pq",
+                "pv"
+              ],
+              "default": "pq",
+              "description": "pq holds the set-points; pv holds the bus voltage at voltage_setpoint (supply only).",
+              "x-go": "TechElectrical.Control",
+              "x-map": {
+                "adopt-net0": null,
+                "pypsa": "generators.<name>.control PQ / PV",
+                "calliope": null
+              }
+            },
+            "voltage_setpoint": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "description": "Bus voltage held by a pv generator or the slack, pu (default 1.0).",
+              "x-go": "TechElectrical.VoltageSetpoint",
+              "x-map": {
+                "adopt-net0": null,
+                "pypsa": "buses.<node>::<carrier>.v_mag_pu_set",
+                "calliope": null
+              }
+            }
+          },
+          "x-go": "Technology.Electrical (TechElectrical)"
         }
       },
       "allOf": [
@@ -1189,13 +1287,80 @@
         },
         "dispatch": {
           "$ref": "#/$defs/Value",
-          "description": "Fixed active-power output per timestep (MW) a power flow injects (mode power_flow): output for supply and conversion (at the reference input), discharge (negative = charging) for storage; demand uses demand_profile. A power-flow input: rejected in every optimization mode, where the solver decides dispatch (pin it with operation.equals_pu there).",
+          "description": "Fixed active-power output per timestep (MW) a power flow injects (mode power_flow): output for supply and conversion (at the reference input), discharge (negative = charging) for storage; demand uses demand_profile. A power-flow input: ignored with a warning wherever no power flow runs (the solver decides dispatch in an optimization; pin it with operation.equals_pu there; ADR-0009).",
           "x-go": "NodeOverride.Dispatch",
           "x-map": {
             "adopt-net0": null,
             "pypsa": "generators / storage_units / links p_set (static, or <component>-p_set.csv for a series)",
             "calliope": null
           }
+        },
+        "electrical": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Reactive-power and voltage behaviour of the technology in a power flow (mode power_flow). Q comes as reactive_dispatch or is derived from the active set-point at power_factor in the component's own direction (a load consumes, a generator supplies; leading flips the sign); the two are mutually exclusive. control and voltage_setpoint belong to supply technologies. A conversion carries no reactive fields (a PyPSA Link transfers active power). A power-flow input: ignored with a warning wherever no power flow runs (Calliope, AdOpT-NET0, PyPSA optimization modes; ADR-0009).",
+          "properties": {
+            "reactive_dispatch": {
+              "$ref": "#/$defs/Value",
+              "description": "Reactive set-point per timestep, MVAr (PyPSA q_set; a series becomes <component>-q_set.csv).",
+              "x-go": "TechElectrical.ReactiveDispatch",
+              "x-map": {
+                "adopt-net0": null,
+                "pypsa": "generators / loads / storage_units q_set",
+                "calliope": null
+              }
+            },
+            "power_factor": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "maximum": 1,
+              "description": "Power factor; Q = P tan(acos pf) per snapshot, in the component's own direction.",
+              "x-go": "TechElectrical.PowerFactor",
+              "x-map": {
+                "adopt-net0": null,
+                "pypsa": "q_set derived from p_set by the emitter",
+                "calliope": null
+              }
+            },
+            "leading": {
+              "type": "boolean",
+              "default": false,
+              "description": "Capacitive behaviour: the derived Q changes sign.",
+              "x-go": "TechElectrical.Leading",
+              "x-map": {
+                "adopt-net0": null,
+                "pypsa": "sign of the derived q_set",
+                "calliope": null
+              }
+            },
+            "control": {
+              "type": "string",
+              "enum": [
+                "pq",
+                "pv"
+              ],
+              "default": "pq",
+              "description": "pq holds the set-points; pv holds the bus voltage at voltage_setpoint (supply only).",
+              "x-go": "TechElectrical.Control",
+              "x-map": {
+                "adopt-net0": null,
+                "pypsa": "generators.<name>.control PQ / PV",
+                "calliope": null
+              }
+            },
+            "voltage_setpoint": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "description": "Bus voltage held by a pv generator or the slack, pu (default 1.0).",
+              "x-go": "TechElectrical.VoltageSetpoint",
+              "x-map": {
+                "adopt-net0": null,
+                "pypsa": "buses.<node>::<carrier>.v_mag_pu_set",
+                "calliope": null
+              }
+            }
+          },
+          "x-go": "NodeOverride.Electrical (TechElectrical)"
         }
       }
     },
@@ -2104,12 +2269,10 @@
         "electrical": {
           "type": "object",
           "required": [
-            "kind",
-            "r",
-            "x"
+            "kind"
           ],
           "additionalProperties": false,
-          "description": "Makes the arc an AC branch for a power flow (mode power_flow): a line with its series impedance in ohm over the arc, or a transformer with its impedance per unit of its rating. Electrical arcs are bidirectional and a line joins nodes of equal v_nom (a transformer joins two levels). Optimization runs emit the arc as a transport link and name the parameters as unused.",
+          "description": "Makes the arc an AC branch for a power flow (mode power_flow): a line with its series impedance in ohm over the arc (r, x — or r_per_length, x_per_length in ohm/km times distance), or a transformer with its impedance per unit of its rating. Electrical arcs are bidirectional and a line joins nodes of equal v_nom (a transformer joins two levels). Optimization runs emit the arc as a transport link and name the parameters as unused.",
           "properties": {
             "kind": {
               "type": "string",
@@ -2127,7 +2290,7 @@
             "r": {
               "type": "number",
               "minimum": 0,
-              "description": "Series resistance: ohm over the arc (line) or per unit of s_nom (transformer).",
+              "description": "Series resistance: ohm over the arc (line) or per unit of s_nom (transformer). Give r and x, or r_per_length and x_per_length.",
               "x-go": "TransmissionElectrical.R",
               "x-map": {
                 "adopt-net0": null,
@@ -2138,7 +2301,7 @@
             "x": {
               "type": "number",
               "exclusiveMinimum": 0,
-              "description": "Series reactance: ohm over the arc (line) or per unit of s_nom (transformer).",
+              "description": "Series reactance: ohm over the arc (line) or per unit of s_nom (transformer); positive. Give r and x, or r_per_length and x_per_length.",
               "x-go": "TransmissionElectrical.X",
               "x-map": {
                 "adopt-net0": null,
@@ -2180,9 +2343,72 @@
                 "pypsa": "transformers.<id>.tap_ratio",
                 "calliope": null
               }
+            },
+            "r_per_length": {
+              "type": "number",
+              "minimum": 0,
+              "description": "Series resistance per km (line); multiplied by distance at emission.",
+              "x-go": "TransmissionElectrical.RPerLength",
+              "x-map": {
+                "adopt-net0": null,
+                "pypsa": "r = r_per_length * length",
+                "calliope": null
+              }
+            },
+            "x_per_length": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "description": "Series reactance per km (line); multiplied by distance at emission.",
+              "x-go": "TransmissionElectrical.XPerLength",
+              "x-map": {
+                "adopt-net0": null,
+                "pypsa": "x = x_per_length * length",
+                "calliope": null
+              }
+            },
+            "b": {
+              "type": "number",
+              "description": "Line shunt susceptance over the arc, S.",
+              "x-go": "TransmissionElectrical.B",
+              "x-map": {
+                "adopt-net0": null,
+                "pypsa": "lines.<id>.b",
+                "calliope": null
+              }
+            },
+            "g": {
+              "type": "number",
+              "minimum": 0,
+              "description": "Line shunt conductance over the arc, S.",
+              "x-go": "TransmissionElectrical.G",
+              "x-map": {
+                "adopt-net0": null,
+                "pypsa": "lines.<id>.g",
+                "calliope": null
+              }
+            },
+            "phase_shift": {
+              "type": "number",
+              "description": "Transformer phase shift, degrees (transformer only).",
+              "x-go": "TransmissionElectrical.PhaseShift",
+              "x-map": {
+                "adopt-net0": null,
+                "pypsa": "transformers.<id>.phase_shift",
+                "calliope": null
+              }
             }
           },
           "x-go": "Transmission.Electrical (TransmissionElectrical)"
+        },
+        "dispatch": {
+          "$ref": "#/$defs/Value",
+          "description": "Fixed transfer of a controlled link in a power flow, MW from 'from' to 'to' per timestep (PyPSA Link p_set; a series becomes links-p_set.csv): the model of an HVDC tie. Exclusive with electrical (a line's flow is a result). A power-flow input: ignored with a warning wherever no power flow runs (Calliope, AdOpT-NET0, PyPSA optimization modes; ADR-0009).",
+          "x-go": "Transmission.Dispatch",
+          "x-map": {
+            "adopt-net0": null,
+            "pypsa": "links.<id>.p_set",
+            "calliope": null
+          }
         }
       }
     },

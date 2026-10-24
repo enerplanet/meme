@@ -163,7 +163,12 @@ func (m *Model) Validate() error {
 		if t.Role == RoleDemand && t.Dispatch != nil {
 			add("tech %q: dispatch applies to supply, conversion and storage; demand uses demand_profile", id)
 		}
-		for _, v := range []*Value{t.Efficiency, t.DemandProfile, t.Dispatch} {
+		validateTechElectrical(add, fmt.Sprintf("tech %q", id), t.Role, t.Electrical)
+		seriesVals := []*Value{t.Efficiency, t.DemandProfile, t.Dispatch}
+		if t.Electrical != nil {
+			seriesVals = append(seriesVals, t.Electrical.ReactiveDispatch)
+		}
+		for _, v := range seriesVals {
 			if v != nil && !hasSeries(v) {
 				add("tech %q: time-series %q not defined", id, v.SeriesID())
 			}
@@ -290,6 +295,7 @@ func (m *Model) Validate() error {
 				}
 			}
 			where := fmt.Sprintf("tech %q override %q", id, nid)
+			validateTechElectrical(add, where, t.Role, ov.Electrical)
 			validateCapacity(add, where, ov.Capacity)
 			validateOperation(add, where, ov.Operation)
 			validateStorage(add, where, ov.Storage)
@@ -304,6 +310,9 @@ func (m *Model) Validate() error {
 		}
 		if n.Electrical != nil && n.Electrical.VNom <= 0 {
 			add("node %q: electrical.v_nom must be positive", nid)
+		}
+		if n.Electrical != nil && n.Electrical.Shunt != nil && n.Electrical.Shunt.G < 0 {
+			add("node %q: electrical.shunt.g must not be negative", nid)
 		}
 		for _, col := range keysOf(n.Climate) {
 			// Climate columns feed interned series ids, so they follow the
@@ -449,6 +458,12 @@ func (m *Model) Validate() error {
 		validateCapacity(add, "transmission "+id, l.Capacity)
 		validateCosts(add, "transmission "+id, l.Costs)
 		validateElectrical(add, m, id, l)
+		if l.Dispatch != nil && !hasSeries(l.Dispatch) {
+			add("transmission %q: time-series %q not defined", id, l.Dispatch.SeriesID())
+		}
+		if l.Dispatch != nil && l.Electrical != nil {
+			add("transmission %q: dispatch and electrical are mutually exclusive (a line's flow is a result of the power flow)", id)
+		}
 	}
 
 	return errors.Join(errs...)
@@ -466,11 +481,35 @@ func validateElectrical(add func(string, ...any), m *Model, id string, l Transmi
 	if !e.Kind.Valid() {
 		add("transmission %q: electrical.kind %q is invalid (line or transformer)", id, e.Kind)
 	}
-	if e.X <= 0 {
-		add("transmission %q: electrical.x must be positive", id)
+	if e.PerLength() {
+		if e.R != 0 || e.X != 0 {
+			add("transmission %q: give either electrical.r and x or electrical.r_per_length and x_per_length, not both", id)
+		}
+		if l.Distance == nil {
+			add("transmission %q: electrical.r_per_length and electrical.x_per_length need distance", id)
+		}
+		if e.XPerLength == nil || *e.XPerLength <= 0 {
+			add("transmission %q: electrical.x_per_length must be positive", id)
+		}
+		if e.RPerLength != nil && *e.RPerLength < 0 {
+			add("transmission %q: electrical.r_per_length must not be negative", id)
+		}
+	} else {
+		if e.X <= 0 {
+			add("transmission %q: electrical.x must be positive", id)
+		}
+		if e.R < 0 {
+			add("transmission %q: electrical.r must not be negative", id)
+		}
 	}
-	if e.R < 0 {
-		add("transmission %q: electrical.r must not be negative", id)
+	if (e.B != nil || e.G != nil) && e.Kind == ElectricalTransformer {
+		add("transmission %q: electrical.b and electrical.g apply to a line only", id)
+	}
+	if e.G != nil && *e.G < 0 {
+		add("transmission %q: electrical.g must not be negative", id)
+	}
+	if e.PhaseShift != nil && e.Kind == ElectricalLine {
+		add("transmission %q: electrical.phase_shift applies to a transformer only", id)
 	}
 	if e.SNom != nil && *e.SNom <= 0 {
 		add("transmission %q: electrical.s_nom must be positive", id)
@@ -731,8 +770,47 @@ func validateCosts(add func(string, ...any), where string, costs map[string]Cost
 // its per-node overrides) so validation checks each exactly once. Keep them in
 // sync with Model.InternInlineSeries, which walks the same slots.
 
+// validateTechElectrical checks a technology's reactive-power and
+// voltage-control block: the power factor's range, that Q is given one way
+// only, that control and voltage set-points belong to supply technologies,
+// and that a conversion carries no reactive fields.
+func validateTechElectrical(add func(string, ...any), where string, role Role, e *TechElectrical) {
+	if e == nil {
+		return
+	}
+	if e.PowerFactor != nil && (*e.PowerFactor <= 0 || *e.PowerFactor > 1) {
+		add("%s: electrical.power_factor must be within (0,1]", where)
+	}
+	if e.ReactiveDispatch != nil && e.PowerFactor != nil {
+		add("%s: electrical.reactive_dispatch and electrical.power_factor are mutually exclusive", where)
+	}
+	if e.Leading && e.PowerFactor == nil {
+		add("%s: electrical.leading needs electrical.power_factor", where)
+	}
+	switch e.Control {
+	case "", ControlPQ, ControlPV:
+	default:
+		add("%s: electrical.control %q is invalid (pq or pv)", where, e.Control)
+	}
+	if e.Control != "" && role != RoleSupply {
+		add("%s: electrical.control applies to supply technologies", where)
+	}
+	if e.VoltageSetpoint != nil && role != RoleSupply {
+		add("%s: electrical.voltage_setpoint applies to supply technologies", where)
+	}
+	if e.VoltageSetpoint != nil && *e.VoltageSetpoint <= 0 {
+		add("%s: electrical.voltage_setpoint must be positive", where)
+	}
+	if role == RoleConversion && (e.ReactiveDispatch != nil || e.PowerFactor != nil) {
+		add("%s: electrical reactive fields apply to supply, demand and storage; a conversion transfers active power only", where)
+	}
+}
+
 func techValues(t Technology) []*Value {
 	vs := []*Value{t.Efficiency, t.DemandProfile, t.Dispatch}
+	if t.Electrical != nil {
+		vs = append(vs, t.Electrical.ReactiveDispatch)
+	}
 	if t.Operation != nil {
 		vs = append(vs, t.Operation.MaxPU, t.Operation.MinPU, t.Operation.EqualsPU)
 	}
@@ -750,6 +828,9 @@ func techValues(t Technology) []*Value {
 
 func overrideValues(ov NodeOverride) []*Value {
 	vs := []*Value{ov.Efficiency, ov.DemandProfile, ov.Dispatch}
+	if ov.Electrical != nil {
+		vs = append(vs, ov.Electrical.ReactiveDispatch)
+	}
 	if ov.Operation != nil {
 		vs = append(vs, ov.Operation.MaxPU, ov.Operation.MinPU, ov.Operation.EqualsPU)
 	}

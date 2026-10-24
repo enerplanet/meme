@@ -166,7 +166,11 @@ type Technology struct {
 	// an optimization the solver decides dispatch (pin it with
 	// operation.equals_pu there), so ValidateFor rejects it outside mode
 	// power_flow.
-	Dispatch      *Value                  `json:"dispatch,omitempty"`
+	Dispatch *Value `json:"dispatch,omitempty"`
+	// Electrical is the technology's reactive-power and voltage behaviour in
+	// a power flow (q_set, power factor, pv control, voltage set-point); a
+	// power-flow input like Dispatch.
+	Electrical    *TechElectrical         `json:"electrical,omitempty"`
 	NodeOverrides map[string]NodeOverride `json:"node_overrides,omitempty"` // per-node parameter overrides
 	Native        *Native                 `json:"native,omitempty"`
 }
@@ -188,6 +192,7 @@ type NodeOverride struct {
 	Storage       *Storage             `json:"storage,omitempty"`
 	DemandProfile *Value               `json:"demand_profile,omitempty"`
 	Dispatch      *Value               `json:"dispatch,omitempty"`
+	Electrical    *TechElectrical      `json:"electrical,omitempty"`
 	Area          *AreaSpec            `json:"area,omitempty"`
 	Source        *SourceSpec          `json:"source,omitempty"`
 	Costs         map[string]CostClass `json:"costs,omitempty"`
@@ -414,6 +419,11 @@ type Transmission struct {
 	// impedance, or a transformer with its rating); unused by optimization
 	// runs, which emit the arc as a transport link.
 	Electrical *TransmissionElectrical `json:"electrical,omitempty"`
+	// Dispatch is the fixed transfer (MW from From to To, per timestep) of an
+	// arc without impedance in a power flow: PyPSA's model of a controlled
+	// HVDC link (Link p_set). Exclusive with Electrical — a line's flow is a
+	// result. A power-flow input, ignored by optimization runs.
+	Dispatch *Value `json:"dispatch,omitempty"`
 	// Active deactivates the arc without deleting it (nil = active).
 	Active *bool   `json:"active,omitempty"`
 	Native *Native `json:"native,omitempty"`

@@ -53,6 +53,9 @@ func (m *Model) InternInlineSeries() error {
 		intern(key("tech", tid, "efficiency"), t.Efficiency)
 		intern(key("tech", tid, "demand_profile"), t.DemandProfile)
 		intern(key("tech", tid, "dispatch"), t.Dispatch)
+		if t.Electrical != nil {
+			intern(key("tech", tid, "reactive_dispatch"), t.Electrical.ReactiveDispatch)
+		}
 		if t.Operation != nil {
 			intern(key("tech", tid, "max_pu"), t.Operation.MaxPU)
 			intern(key("tech", tid, "min_pu"), t.Operation.MinPU)
@@ -77,6 +80,9 @@ func (m *Model) InternInlineSeries() error {
 			intern(key("tech", tid, nid, "efficiency"), ov.Efficiency)
 			intern(key("tech", tid, nid, "demand_profile"), ov.DemandProfile)
 			intern(key("tech", tid, nid, "dispatch"), ov.Dispatch)
+			if ov.Electrical != nil {
+				intern(key("tech", tid, nid, "reactive_dispatch"), ov.Electrical.ReactiveDispatch)
+			}
 			if ov.Operation != nil {
 				intern(key("tech", tid, nid, "max_pu"), ov.Operation.MaxPU)
 				intern(key("tech", tid, nid, "min_pu"), ov.Operation.MinPU)
@@ -108,6 +114,13 @@ func (m *Model) InternInlineSeries() error {
 				clim[col] = v
 			}
 		}
+	}
+
+	// The map holds the arc by value, but Dispatch is a pointer the copy
+	// shares with it, so interning through the pointer needs no write-back
+	// (and a write-back would race with concurrent validation of one job).
+	for _, lid := range keysOf(m.Transmission) {
+		intern(key("transmission", lid, "dispatch"), m.Transmission[lid].Dispatch)
 	}
 
 	for _, trID := range keysOf(m.Trade) {

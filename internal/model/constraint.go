@@ -41,6 +41,9 @@ func (t Technology) At(node string) Technology {
 	if ov.Dispatch != nil {
 		e.Dispatch = ov.Dispatch
 	}
+	if ov.Electrical != nil {
+		e.Electrical = ov.Electrical
+	}
 	if ov.Area != nil {
 		e.Area = ov.Area
 	}

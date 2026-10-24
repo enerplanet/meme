@@ -160,6 +160,7 @@ nav:
       - ADR-0005 Async job API: decisions/0005-async-job-api-and-result-bundle.md
       - ADR-0006 Framework versions as targets: decisions/0006-framework-versions-as-targets.md
       - ADR-0007 Free solvers: decisions/0007-free-solvers.md
+      - ADR-0008 Power flow as a run mode: decisions/0008-power-flow-as-a-pypsa-run-mode.md
       - Template: decisions/0000-template.md
   - Contributing:
       - Overview: contributing/index.md

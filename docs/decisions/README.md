@@ -15,6 +15,7 @@ change it.
 | [0005](0005-async-job-api-and-result-bundle.md) | Simulation is an asynchronous job with a zipped result bundle | accepted |
 | [0006](0006-framework-versions-as-targets.md) | Framework versions are separate targets: a default, version variants and aliases | accepted |
 | [0007](0007-free-solvers.md) | The environment ships free solvers only: HiGHS, CBC and GLPK | accepted |
+| [0008](0008-power-flow-as-a-pypsa-run-mode.md) | Power flow is a PyPSA run mode over an electrical network in the canonical model; MEME never chains jobs | accepted |
 
 ## Adding a record
 

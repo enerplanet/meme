@@ -73,6 +73,24 @@ func (AdOptNET0) ValidateJob(j *model.Job) ([]string, error) {
 	if m.Time.Weights != nil {
 		return nil, fmt.Errorf("time.weights are not supported by adopt-net0")
 	}
+	// time.subset narrows the horizon on Calliope only; adopt's Topology
+	// spans model.time, so an ignored subset would solve a different horizon.
+	if len(m.Time.Subset) > 0 {
+		return nil, fmt.Errorf("time.subset is not supported by target %q; narrow time.start/end instead", model.TargetAdOpt)
+	}
+	// A purchase cost (a fixed charge per purchased unit) has no economics
+	// slot in adopt; dropping it would change the objective without a word.
+	for _, id := range emit.Keys(m.Technologies) {
+		t := m.Technologies[id]
+		for _, node := range t.Node {
+			eff := t.At(node)
+			for _, class := range emit.Keys(eff.Costs) {
+				if eff.Costs[class].Purchase != nil {
+					return nil, fmt.Errorf("tech %q: costs.%s.purchase is not supported by target %q (no fixed purchase cost); fold it into unit_CAPEX via investment_per_capacity", id, class, model.TargetAdOpt)
+				}
+			}
+		}
+	}
 	if ud := j.Experiment.AllowUnmetDemand; ud != nil && ud.Enabled && ud.PenaltyPrice == nil {
 		return nil, fmt.Errorf("allow_unmet_demand on adopt-net0 needs penalty_price (energybalance.violation is a price)")
 	}

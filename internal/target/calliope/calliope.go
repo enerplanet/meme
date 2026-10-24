@@ -74,6 +74,18 @@ func (Calliope) ValidateJob(j *model.Job) ([]string, error) {
 	var warns []string
 	m := &j.Model
 
+	// area.per_capacity has no 0.7 mapping yet (0.6 emits
+	// resource_area_per_energy_cap); say so instead of dropping it.
+	for _, id := range emit.Keys(m.Technologies) {
+		t := m.Technologies[id]
+		for _, node := range t.Node {
+			if a := t.At(node).Area; a != nil && a.PerCapacity != nil {
+				warns = append(warns, fmt.Sprintf("tech %q: area.per_capacity is not emitted for calliope 0.7 (no area_use_per_flow_cap mapping yet); set it via native.calliope", id))
+				break
+			}
+		}
+	}
+
 	// Calliope 0.7 removed built-in clustering; only plain resampling maps.
 	if ta := j.Experiment.TimeAggregation; ta != nil {
 		if ta.Method != "resample" {

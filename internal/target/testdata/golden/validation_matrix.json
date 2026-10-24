@@ -232,7 +232,7 @@
       "verdict": "ok"
     },
     "pypsa": {
-      "verdict": "ok"
+      "verdict": "error: tech \"gen\": costs.monetary.purchase is not supported by target \"pypsa\" (no fixed purchase cost); fold it into investment_per_capacity"
     }
   },
   "calliope_conversion.json": {

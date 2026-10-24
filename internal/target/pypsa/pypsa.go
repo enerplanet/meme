@@ -68,6 +68,18 @@ func (PyPSA) ValidateJob(j *model.Job) ([]string, error) {
 	m := &j.Model
 	e := &j.Experiment
 
+	// time.subset narrows the horizon on Calliope only; PyPSA's snapshots span
+	// model.time, so an ignored subset would solve a different horizon.
+	if len(m.Time.Subset) > 0 {
+		return nil, fmt.Errorf("time.subset is not supported by target %q; narrow time.start/end instead", model.TargetPyPSA)
+	}
+	// A purchase cost is a fixed charge per purchased unit (Calliope's
+	// cost_purchase); PyPSA has no slot, and dropping it would change the
+	// objective without a word.
+	if id, class, ok := purchaseCost(m); ok {
+		return nil, fmt.Errorf("tech %q: costs.%s.purchase is not supported by target %q (no fixed purchase cost); fold it into investment_per_capacity", id, class, model.TargetPyPSA)
+	}
+
 	// operate = rolling-horizon dispatch over fixed capacities; horizon-wide
 	// constraints cannot hold across windows. stochastic needs the scenario
 	// set with translatable overrides; sidecar constraints are not built for
@@ -491,4 +503,21 @@ func optionFloat(opts map[string]any, group, key string, def float64) float64 {
 		return v
 	}
 	return def
+}
+
+// purchaseCost reports the first technology (base fields or a node override)
+// that prices a purchase cost, with its cost class.
+func purchaseCost(m *model.Model) (string, string, bool) {
+	for _, id := range emit.Keys(m.Technologies) {
+		t := m.Technologies[id]
+		for _, node := range t.Node {
+			eff := t.At(node)
+			for _, class := range emit.Keys(eff.Costs) {
+				if eff.Costs[class].Purchase != nil {
+					return id, class, true
+				}
+			}
+		}
+	}
+	return "", "", false
 }

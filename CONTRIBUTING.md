@@ -51,6 +51,11 @@ make docs           # build the documentation site strictly
    commit causes belong in that commit.
 4. Open the pull request against `main` with what changed, why, how it was
    verified, and the related issue.
+5. Land it with the signatures intact: fast-forward `main` to the reviewed
+   branch head from your machine (`git push origin <branch>:main`), or use
+   GitHub's *Squash and merge* or *Create a merge commit*, which GitHub signs.
+   *Rebase and merge* recreates the commits on GitHub's side and drops their
+   signatures, so `main` ends up with unverified commits.
 
 ## What a change must carry
 

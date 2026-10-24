@@ -257,3 +257,20 @@ the model was judged not worth the API complexity).
 | `docs/unified_schema.json` | Revision 1: framework-driven unification (kept for reference) |
 | `docs/revised_unified_schema.json` | Revision 2: converged with `internal/model`; validates meme Job payloads; extensions marked `x-go: null` |
 | `docs/unified_schema_vs_go.md` | This report |
+
+## 8. Additions after revision 2 (2026-10-24)
+
+The decisions above describe revision 2 as of July 2026; the contract has
+since grown without changing any of them. Every addition carries an `x-go`
+annotation and is enforced by `Model.Validate` / `ValidateFor` like the rest:
+
+- **Electrical network and power flow** ([ADR-0008](../docs/decisions/0008-power-flow-as-a-pypsa-run-mode.md)):
+  `Node.electrical.v_nom`, `Transmission.electrical` (`kind`, `r`, `x`,
+  `s_nom`, `num_parallel`, `tap_ratio`), `Technology.dispatch` (also on
+  `NodeOverride`), the seventh run mode `power_flow` and its typed block
+  `Experiment.power_flow` (`method`, `slack`, `distribute_slack`,
+  `tolerance`). PyPSA alone claims the `power_flow` capability; a `dispatch`
+  in an optimization mode is rejected on every target.
+- **Verification set:** `examples/` now holds six payloads (the five above
+  plus `pypsa_power_flow.json`) and the scenario corpus 50 payloads; all of
+  them validate against revision 2 in `make schema-check`.

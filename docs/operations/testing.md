@@ -97,18 +97,23 @@ test self-skips. Two tiers, selected with Go's standard `-short` flag:
   Calliope 0.7 (`calliope`), Calliope 0.6 (`calliope-0.6`, the second venv's
   `calliope-0.6` CLI) and AdOpT — plus one `?target=all` job (the 3 default
   frameworks × 2 sweep points in a single bundle; `all` never runs two
-  Calliope releases unless named). The lifecycles also pin the **objective
-  value**: each `objectivePin` carries the recorded optimum and its own
-  relative delta (`rel: 1e-4` = ±0.01%) absorbing solver numerics — drift
-  beyond it is a translation regression. The two Calliope lifecycles solve
-  the same `calliope_plan.json`, so their pins must agree.
+  Calliope releases unless named), and the three **power-flow** checks on
+  PyPSA (`TestE2EPyPSAPowerFlow*`: Newton-Raphson converging on every
+  snapshot with plausible voltages and loadings, the linear method, and a
+  diverging load that must fail the run with exit code 3). The lifecycles
+  also pin the **objective value**: each `objectivePin` carries the recorded
+  optimum and its own relative delta (`rel: 1e-4` = ±0.01%) absorbing solver
+  numerics — drift beyond it is a translation regression. The two Calliope
+  lifecycles solve the same `calliope_plan.json`, so their pins must agree.
 - **Full** (`make e2e`, ~2 min): adds the economics pins (export revenue
   sign, time-varying import prices, binding sidecar constraint), the
   cross-target consistency check (the same model must reach the same
   objective on all three frameworks ±1%), the failure path (infeasible model
-  → `state=failed`), **every scenario in the corpus** run to optimal on its
-  prefix target, and every `calliope_*` scenario the 0.6 gates accept run
-  again on `calliope-0.6` (`TestE2ECalliope06Corpus`).
+  → `state=failed`), **every scenario in the corpus** run to optimal (or, for
+  `pypsa_power_flow`, to convergence) on its prefix target, every
+  `calliope_*` scenario the 0.6 gates accept run again on `calliope-0.6`
+  (`TestE2ECalliope06Corpus`), and **every payload in `examples/`** run to
+  `succeeded` on its target (`TestE2EExamplesSolve`).
   Scenario subtests are `t.Parallel()` with an isolated server + work dir
   each; `-parallel 3` bounds concurrent solver processes.
 

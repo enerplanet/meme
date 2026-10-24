@@ -1,10 +1,12 @@
 # Examples
 
-Four payloads — one **maximal** config per framework (every property that
-target honors per [CAPABILITY.md](../reference/capability-reference.md)) plus one **shared** config
-valid for all three at once — and the API calls to drive them. All four have
-been executed against the real API with real solvers and run to `succeeded`
-(PyPSA/HiGHS, Calliope/CBC, AdOpT/GLPK).
+Six payloads — one **maximal** config per framework (every property that
+target honors per the [capability reference](../reference/capability-reference.md)),
+two **shared** configs valid for every framework at once, and a PyPSA
+**power-flow** payload (the second call after a plan) — and the API calls to
+drive them. All six have been executed against the real API with real solvers
+and run to `succeeded` (PyPSA/HiGHS, Calliope/CBC, AdOpT/GLPK); the full E2E
+tier re-runs them on every change.
 
 | File | Target | Exercises |
 |---|---|---|

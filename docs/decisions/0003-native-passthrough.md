@@ -1,6 +1,6 @@
 # ADR-0003: Framework-only concepts travel in per-target `native` blocks
 
-- **Status:** accepted
+- **Status:** accepted (amended 2026-10-24)
 - **Date:** 2026-07-13 (recorded 2026-10-24 from the initial design)
 
 ## Context
@@ -35,3 +35,14 @@ in a warning.
 - Native values are not validated and can override emitted attributes, so a
   payload using them trades portability and safety for power; the warning
   makes that trade visible.
+
+## Amendments
+
+- **2026-10-24.** The context above names PyPSA's power-flow electrics as a
+  framework-only concept. [ADR-0008](0008-power-flow-as-a-pypsa-run-mode.md)
+  made the electrical network canonical (`node.electrical`,
+  `transmission.electrical`, `technology.dispatch`, mode `power_flow`): the
+  rule of this record still holds — the fields are first-class because they
+  describe the physical system, not one framework's input format — and what
+  remains native-only on the PyPSA side is reactive set-points, voltage
+  control and the other attributes the capability reference lists.

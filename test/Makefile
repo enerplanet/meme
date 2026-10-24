@@ -36,7 +36,7 @@ golden-update: ## Regenerate the emitter/validation golden files after an intend
 	cd $(ROOT) && $(GO) test ./internal/target -run Golden -update
 	cd $(ROOT) && $(GO) test ./internal/target -run Golden
 
-e2e-smoke: ## Real-solver E2E smoke tier in the container (~1 min): 3 lifecycles + multi-target
+e2e-smoke: ## Real-solver E2E smoke tier in the container (~1 min): 4 lifecycles, the power-flow checks, multi-target
 	$(COMPOSE) run --rm -e MEME_E2E=1 shell \
 		go test -short -parallel 3 -timeout 20m -v ./test/e2e
 

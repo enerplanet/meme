@@ -9,7 +9,7 @@ make test           # vet + all host tests (pure Go, no Python; seconds)
 make test-race      # race detector over internal/...
 make golden-update  # accept an INTENDED emitter change into the golden files
 make schema-check   # examples/ + scenario corpus vs the JSON Schema (python3 + jsonschema)
-make e2e-smoke      # container: one real-solver lifecycle per target + multi-target (~1 min)
+make e2e-smoke      # container: one real-solver lifecycle per target, the PyPSA power-flow checks, multi-target (~1 min)
 make e2e            # container: the whole corpus on real solvers, both Calliope releases (~2 min)
 ```
 

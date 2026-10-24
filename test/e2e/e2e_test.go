@@ -17,10 +17,12 @@
 //
 // The suite is tiered:
 //
-//	go test -short ./test/e2e   smoke: the three per-target lifecycles and the
-//	                            multi-target job (~1 min) — always run these.
+//	go test -short ./test/e2e   smoke: the four per-target lifecycles (both
+//	                            Calliope releases), the PyPSA power-flow checks
+//	                            and the multi-target job (~1 min) — always run these.
 //	go test ./test/e2e          full: adds the economics pins, the cross-target
-//	                            consistency check and the whole scenario corpus.
+//	                            consistency check, the whole scenario corpus and
+//	                            every example payload.
 //
 // Independent tests and the corpus subtests are t.Parallel(); bound the solver
 // process count with -parallel N (the Makefile uses 3).

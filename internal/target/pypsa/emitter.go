@@ -56,9 +56,11 @@ func (Emitter) Emit(j *model.Job, outDir string) (string, error) {
 		return "", err
 	}
 
-	// In mode power_flow the electrical carrier is a PyPSA AC network: its
-	// buses carry v_nom under carrier "AC", its arcs become Lines and
-	// Transformers, every injection is a fixed p_set (see powerflow.go).
+	// The electrical carrier is a PyPSA AC network — buses with v_nom under
+	// carrier "AC", electrical arcs as Lines and Transformers — in mode
+	// power_flow and in an optimization under the voltage law; the power flow
+	// additionally fixes every injection (see powerflow.go, ADR-0008/0010).
+	netCarrier, isNet := electricalNetworkOf(j)
 	pf, isPF := powerFlowOf(j)
 
 	// buses (one per node,carrier) + carriers ---------------------------------
@@ -82,10 +84,10 @@ func (Emitter) Emit(j *model.Job, outDir string) (string, error) {
 				row["x"] = emit.Ftoa(n.Coords.Lon)
 				row["y"] = emit.Ftoa(n.Coords.Lat)
 			}
-			if isPF && carrier == pf.carrier && n.Electrical != nil {
+			if isNet && carrier == netCarrier && n.Electrical != nil {
 				row["carrier"] = acCarrier
 				row["v_nom"] = emit.Ftoa(n.Electrical.VNom)
-				if v, ok := pf.setpoints[node]; ok {
+				if v, ok := pf.setpoints[node]; isPF && ok {
 					row["v_mag_pu_set"] = emit.Ftoa(v)
 				}
 			}
@@ -100,7 +102,7 @@ func (Emitter) Emit(j *model.Job, outDir string) (string, error) {
 	}
 
 	carriers := &pcsv{base: []string{"name", "co2_emissions"}}
-	if isPF {
+	if isNet {
 		carriers.add(map[string]string{"name": acCarrier, "co2_emissions": "0"})
 	}
 	for _, id := range emit.Keys(m.Carriers) {
@@ -123,8 +125,8 @@ func (Emitter) Emit(j *model.Job, outDir string) (string, error) {
 	loads := &pcsv{base: []string{"name", "bus", "p_set"}}
 	links := &pcsv{base: []string{"name", "bus0", "bus1", "p_nom", "p_nom_extendable", "p_nom_max", "efficiency", "capital_cost"}}
 	sus := &pcsv{base: []string{"name", "bus", "carrier", "p_nom", "p_nom_extendable", "max_hours", "efficiency_store", "efficiency_dispatch", "capital_cost"}}
-	lines := &pcsv{base: []string{"name", "bus0", "bus1", "r", "x", "s_nom", "num_parallel", "length"}}
-	trafos := &pcsv{base: []string{"name", "bus0", "bus1", "s_nom", "r", "x", "num_parallel", "tap_ratio"}}
+	lines := &pcsv{base: []string{"name", "bus0", "bus1", "r", "x", "s_nom", "s_nom_extendable", "capital_cost", "num_parallel", "length"}}
+	trafos := &pcsv{base: []string{"name", "bus0", "bus1", "s_nom", "s_nom_extendable", "capital_cost", "r", "x", "num_parallel", "tap_ratio"}}
 	shunts := &pcsv{base: []string{"name", "bus", "g", "b"}}
 	if isPF {
 		for _, r := range pf.shuntRows(m) {
@@ -215,10 +217,10 @@ func (Emitter) Emit(j *model.Job, outDir string) (string, error) {
 	// transmission -> links across the node grid ------------------------------
 	for _, id := range emit.Keys(m.Transmission) {
 		l := m.Transmission[id]
-		if isPF && l.Electrical != nil {
-			// An AC branch of the power flow: a Line or a Transformer with its
-			// impedance and rating instead of a transport link.
-			row := pf.branch(id, l)
+		if isNet && l.Electrical != nil {
+			// An AC branch: a Line or a Transformer with its impedance and
+			// rating instead of a transport link.
+			row := branchRow(m, id, l)
 			if err := mergeNativeInto(row, l.Native.For(model.TargetPyPSA)); err != nil {
 				return "", fmt.Errorf("transmission %q: %w", id, err)
 			}
@@ -240,10 +242,11 @@ func (Emitter) Emit(j *model.Job, outDir string) (string, error) {
 		if l.LossPerDistance != nil && l.Distance != nil {
 			eff = math.Round(eff*(1-*l.LossPerDistance**l.Distance)*1e12) / 1e12
 		}
+		capex, _ := transmissionCapitalCost(m, l) // unannualizable investment is warned about, not priced
 		row := map[string]string{
 			"name": id, "bus0": BusID(l.From, l.Carrier), "bus1": BusID(l.To, l.Carrier),
 			"p_nom": capNom(l.Capacity), "p_nom_extendable": capExt(l.Capacity), "p_nom_max": capMax(l.Capacity),
-			"efficiency": emit.Ftoa(eff), "capital_cost": "0",
+			"efficiency": emit.Ftoa(eff), "capital_cost": emit.Ftoa(capex),
 		}
 		if isPF {
 			pf.transfer(row, l) // a controlled link carries its fixed transfer

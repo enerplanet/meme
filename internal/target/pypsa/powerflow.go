@@ -37,6 +37,109 @@ type powerFlow struct {
 	opts      *model.PowerFlowOptions
 }
 
+// electricalNetworkOf reports whether the emitted model carries the AC
+// network — buses with v_nom under carrier AC, electrical arcs as Lines and
+// Transformers — and for which carrier: in mode power_flow, and in an
+// optimization under network model linear_power_flow (ADR-0010).
+func electricalNetworkOf(j *model.Job) (carrier string, ok bool) {
+	e := &j.Experiment
+	if e.EffectiveMode() != model.ModePowerFlow && e.EffectiveNetworkModel() != model.NetworkLinearPowerFlow {
+		return "", false
+	}
+	carriers := electricalCarriers(&j.Model)
+	if len(carriers) == 0 {
+		return "", false
+	}
+	return carriers[0], true
+}
+
+// validateLinearPowerFlow holds the preconditions of the voltage law inside
+// an optimization: one AC network with a voltage level on every bus of it and
+// a rating or expandability on every branch; a security-constrained solve
+// cannot carry the sidecar constraints.
+func validateLinearPowerFlow(j *model.Job) ([]string, error) {
+	m := &j.Model
+	carriers := electricalCarriers(m)
+	switch len(carriers) {
+	case 0:
+		return nil, fmt.Errorf("network model \"linear_power_flow\" needs at least one transmission with electrical parameters (kind, r, x): the branches the voltage law applies to")
+	case 1:
+	default:
+		return nil, fmt.Errorf("electrical arcs span carriers %v; the voltage law applies to one AC network", carriers)
+	}
+	carrier := carriers[0]
+	grid := busGrid(m)
+	var acNodes []string
+	for pair := range grid {
+		if pair[1] == carrier {
+			acNodes = append(acNodes, pair[0])
+		}
+	}
+	sort.Strings(acNodes)
+	for _, node := range acNodes {
+		if n := m.Nodes[node]; n.Electrical == nil || n.Electrical.VNom <= 0 {
+			return nil, fmt.Errorf("node %q hosts %s components but has no electrical.v_nom (the voltage level of its AC bus)", node, carrier)
+		}
+	}
+	for _, id := range emit.Keys(m.Transmission) {
+		l := m.Transmission[id]
+		if l.Electrical == nil {
+			continue
+		}
+		if _, ok := l.Electrical.Rating(l.Capacity); !ok && (l.Capacity == nil || !l.Capacity.Expandable) {
+			return nil, fmt.Errorf("transmission %q needs electrical.s_nom or capacity.existing (the branch rating), or an expandable capacity", id)
+		}
+	}
+	if nw := j.Experiment.Network; nw != nil && nw.Security != nil {
+		if len(m.Constraints) > 0 || len(systemwideConstraints(m)) > 0 {
+			return nil, fmt.Errorf("the security-constrained solve cannot apply portable constraints or systemwide capacity bounds (it builds its own model); drop them or the outages")
+		}
+	}
+	return nil, nil
+}
+
+// transmissionCapitalCost is an arc's annualized investment plus fixed O&M:
+// investment_per_capacity plus investment_per_capacity_distance over the
+// distance, annualized from the arc's lifetime and interest rate (the global
+// discount rate overrides) or taken as is on the annualized basis; fixed O&M
+// as an amount or a fraction of the upfront investment. ok is false when an
+// investment is given but cannot be annualized.
+func transmissionCapitalCost(m *model.Model, l model.Transmission) (float64, bool) {
+	c, ok := l.Costs[model.PrimaryCostClass]
+	if !ok {
+		return 0, true
+	}
+	invest := 0.0
+	if c.InvestmentPerCapacity != nil {
+		invest += *c.InvestmentPerCapacity
+	}
+	if c.InvestmentPerCapacityDistance != nil && l.Distance != nil {
+		invest += *c.InvestmentPerCapacityDistance * *l.Distance
+	}
+	cost := 0.0
+	if invest > 0 {
+		if l.CostBasis == model.CostAnnualized {
+			cost = invest
+		} else {
+			rate := l.InterestRate
+			if m.DiscountRate != nil {
+				rate = m.DiscountRate
+			}
+			if l.Lifetime == nil || rate == nil {
+				return 0, false
+			}
+			cost = emit.AnnualizedCapex(invest, *rate, *l.Lifetime)
+		}
+		if c.FixedOMFraction != nil {
+			cost += *c.FixedOMFraction * invest
+		}
+	}
+	if c.FixedOM != nil {
+		cost += *c.FixedOM
+	}
+	return cost, true
+}
+
 // powerFlowOf resolves the power-flow configuration of a job that validated
 // for mode power_flow; ok is false for every other mode.
 func powerFlowOf(j *model.Job) (powerFlow, bool) {
@@ -435,15 +538,29 @@ func (pf powerFlow) transfer(row map[string]string, l model.Transmission) {
 	}
 }
 
-// branch builds the Line or Transformer row of an electrical arc.
-func (pf powerFlow) branch(id string, l model.Transmission) map[string]string {
+// branchRow builds the Line or Transformer row of an electrical arc: its
+// impedance, rating, expansion bounds and annualized investment (read by an
+// optimization under the voltage law; a power flow ignores them), loading
+// limit, and the kind-specific columns.
+func branchRow(m *model.Model, id string, l model.Transmission) map[string]string {
 	e := l.Electrical
 	rating, _ := e.Rating(l.Capacity)
 	r, x := e.Impedance(l.Distance)
+	cost, _ := transmissionCapitalCost(m, l)
 	row := map[string]string{
 		"name": id, "bus0": BusID(l.From, l.Carrier), "bus1": BusID(l.To, l.Carrier),
 		"r": emit.Ftoa(r), "x": emit.Ftoa(x), "s_nom": emit.Ftoa(rating),
+		"s_nom_extendable": capExt(l.Capacity), "capital_cost": emit.Ftoa(cost),
 		"num_parallel": fmt.Sprint(e.Circuits()),
+	}
+	if l.Capacity != nil && l.Capacity.Expandable {
+		row["s_nom_max"] = capMax(l.Capacity)
+		if min := l.Capacity.EffectiveMin(); min != nil {
+			row["s_nom_min"] = emit.Ftoa(*min)
+		}
+	}
+	if e.MaxLoading != nil {
+		row["s_max_pu"] = emit.Ftoa(*e.MaxLoading)
 	}
 	if e.Kind == model.ElectricalTransformer {
 		row["tap_ratio"] = emit.Ftoa(e.Tap())

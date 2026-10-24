@@ -1,0 +1,4 @@
+name,bus0,bus1,r,x,s_nom,s_nom_extendable,capital_cost,num_parallel,length,s_max_pu,s_nom_max
+ab,a::electricity,b::electricity,1,10,30,True,1165.5632233207,1,50,0.9,100
+ac,a::electricity,c::electricity,2,20,30,False,0,1,0,,
+bc,b::electricity,c::electricity,1,10,30,False,0,1,0,,

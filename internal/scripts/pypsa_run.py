@@ -97,9 +97,69 @@ def apply_constraints(m):
 
 
 def solve_plan():
+    if "security" in CFG:
+        # The security-constrained solve builds its own model (no sidecar
+        # constraints; validation guarantees there are none to apply).
+        import pandas as pd
+        outages = pd.MultiIndex.from_tuples([(o["component"], o["name"]) for o in CFG["security"]["outages"]])
+        print("security-constrained solve over %d branch outage(s): %s" % (len(outages), ", ".join(o["name"] for o in CFG["security"]["outages"])))
+        return n.optimize.optimize_security_constrained(branch_outages=outages, solver_name=CFG["solver"], **SOLVER_OPTS)
     m = n.optimize.create_model()
     apply_constraints(m)
     return n.optimize.solve_model(solver_name=CFG["solver"], **SOLVER_OPTS)
+
+
+def write_results(status, cond):
+    """The planning tables a consumer reads like the power-flow tables:
+    dispatch and flows per component, storage states, marginal prices, the
+    optimal capacities, PyPSA's statistics and a summary (output/results/)."""
+    import math
+    import pandas as pd
+
+    out = os.path.join(OUTPUT, "results")
+    os.makedirs(out, exist_ok=True)
+
+    def table(name, df):
+        try:
+            if df is None or df.empty or df.shape[1] == 0:
+                return
+            df.to_csv(os.path.join(out, name), index_label="snapshot")
+        except Exception as exc:  # a scenario-indexed frame or an unsolved component is not worth failing the run
+            print("results: skipped %s (%s)" % (name, exc))
+
+    for comp, attrs in (("generators", ("p",)), ("loads", ("p",)), ("links", ("p0", "p1")),
+                        ("lines", ("p0", "p1")), ("transformers", ("p0", "p1")),
+                        ("storage_units", ("p", "state_of_charge")), ("stores", ("e", "p")),
+                        ("buses", ("marginal_price",))):
+        dyn = getattr(n, comp + "_t")
+        for attr in attrs:
+            table("%s-%s.csv" % (comp, attr), getattr(dyn, attr, None))
+
+    static = {"Generator": n.generators, "Link": n.links, "Line": n.lines, "Transformer": n.transformers,
+              "StorageUnit": n.storage_units, "Store": n.stores}
+    rows = []
+    for comp, nom in (("Generator", "p_nom"), ("Link", "p_nom"), ("Line", "s_nom"),
+                      ("Transformer", "s_nom"), ("StorageUnit", "p_nom"), ("Store", "e_nom")):
+        df = static[comp]
+        if df is None or df.empty:
+            continue
+        for name, r in df.iterrows():
+            rows.append((comp, name, float(r.get(nom, float("nan"))), float(r.get(nom + "_opt", float("nan")))))
+    pd.DataFrame(rows, columns=["component", "name", "nominal", "optimal"]).to_csv(os.path.join(out, "capacities.csv"), index=False)
+
+    try:
+        n.statistics().to_csv(os.path.join(out, "statistics.csv"))
+    except Exception as exc:
+        print("results: statistics skipped (%s)" % exc)
+
+    obj = getattr(n, "objective", None)
+    summary = {"mode": MODE, "status": status, "condition": cond,
+               "objective": (float(obj) if obj is not None and not (isinstance(obj, float) and math.isnan(obj)) else None),
+               "snapshots": int(len(n.snapshots))}
+    if "security" in CFG:
+        summary["security_outages"] = [o["name"] for o in CFG["security"]["outages"]]
+    with open(os.path.join(out, "summary.json"), "w") as fh:
+        json.dump(summary, fh, indent=2)
 
 
 MODE = CFG["mode"]
@@ -254,5 +314,6 @@ else:
 print("status", status, cond)
 n.export_to_netcdf(os.path.join(OUTPUT, "network.nc"))
 if MODE != "power_flow":  # a power flow has no objective
+    write_results(status, cond)
     print("objective", n.objective)
 sys.exit(0 if status == "ok" else 3)

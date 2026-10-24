@@ -81,6 +81,9 @@ func TestScenarios(t *testing.T) {
 		// Reactive power and voltage control: PV control with a bus set-point,
 		// q_set static and as a series, a shunt, a controlled link, phase shift.
 		{"pypsa_power_flow_reactive.json", model.TargetPyPSA, []string{"v_mag_pu_set", "PV", "q_set", "mv1::shunt", "phase_shift", "load1,load2"}},
+		// The voltage law inside an optimization: lines with expansion bounds,
+		// an annualized investment and a loading limit, no fixed injections.
+		{"pypsa_lopf.json", model.TargetPyPSA, []string{"s_nom_extendable", "s_max_pu", "110", "capital_cost"}},
 
 		// --- Calliope ---
 		{"calliope_plan.json", model.TargetCalliope, []string{"mode: base", "base_tech: supply", "solver: cbc"}},
@@ -179,11 +182,16 @@ func TestScenariosCapabilityGating(t *testing.T) {
 		}
 	}
 	// power_flow is a PyPSA-only run mode (the only target with an electrical
-	// network); every other target rejects it through the mode gate.
+	// network); every other target rejects it through the mode gate. The
+	// linear-power-flow network model is gated the same way.
 	pf := load("pypsa_power_flow.json")
+	lopf := load("pypsa_lopf.json")
 	for _, tgt := range []model.Target{model.TargetCalliope, model.TargetCalliope06, model.TargetAdOpt} {
 		if _, err := target.ValidateFor(&pf, tgt); err == nil || !strings.Contains(err.Error(), "power_flow") {
 			t.Errorf("pypsa_power_flow.json should be rejected for %s (PyPSA-only mode), got %v", tgt, err)
+		}
+		if _, err := target.ValidateFor(&lopf, tgt); err == nil || !strings.Contains(err.Error(), "linear_power_flow") {
+			t.Errorf("pypsa_lopf.json should be rejected for %s (PyPSA-only network model), got %v", tgt, err)
 		}
 	}
 	td := load("adopt_typicaldays.json")

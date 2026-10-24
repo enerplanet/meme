@@ -1,0 +1,31 @@
+{
+  "model": {
+    "metadata": {"name": "pypsa_lopf"},
+    "time": {"start": "2025-01-01T00:00:00", "end": "2025-01-01T02:00:00", "resolution": "1H"},
+    "carriers": {"electricity": {"unit": "MWh"}},
+    "nodes": {
+      "a": {"electrical": {"v_nom": 110}},
+      "b": {"electrical": {"v_nom": 110}},
+      "c": {"electrical": {"v_nom": 110}}
+    },
+    "technologies": {
+      "cheap": {"role": "supply", "node": "a", "carrier_out": "electricity", "capacity": {"existing": 100},
+                "costs": {"monetary": {"variable_om": 10}}},
+      "peaker": {"role": "supply", "node": "c", "carrier_out": "electricity", "capacity": {"existing": 100},
+                 "costs": {"monetary": {"variable_om": 50}}},
+      "load_b": {"role": "demand", "node": "b", "carrier_in": "electricity", "demand_profile": [40, 60, 80]},
+      "load_c": {"role": "demand", "node": "c", "carrier_in": "electricity", "demand_profile": 10}
+    },
+    "transmission": {
+      "ab": {"carrier": "electricity", "from": "a", "to": "b", "bidirectional": true,
+             "capacity": {"existing": 30, "expandable": true, "max": 100},
+             "costs": {"monetary": {"investment_per_capacity": 20000}}, "lifetime": 40, "interest_rate": 0.05,
+             "distance": 50, "electrical": {"kind": "line", "r": 1, "x": 10, "max_loading": 0.9}},
+      "bc": {"carrier": "electricity", "from": "b", "to": "c", "bidirectional": true, "capacity": {"existing": 30},
+             "electrical": {"kind": "line", "r": 1, "x": 10}},
+      "ac": {"carrier": "electricity", "from": "a", "to": "c", "bidirectional": true, "capacity": {"existing": 30},
+             "electrical": {"kind": "line", "r": 2, "x": 20}}
+    }
+  },
+  "experiment": {"mode": "plan", "network": {"model": "linear_power_flow"}, "solver": {"name": "highs"}}
+}

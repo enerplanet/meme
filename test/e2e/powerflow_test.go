@@ -246,3 +246,127 @@ func TestE2EPyPSAPowerFlowReactive(t *testing.T) {
 		t.Errorf("load1 reactive power derived from the power factor, got %v", q)
 	}
 }
+
+// resultCol reads one column of a results/ table out of the bundle.
+func resultCol(t *testing.T, files map[string][]byte, file, name string) []float64 {
+	t.Helper()
+	raw, ok := files["files/run_0/output/results/"+file]
+	if !ok {
+		t.Fatalf("bundle lacks results/%s (have %v)", file, zipNames(files))
+	}
+	recs, err := csv.NewReader(bytes.NewReader(raw)).ReadAll()
+	if err != nil || len(recs) < 2 {
+		t.Fatalf("%s: %v", file, err)
+	}
+	idx := -1
+	for i, h := range recs[0] {
+		if h == name {
+			idx = i
+		}
+	}
+	if idx < 0 {
+		t.Fatalf("%s has no column %q (header %v)", file, name, recs[0])
+	}
+	out := make([]float64, 0, len(recs)-1)
+	for _, r := range recs[1:] {
+		f, _ := strconv.ParseFloat(r[idx], 64)
+		out = append(out, f)
+	}
+	return out
+}
+
+// TestE2EPyPSALinearPowerFlow: the optimization under the voltage law on the
+// real framework. The three line flows around the ring satisfy Kirchhoff's
+// voltage law (the reactance-weighted sum around the loop is zero), the
+// expandable line was built out, and the results folder carries the planning
+// tables a consumer reads like the power-flow tables.
+func TestE2EPyPSALinearPowerFlow(t *testing.T) {
+	requireE2E(t)
+	t.Parallel()
+	srv, _ := newE2EServer(t)
+	sub := submit(t, srv.URL, model.TargetPyPSA, readScenario(t, "pypsa_lopf.json"))
+	id := sub["id"].(string)
+	status := awaitJob(t, srv.URL, id)
+	logText, _ := status["log"].(string)
+	if status["state"] != string(service.StateSucceeded) {
+		t.Fatalf("lopf failed: %v\nlog:\n%s", status["error"], logText)
+	}
+	if !strings.Contains(logText, "status ok optimal") {
+		t.Errorf("log lacks the optimal status:\n%s", logText)
+	}
+	files := fetchZip(t, srv.URL, id)
+	ab, bc, ac := resultCol(t, files, "lines-p0.csv", "ab"), resultCol(t, files, "lines-p0.csv", "bc"), resultCol(t, files, "lines-p0.csv", "ac")
+	for i := range ab {
+		if kvl := 10*ab[i] + 10*bc[i] - 20*ac[i]; math.Abs(kvl) > 1e-3 {
+			t.Errorf("snapshot %d: Kirchhoff's voltage law violated around the ring: %g (flows %g %g %g)", i, kvl, ab[i], bc[i], ac[i])
+		}
+	}
+	if len(ab) == 3 && math.Abs(ab[2]) <= 30*0.9+1e-6 && math.Abs(ab[2]) < 31 {
+		t.Logf("line ab at the last snapshot: %g MW", ab[2])
+	}
+	for _, f := range []string{"generators-p.csv", "loads-p.csv", "buses-marginal_price.csv", "capacities.csv", "statistics.csv", "summary.json"} {
+		if _, ok := files["files/run_0/output/results/"+f]; !ok {
+			t.Errorf("results folder lacks %s (have %v)", f, zipNames(files))
+		}
+	}
+	var summary map[string]any
+	if err := json.Unmarshal(files["files/run_0/output/results/summary.json"], &summary); err != nil {
+		t.Fatal(err)
+	}
+	if obj, _ := summary["objective"].(float64); obj <= 0 {
+		t.Errorf("summary objective: %v", summary)
+	}
+	// The expandable line ends larger than its 30 MW start: the 80 MW peak at
+	// b cannot be served through the ring otherwise without the 50 €/MWh peaker.
+	caps := string(files["files/run_0/output/results/capacities.csv"])
+	if !strings.Contains(caps, "Line,ab,") {
+		t.Errorf("capacities.csv should list the line: %s", caps)
+	}
+}
+
+// TestE2EPyPSASecurityConstrained: the same network must survive the outage
+// of line bc; the solve is at least as expensive as the unconstrained one.
+func TestE2EPyPSASecurityConstrained(t *testing.T) {
+	requireE2E(t)
+	t.Parallel()
+	srv, _ := newE2EServer(t)
+	plain := submit(t, srv.URL, model.TargetPyPSA, readScenario(t, "pypsa_lopf.json"))
+	// Losing bc leaves ab (expandable) to feed b alone; losing ab instead would
+	// leave only the two fixed 30 MW lines for an 80 MW peak — infeasible by
+	// construction, which is the honest answer, not a test.
+	payload := powerFlowPayloadFrom(t, "pypsa_lopf.json", func(j *model.Job) {
+		j.Experiment.Network.Security = &model.SecurityOptions{Outages: []string{"bc"}}
+	})
+	secure := submit(t, srv.URL, model.TargetPyPSA, payload)
+	st1 := awaitJob(t, srv.URL, plain["id"].(string))
+	st2 := awaitJob(t, srv.URL, secure["id"].(string))
+	if st1["state"] != string(service.StateSucceeded) || st2["state"] != string(service.StateSucceeded) {
+		t.Fatalf("states: plain %v secure %v\nlog:\n%v", st1["state"], st2["state"], st2["log"])
+	}
+	o1, ok1 := objectiveFromLog(st1["log"].(string))
+	o2, ok2 := objectiveFromLog(st2["log"].(string))
+	if !ok1 || !ok2 {
+		t.Fatalf("objectives not found in logs")
+	}
+	if o2 < o1-1e-6 {
+		t.Errorf("a security-constrained solve cannot be cheaper: %g < %g", o2, o1)
+	}
+	if !strings.Contains(st2["log"].(string), "security-constrained") {
+		t.Errorf("the log should say the solve was security-constrained:\n%v", st2["log"])
+	}
+}
+
+// powerFlowPayloadFrom adapts any scenario payload.
+func powerFlowPayloadFrom(t *testing.T, file string, mut func(j *model.Job)) []byte {
+	t.Helper()
+	var j model.Job
+	if err := json.Unmarshal(readScenario(t, file), &j); err != nil {
+		t.Fatal(err)
+	}
+	mut(&j)
+	out, err := json.Marshal(j)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return out
+}

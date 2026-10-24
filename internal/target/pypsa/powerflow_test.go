@@ -454,3 +454,125 @@ func hasWarn(ws []string, parts ...string) bool {
 	}
 	return false
 }
+
+// --- ADR-0010: the network inside the optimization -------------------------
+
+func emitLOPF(t *testing.T, mut func(j *model.Job)) (string, model.Job) {
+	t.Helper()
+	j, err := scenarios.Load("pypsa_lopf.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mut != nil {
+		mut(&j)
+	}
+	if _, err := target.ValidateFor(&j, model.TargetPyPSA); err != nil {
+		t.Fatalf("validate: %v", err)
+	}
+	dir := t.TempDir()
+	if _, err := (pypsa.PyPSA{}).Emit(&j, dir); err != nil {
+		t.Fatalf("emit: %v", err)
+	}
+	return dir, j
+}
+
+// With network.model linear_power_flow an optimization emits the AC network —
+// buses with v_nom, Lines with their rating, expansion bounds, annualized
+// investment and loading limit — while generators stay decision variables.
+func TestLinearPowerFlowEmitsLinesIntoOptimization(t *testing.T) {
+	dir, _ := emitLOPF(t, nil)
+	buses := table(t, dir, "buses.csv")
+	if buses["a::electricity"]["carrier"] != "AC" || buses["a::electricity"]["v_nom"] != "110" {
+		t.Errorf("AC bus with voltage level expected: %v", buses["a::electricity"])
+	}
+	lines := table(t, dir, "lines.csv")
+	ab := lines["ab"]
+	if ab["s_nom"] != "30" || ab["s_nom_extendable"] != "True" || ab["s_nom_max"] != "100" || ab["s_max_pu"] != "0.9" || ab["x"] != "10" {
+		t.Errorf("expandable line row: %v", ab)
+	}
+	// 20000 €/MW over 40 years at 5 %: the annuity is 1165.5 €/MW/a.
+	if !near(ab["capital_cost"], 20000*0.05/(1-math.Pow(1.05, -40))) {
+		t.Errorf("annualized line investment: got %q", ab["capital_cost"])
+	}
+	if bc := lines["bc"]; bc["s_nom_extendable"] != "False" || bc["capital_cost"] != "0" || bc["s_max_pu"] != "" {
+		t.Errorf("fixed line row: %v", bc)
+	}
+	gens := table(t, dir, "generators.csv")
+	if gens["cheap"]["control"] != "" || gens["cheap"]["p_set"] != "" || gens["cheap"]["q_set"] != "" {
+		t.Errorf("an optimization keeps generators free: %v", gens["cheap"])
+	}
+	if exists(dir, "links.csv") {
+		t.Errorf("every arc of this network is a line: %s", readFile(t, dir, "links.csv"))
+	}
+	for _, absent := range []string{"shunt_impedances.csv", "generators-p_set.csv"} {
+		if exists(dir, absent) {
+			t.Errorf("%s has no place in an optimization", absent)
+		}
+	}
+}
+
+// Transmission investment is priced on Links too, and the per-distance cost
+// multiplies the distance; a cost that cannot be annualized is left out.
+func TestTransmissionCapitalCost(t *testing.T) {
+	dir, _ := emitLOPF(t, func(j *model.Job) {
+		j.Experiment.Network = nil // transport model: links
+		l := j.Model.Transmission["ab"]
+		l.Costs = map[string]model.CostClass{"monetary": {InvestmentPerCapacity: fp(20000), InvestmentPerCapacityDistance: fp(100), FixedOM: fp(300)}}
+		j.Model.Transmission["ab"] = l
+		bc := j.Model.Transmission["bc"]
+		bc.Costs = map[string]model.CostClass{"monetary": {InvestmentPerCapacity: fp(1000)}} // no lifetime: warned, not priced
+		j.Model.Transmission["bc"] = bc
+	})
+	links := table(t, dir, "links.csv")
+	// (20000 + 100 * 50 km) annualized + 300 fixed O&M.
+	want := 25000*0.05/(1-math.Pow(1.05, -40)) + 300
+	if !near(links["ab"]["capital_cost"], want) {
+		t.Errorf("link capital_cost: got %q want %g", links["ab"]["capital_cost"], want)
+	}
+	if links["bc"]["capital_cost"] != "0" {
+		t.Errorf("unannualizable investment must not be priced: %v", links["bc"])
+	}
+	if exists(dir, "lines.csv") {
+		t.Error("the transport model emits no lines")
+	}
+}
+
+// The driver's configuration carries the security outages as (component,
+// name) pairs only when asked; results tables are written for every run.
+func TestLinearPowerFlowRunPyConfig(t *testing.T) {
+	_, j := emitLOPF(t, func(j *model.Job) {
+		j.Experiment.Network.Security = &model.SecurityOptions{Outages: []string{"ab", "bc"}}
+	})
+	run := t.TempDir()
+	if _, err := (pypsa.PyPSA{}).Plan(&j, "input", target.RunDirs{RunDir: run, InputDir: "input", OutDir: "output"}); err != nil {
+		t.Fatal(err)
+	}
+	script := readFile(t, run, "run.py")
+	if !strings.Contains(cfgOf(t, script), `"security":{"outages":[{"component":"Line","name":"ab"},{"component":"Line","name":"bc"}]}`) {
+		t.Errorf("security outages not forwarded:\n%.400s", script)
+	}
+	if !strings.Contains(script, "optimize_security_constrained") || !strings.Contains(script, `"results"`) {
+		t.Error("the driver must run the security-constrained solve and write the results folder")
+	}
+	_, j = emitLOPF(t, nil)
+	run = t.TempDir()
+	if _, err := (pypsa.PyPSA{}).Plan(&j, "input", target.RunDirs{RunDir: run, InputDir: "input", OutDir: "output"}); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(cfgOf(t, readFile(t, run, "run.py")), `"security"`) {
+		t.Error("no security block without outages")
+	}
+}
+
+// cfgOf returns the configuration the driver parses (the JSON handed to
+// json.loads), so a check looks at the run's settings and not at the body.
+func cfgOf(t *testing.T, script string) string {
+	t.Helper()
+	for _, line := range strings.Split(script, "\n") {
+		if strings.HasPrefix(line, "CFG = json.loads(r'''") {
+			return line
+		}
+	}
+	t.Fatalf("run.py has no CFG line:\n%.300s", script)
+	return ""
+}

@@ -1,2 +1,2 @@
-name,bus0,bus1,s_nom,r,x,num_parallel,tap_ratio,phase_shift
-trafo,hv::electricity,mv1::electricity,40,0.01,0.1,1,1,2.5
+name,bus0,bus1,s_nom,s_nom_extendable,capital_cost,r,x,num_parallel,tap_ratio,phase_shift
+trafo,hv::electricity,mv1::electricity,40,False,0,0.01,0.1,1,1,2.5

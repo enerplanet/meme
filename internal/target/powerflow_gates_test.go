@@ -358,3 +358,118 @@ func TestPowerFlowReactiveGates(t *testing.T) {
 		t.Errorf("want the linear-method warning, got %v", warns)
 	}
 }
+
+// --- ADR-0010: the network inside the optimization -------------------------
+
+func lopfJob(t *testing.T, mut func(j *model.Job)) model.Job {
+	t.Helper()
+	j, err := scenarios.Load("pypsa_lopf.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mut != nil {
+		mut(&j)
+	}
+	return j
+}
+
+// The linear-power-flow network model is a capability PyPSA alone claims; a
+// transport solve of a payload that asked for the voltage law would be a
+// different problem, so the other targets reject it like a mode.
+func TestLinearPowerFlowGatedToPyPSA(t *testing.T) {
+	for _, tgt := range []model.Target{model.TargetCalliope, model.TargetCalliope06, model.TargetAdOpt} {
+		j := lopfJob(t, nil)
+		wantGateErr(t, &j, tgt, `network model "linear_power_flow" is not supported by target "`+string(tgt)+`"`)
+	}
+	j := lopfJob(t, nil)
+	warns, err := target.ValidateFor(&j, model.TargetPyPSA)
+	if err != nil {
+		t.Fatalf("pypsa should accept the lopf scenario: %v", err)
+	}
+	if hasWarning(warns, "power-flow inputs") {
+		t.Errorf("the electrical arcs and nodes are used by the voltage law, not ignored: %v", warns)
+	}
+	if !target.Supports(model.TargetPyPSA, model.FeatLinearPowerFlow) {
+		t.Error("pypsa must claim linear_power_flow")
+	}
+	// The same payload as a transport model is still fine everywhere PyPSA
+	// and Calliope accept transmission, with the electrical fields reported.
+	j = lopfJob(t, func(j *model.Job) { j.Experiment.Network = nil })
+	for _, tgt := range []model.Target{model.TargetPyPSA, model.TargetCalliope} {
+		warns, err := target.ValidateFor(&j, tgt)
+		if err != nil {
+			t.Fatalf("%s: transport model of the lopf payload: %v", tgt, err)
+		}
+		if !hasWarning(warns, "power-flow inputs", "transmission [ab ac bc]") {
+			t.Errorf("%s: want the ignored-inputs warning, got %v", tgt, warns)
+		}
+	}
+}
+
+// Inside a linear-power-flow optimization the network needs what a power
+// flow needs — a voltage level on every bus, impedances on the arcs it
+// solves — and dispatch-like inputs are still ignored with the warning.
+func TestLinearPowerFlowPyPSAGates(t *testing.T) {
+	cases := []struct {
+		name string
+		mut  func(j *model.Job)
+		want string
+	}{
+		{"no electrical arcs", func(j *model.Job) {
+			for id, l := range j.Model.Transmission {
+				l.Electrical = nil
+				j.Model.Transmission[id] = l
+			}
+		}, `network model "linear_power_flow" needs at least one transmission with electrical parameters`},
+		{"bus without voltage level", func(j *model.Job) { j.Model.Nodes["b"] = model.Node{} },
+			`node "b" hosts electricity components but has no electrical.v_nom`},
+		{"outage of an arc without impedance", func(j *model.Job) {
+			j.Experiment.Network.Security = &model.SecurityOptions{Outages: []string{"tie"}}
+			j.Model.Transmission["tie"] = model.Transmission{Carrier: "electricity", From: "a", To: "c", Bidirectional: true, Capacity: &model.Capacity{Existing: 10}}
+		}, `experiment.network.security.outages: "tie" is not an electrical arc`},
+		{"unknown outage", func(j *model.Job) {
+			j.Experiment.Network.Security = &model.SecurityOptions{Outages: []string{"zz"}}
+		}, `experiment.network.security.outages: "zz" is not a transmission arc`},
+		{"security with sidecar constraints", func(j *model.Job) {
+			j.Experiment.Network.Security = &model.SecurityOptions{Outages: []string{"ab"}}
+			j.Model.Constraints = []model.Constraint{{Name: "cap", Sense: "<=", Bound: 500, Terms: []model.Term{{Coefficient: 1, Variable: model.VarCapacity, Techs: []string{"cheap"}}}}}
+		}, `security-constrained solve cannot apply portable constraints`},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			j := lopfJob(t, c.mut)
+			wantGateErr(t, &j, model.TargetPyPSA, c.want)
+		})
+	}
+
+	// A controlled tie without impedance is allowed in the voltage-law
+	// network: it stays a Link. A dispatch on a technology is ignored.
+	j := lopfJob(t, func(j *model.Job) {
+		j.Model.Transmission["tie"] = model.Transmission{Carrier: "electricity", From: "a", To: "c", Bidirectional: true, Capacity: &model.Capacity{Existing: 10}}
+		g := j.Model.Technologies["cheap"]
+		g.Dispatch = model.Num(5)
+		j.Model.Technologies["cheap"] = g
+	})
+	warns, err := target.ValidateFor(&j, model.TargetPyPSA)
+	if err != nil {
+		t.Fatalf("tie + dispatch: %v", err)
+	}
+	if !hasWarning(warns, "power-flow inputs", "technologies [cheap]") || hasWarning(warns, "transmission [") {
+		t.Errorf("the warning names the ignored dispatch and nothing about the arcs, got %v", warns)
+	}
+
+	// Transmission investment without a way to annualize is reported, not
+	// silently priced at zero.
+	j = lopfJob(t, func(j *model.Job) {
+		l := j.Model.Transmission["ab"]
+		l.Lifetime, l.InterestRate = nil, nil
+		j.Model.Transmission["ab"] = l
+	})
+	warns, err = target.ValidateFor(&j, model.TargetPyPSA)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !hasWarning(warns, `transmission "ab"`, "lifetime and interest_rate", "not emitted") {
+		t.Errorf("want the annualization warning, got %v", warns)
+	}
+}

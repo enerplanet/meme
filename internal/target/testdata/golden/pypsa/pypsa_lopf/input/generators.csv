@@ -1,0 +1,3 @@
+name,bus,carrier,p_nom,p_nom_extendable,p_nom_max,capital_cost,marginal_cost,efficiency
+cheap,a::electricity,electricity,100,False,inf,0,10,1
+peaker,c::electricity,electricity,100,False,inf,0,50,1

@@ -43,6 +43,7 @@ func (PyPSA) Capabilities() map[model.Feature]bool {
 		// fields describe (Lines/Transformers with impedance, buses with
 		// v_nom, fixed p_set) with lpf()/pf(); see powerflow.go and ADR-0008.
 		model.FeatPowerFlow:              true,
+		model.FeatLinearPowerFlow:        true, // the voltage law inside optimize (Lines/Transformers; ADR-0010)
 		model.FeatMultiCarrierConversion: true, // multi-output Links
 		model.FeatEmissionLimit:          true, // GlobalConstraint
 		model.FeatImportExport:           true, // via generators/loads + marginal_cost
@@ -110,6 +111,20 @@ func (PyPSA) ValidateJob(j *model.Job) ([]string, error) {
 			return nil, err
 		}
 		warns = append(warns, pfWarns...)
+	}
+	if e.EffectiveMode() != model.ModePowerFlow && e.EffectiveNetworkModel() == model.NetworkLinearPowerFlow {
+		lpWarns, err := validateLinearPowerFlow(j)
+		if err != nil {
+			return nil, err
+		}
+		warns = append(warns, lpWarns...)
+	}
+	// Transmission investment is priced on PyPSA (Links and Lines) when it can
+	// be annualized; otherwise it is left out and said so.
+	for _, id := range emit.Keys(m.Transmission) {
+		if _, ok := transmissionCapitalCost(m, m.Transmission[id]); !ok {
+			warns = append(warns, fmt.Sprintf("transmission %q: the investment cost needs lifetime and interest_rate (or cost_basis annualized) to annualize; not emitted", id))
+		}
 	}
 
 	// Constraints that don't project onto a GlobalConstraint are applied by
@@ -303,6 +318,19 @@ func runPy(j *model.Job, inputDir, outDir string) string {
 			"distribute_slack": pf.opts.DistributeSlack,
 			"tolerance":        pf.opts.EffectiveTolerance(),
 		}
+	}
+	// A security-constrained solve names its outages as (component, name)
+	// pairs, since a transformer outage is spelled differently from a line's.
+	if nw := e.Network; nw != nil && nw.Security != nil && len(nw.Security.Outages) > 0 {
+		outages := make([]map[string]string, 0, len(nw.Security.Outages))
+		for _, id := range nw.Security.Outages {
+			comp := "Line"
+			if l, ok := j.Model.Transmission[id]; ok && l.Electrical != nil && l.Electrical.Kind == model.ElectricalTransformer {
+				comp = "Transformer"
+			}
+			outages = append(outages, map[string]string{"component": comp, "name": id})
+		}
+		cfgMap["security"] = map[string]any{"outages": outages}
 	}
 	cfg, _ := json.Marshal(cfgMap)
 	// A single quote cannot appear in the raw triple-quoted Python string:

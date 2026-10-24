@@ -671,6 +671,20 @@
       "verdict": "ok"
     }
   },
+  "pypsa_lopf.json": {
+    "adopt-net0": {
+      "verdict": "error: network model \"linear_power_flow\" is not supported by target \"adopt-net0\""
+    },
+    "calliope": {
+      "verdict": "error: network model \"linear_power_flow\" is not supported by target \"calliope\""
+    },
+    "calliope-0.6": {
+      "verdict": "error: network model \"linear_power_flow\" is not supported by target \"calliope-0.6\""
+    },
+    "pypsa": {
+      "verdict": "ok"
+    }
+  },
   "pypsa_node_override.json": {
     "adopt-net0": {
       "verdict": "error: tech \"pv\" (supply) has no adopt_net0 database mapping (only pv/wind/heat_pump physics and storage map); model it via nodes.\u003cnode\u003e.native.adopt-net0 naming a database technology"

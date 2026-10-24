@@ -29,6 +29,7 @@ directly loadable by the pinned framework (see [Targets and versions](targets.md
 | `pypsa_constraints_sidecar` | tech-scoped constraint applied by run.py as a linopy constraint (binding, objective-checked in E2E) | `force_pv` in `_constraints.json` |
 | `pypsa_trade_price_series` | time-varying import price (objective-checked in E2E) | `market_import`, `generators-marginal_cost.csv` |
 | `pypsa_power_flow` | mode `power_flow`: an HV slack feeding two MV nodes through a transformer and a line, PV with a dispatch series, two loads (converges 4/4 in E2E; the linear method and a diverging load are E2E-checked too) | `v_nom`, `lines.csv`, `transformers.csv`, `control: Slack`, `generators-p_set.csv` |
+| `pypsa_power_flow_reactive` | reactive power and voltage control: slack set-point 1.02 pu, a `pv` generator holding 1.0 pu, loads with a power factor and a reactive series, a shunt, a per-length line impedance, a phase-shifting transformer, a controlled HVDC link into an island PyPSA balances itself (E2E pins the held voltages) | `v_mag_pu_set`, `control: PV`, `q_set`, `shunt_impedances.csv`, `phase_shift`, links `p_set` |
 
 ## Calliope 0.7 (`calliope`)
 

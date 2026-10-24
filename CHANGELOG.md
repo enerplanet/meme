@@ -38,8 +38,27 @@ Go modules require (`v0.1.0-alpha`).
   examples walkthrough documents the options, the result files and the
   rejected requests.
 
+- Reactive power, voltage control, shunts and controlled transfers for the
+  power flow ([ADR-0009]): `technology.electrical` with `reactive_dispatch`
+  or `power_factor` (+ `leading`), `control: pv` and `voltage_setpoint`;
+  `node.electrical.shunt`; `transmission.dispatch` as a controlled HVDC
+  transfer on an arc without impedance; `b`, `g`, `phase_shift` and
+  `r_per_length`/`x_per_length` on `transmission.electrical`. The result
+  folder gains the reactive tables, the load and link tables and the shunt
+  tables. Gates: one way to give Q, voltage set-points for `pv` generators
+  and the slack only and agreeing per bus, an electricity arc needs an
+  impedance or a transfer, every AC island needs a generator (an island
+  without the named slack is reported as balanced by PyPSA), and the linear
+  method says what it ignores. Scenario and example payload
+  `pypsa_power_flow_reactive`, E2E-pinned on the held voltages.
+
 ### Changed
 
+- Power-flow inputs — `dispatch`, the `electrical` blocks on technologies,
+  arcs and nodes — are ignored with one warning wherever no power flow runs:
+  on Calliope and AdOpT-NET0 and in PyPSA's optimization modes alike. A
+  `dispatch` in an optimization mode was rejected before; now one payload
+  serves the planning call and the power-flow call ([ADR-0009]).
 - The PyPSA driver parses its run configuration as JSON (`json.loads`)
   instead of pasting the JSON in as a Python literal, which broke on the
   first boolean setting.
@@ -134,6 +153,7 @@ still change between releases.
 
 [Unreleased]: https://github.com/enerplanet/meme/compare/v0.1.0-alpha...HEAD
 [ADR-0008]: https://enerplanet.github.io/meme/decisions/0008-power-flow-as-a-pypsa-run-mode/
+[ADR-0009]: https://enerplanet.github.io/meme/decisions/0009-reactive-power-voltage-control-and-fixed-transfers/
 [0.1.0-alpha]: https://github.com/enerplanet/meme/releases/tag/v0.1.0-alpha
 [#3]: https://github.com/enerplanet/meme/issues/3
 [#4]: https://github.com/enerplanet/meme/issues/4

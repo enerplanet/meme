@@ -67,9 +67,10 @@ AdOpT `input_data/` tree — and solves to the same optimum on each.
   release each target drives.
 - **Power flow as a run mode.** `experiment.mode: power_flow` makes PyPSA
   solve the AC network described in the canonical model (`electrical`
-  fields, a fixed `dispatch`) instead of optimizing: bus voltages, branch
+  fields, a fixed `dispatch`, reactive power and voltage control, shunts,
+  controlled HVDC transfers) instead of optimizing: bus voltages, branch
   loading and convergence per snapshot. The consumer plans first, on any
-  target, and calls again; MEME never chains jobs.
+  target, and calls again with the same payload; MEME never chains jobs.
 - **Capability-gated validation.** Every feature claim is backed by a
   runnable scenario; a payload that asks for something the selected target
   cannot honor is rejected with a pointed message, never silently trimmed.

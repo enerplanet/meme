@@ -26,7 +26,7 @@ project an indexed value to a scalar (and error if it can't for a flat target).
     "nodes":     { "<id>": { "coords"?: {"lat":48.8,"lon":12.9,"alt"?:0},
                              "allowed_techs"?: ["…"], "available_area"?: 1e4,
                              "climate"?: {"ghi":"series_id","temp_air":15,…},  // AdOpT weather for physics techs
-                             "electrical"?: {"v_nom":20},                      // kV; the node's AC bus (PyPSA power flow)
+                             "electrical"?: {"v_nom":20, "shunt"?:{"g":0,"b":0.001}},   // kV + shunt (S); the node's AC bus (PyPSA power flow)
                              "native"?: {…} } },
     "timeseries"?:{ "<id>": { "source": "inline"|"file", "values"?: [ … ], "path"?: "…", "column"?: "…" } },  // file: accepted by the schema, rejected by validation until a target reads files
 
@@ -53,7 +53,9 @@ project an indexed value to a scalar (and error if it can't for a flat target).
                         "discharge_eff"?:0.95, "self_discharge"?:0.001, "inflow"?:Value,
                         "spill_cost"?:0, "initial_soc"?:0.5, "cyclic"?:true },
         "demand_profile"?: Value,                                // role: demand
-        "dispatch"?: Value,                                      // fixed MW per timestep; power_flow input only
+        "dispatch"?: Value,                                      // fixed MW per timestep; power_flow input (ignored elsewhere)
+        "electrical"?: { "reactive_dispatch"?:Value, "power_factor"?:0.95, "leading"?:false,
+                         "control"?:"pq"|"pv", "voltage_setpoint"?:1.0 },     // reactive power + voltage control (power_flow)
         "area"?:   { "max"?:1500, "per_capacity"?:0.01 },        // Calliope-only
         "source"?: { "cap"?:…, "unit"?:"per_area", "max"?:Value },// Calliope-only
         "costs"?:  { "<class>": { "investment_per_capacity"?:6e5, "investment_per_energy_capacity"?:…,
@@ -68,7 +70,10 @@ project an indexed value to a scalar (and error if it can't for a flat target).
                                  "bidirectional"?:true, "capacity"?:{…}, "efficiency"?:0.97,
                                  "distance"?:…, "costs"?:{…},
                                  "electrical"?: { "kind":"line"|"transformer", "r":1.2, "x":3.5,   // AC branch (PyPSA power flow)
-                                                  "s_nom"?:20, "num_parallel"?:1, "tap_ratio"?:1 },
+                                                  "r_per_length"?:0.12, "x_per_length"?:0.35,       // … or per km × distance
+                                                  "s_nom"?:20, "num_parallel"?:1, "b"?:0.0001, "g"?:0,
+                                                  "tap_ratio"?:1, "phase_shift"?:0 },
+                                 "dispatch"?: Value,                                   // fixed transfer of a controlled link (HVDC)
                                  "native"?:{…} } },
     "trade"?: { "<id>": { "node":"<node>", "carrier":"<id>",
                           "import"?:{ "limit"?:500, "price"?:Value, "emission_factor"?:0.35 },

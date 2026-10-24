@@ -15,6 +15,7 @@ tier re-runs them on every change.
 | [`pypsa_power_flow_minimal.json`](https://github.com/enerplanet/meme/blob/main/examples/pypsa_power_flow_minimal.json) | `pypsa` | The **smallest valid power flow**: two 20 kV nodes, one line whose rating defaults to its installed capacity, a slack generator, a load with an inline two-snapshot profile, and nothing else — the shape to start from |
 | [`pypsa_power_flow_meshed.json`](https://github.com/enerplanet/meme/blob/main/examples/pypsa_power_flow_meshed.json) | `pypsa` | A **meshed** 20 kV ring under an HV transformer: one PV technology placed at two nodes with a `dispatch` series per node (`node_overrides`), one load technology at three nodes with a per-node profile, two parallel transformers (`num_parallel`, `tap_ratio`), the slack spelled `grid@hv`, a tight `tolerance`; real loop flows and a visible voltage sag |
 | [`pypsa_power_flow_options.json`](https://github.com/enerplanet/meme/blob/main/examples/pypsa_power_flow_options.json) | `pypsa` | The **options**: `method: linear` (DC, never diverges, voltages stay nominal), `distribute_slack` with the slack carrying its own expected dispatch, a battery whose dispatch changes sign (positive = discharge), and an electric boiler feeding a `heat` carrier the power flow carries as a fixed injection without balancing it (warned) |
+| [`pypsa_power_flow_reactive.json`](https://github.com/enerplanet/meme/blob/main/examples/pypsa_power_flow_reactive.json) | `pypsa` | **Reactive power and voltage control**: the slack holds 1.02 pu, a `pv` generator holds its bus at 1.0 pu by supplying reactive power, loads carry a `power_factor` or a `reactive_dispatch` series, a `shunt` compensates at one node, a controlled HVDC link (`transmission.dispatch`) feeds an island PyPSA balances on its own generator, a line given per km (`r_per_length`, `x_per_length`, `b`) and a phase-shifting transformer |
 | [`calliope_full.json`](https://github.com/enerplanet/meme/blob/main/examples/calliope_full.json) | `calliope` | availability data table from a CF series, first-class `source` + `area` (per-area resource on a bounded area), **MILP committable** (integer 50-MW units + purchase cost + min stable load), multi-output CHP via **ratio-pinning math**, **piecewise** part-load conversion (fixed 300 MW), battery with energy-capacity costs (`cost_storage_cap`) + `cost_om_annual` + **depth of discharge**, transmission (bidirectional, distance, **per-distance investment cost**), `reporting.save_logs`, typed solver `time_limit`, trade (import price + co2 factor, paid export), CO₂ cap + scoped constraint (custom math), native `flow_out_parasitic_eff`, and **resample 1H → 3H** |
 | [`adopt_full.json`](https://github.com/enerplanet/meme/blob/main/examples/adopt_full.json) | `adopt-net0` | full climate block (ghi/dni/dhi/temp_air/rh/ws10; series and scalars mixed), three physics techs (`pv` → Photovoltaic, `wind` → WindTurbine, `heat_pump` → HeatPump_AirSourced serving a heat demand), battery on two nodes with a **per-node override** (`size_max` 100 vs 40), tech-level native patch, trade at both nodes with a **series** import price + import/**export** emission factors, `reporting.case_name`, typed solver `time_limit`/`mip_gap`, and a CO₂ emission cap (`costs_emissionlimit` objective) |
 | [`shared_full.json`](https://github.com/enerplanet/meme/blob/main/examples/shared_full.json) | **`all`** | The maximal **intersection**: one config valid for all three frameworks *simultaneously* — physics PV + wind carrying both a climate block (AdOpT computes output itself) and precomputed CF profiles (PyPSA/Calliope), a two-node battery with a per-node override, scalar-priced trade at both nodes (+ import co2 factor), an emission cap, a battery-capacity **sweep**, a global **`discount_rate`** and typed solver `time_limit` (both honored by all three), and a per-target `native` block on the same tech (each framework picks only its own). Submitted once with `?target=all` → **6 solves** (3 frameworks × 2 sweep points) in one job, one zip |
@@ -205,10 +206,10 @@ be confused.
 
 ### The power-flow payloads
 
-Four payloads cover the mode; start from the minimal one and grow it:
+Five payloads cover the mode; start from the minimal one and grow it:
 
 ```bash
-for f in pypsa_power_flow_minimal pypsa_power_flow pypsa_power_flow_meshed pypsa_power_flow_options; do
+for f in pypsa_power_flow_minimal pypsa_power_flow pypsa_power_flow_meshed pypsa_power_flow_options pypsa_power_flow_reactive; do
   ID=$(curl -s -X POST 'localhost:8080/simulate?target=pypsa' -d @examples/$f.json | jq -r .id)
   until curl -s "localhost:8080/jobs/$ID/status" | jq -e '.state | test("succeeded|failed")' >/dev/null; do sleep 1; done
   curl -s -o $f.zip "localhost:8080/jobs/$ID" && unzip -p $f.zip files/run_0/output/power_flow/summary.json | jq -c '{method, converged_snapshots, min_v_mag_pu, max_line_loading}'
@@ -221,6 +222,7 @@ done
 | `pypsa_power_flow.json` | an HV/MV network with a transformer and a line, a PV `dispatch` series, a battery following its own series |
 | `pypsa_power_flow_meshed.json` | loop flows in a meshed ring, per-node `dispatch` and `demand_profile` through `node_overrides`, `num_parallel` and `tap_ratio` on the transformer, the slack as `tech@node`, a tight `tolerance` |
 | `pypsa_power_flow_options.json` | `method: linear`, `distribute_slack`, a storage dispatch that changes sign, a conversion into a second carrier |
+| `pypsa_power_flow_reactive.json` | reactive power two ways, `pv` voltage control and a slack set-point, a shunt, a controlled HVDC link into an island, per-length impedance, phase shift |
 
 ### The options
 
@@ -248,6 +250,26 @@ done
 - **Other carriers** — a power flow balances the electricity network only.
   Components on other carriers (a heat demand, an electric boiler's output)
   are carried as fixed injections and reported in a warning.
+- **Reactive power** (`technology.electrical`) — either `reactive_dispatch`
+  in MVAr per timestep, or a `power_factor` from which Q is derived per
+  snapshot in the component's own direction (a load consumes, a generator
+  supplies; `leading: true` flips the sign). One or the other, on supply,
+  demand and storage; a conversion transfers active power only.
+- **Voltage control** — `control: pv` with a `voltage_setpoint` (pu) makes a
+  generator hold its bus voltage by supplying or absorbing reactive power;
+  the slack may carry a `voltage_setpoint` as well (default 1.0). All
+  set-points at one bus must agree. `method: linear` ignores all of this and
+  says so.
+- **Shunts** (`node.electrical.shunt`) — a fixed admittance at the bus in
+  siemens; `b` positive is capacitive.
+- **Controlled transfers** — an electricity arc with a `dispatch` and no
+  `electrical` block is a PyPSA Link with a fixed `p_set`: the model of an
+  HVDC tie. It does not join the two buses electrically, so the part of the
+  network behind it is its own AC island, which needs a generator; PyPSA
+  balances that island on its largest generator and the validation says so.
+- **Branch refinements** — `r_per_length` and `x_per_length` in ohm/km
+  instead of `r` and `x`, multiplied by `distance`; line shunt admittance
+  `b`, `g`; transformer `phase_shift` in degrees.
 
 ### What comes back
 
@@ -260,7 +282,7 @@ done
 | `buses-v_mag_pu.csv`, `buses-v_ang.csv`, `buses-p.csv`, `buses-q.csv` | per bus (`node::carrier`) and snapshot; `q` only for Newton-Raphson |
 | `lines-p0.csv`, `lines-p1.csv`, `lines-q0.csv`, `lines-q1.csv`, `lines-loading.csv` | per line: flow at each end, apparent loading over `s_nom` |
 | `transformers-…` | the same per transformer |
-| `generators-p.csv`, `generators-q.csv`, `storage_units-p.csv`, `links-p0.csv` | the injections as solved (the slack absorbs the losses) |
+| `generators-p.csv`, `generators-q.csv`, `loads-p.csv`, `loads-q.csv`, `storage_units-p.csv`, `storage_units-q.csv`, `links-p0.csv`, `links-p1.csv`, `shunt_impedances-p.csv`, `shunt_impedances-q.csv` | the injections as solved (the slack absorbs the losses; `q` tables for Newton-Raphson only) |
 
 The job log carries `power flow converged k/n snapshots` and
 `status ok power flow converged`; a snapshot that does not converge makes the
@@ -275,10 +297,10 @@ The gates answer with `422` and name the fix:
 curl -s -X POST 'localhost:8080/validate?target=calliope' -d @examples/pypsa_power_flow.json
 # {"error":"mode \"power_flow\" is not supported by target \"calliope\"","valid":false}
 
-jq '.experiment = {"mode":"plan","solver":{"name":"highs"}}' examples/pypsa_power_flow.json \
+jq 'del(.model.technologies.dg)' examples/pypsa_power_flow_reactive.json \
   | curl -s -X POST 'localhost:8080/validate?target=pypsa' -d @-
-# {"error":"tech \"battery\": dispatch is a power-flow input (mode power_flow); in mode \"plan\"
-#   the solver decides dispatch, pin it with operation.equals_pu instead","valid":false}
+# {"error":"AC island [mv3] has no supply technology to balance it; PyPSA cannot solve a sub-network
+#   without a generator","valid":false}
 
 jq 'del(.experiment.power_flow.slack)' examples/pypsa_power_flow.json \
   | curl -s -X POST 'localhost:8080/validate?target=pypsa' -d @-
@@ -290,6 +312,17 @@ jq '.experiment.power_flow.distribute_slack = true' examples/pypsa_power_flow.js
 #   so the slack \"grid\" needs a dispatch too (its expected output); ..."}
 ```
 
-Electrical parameters in a planning payload are not an error: the response
-is `valid: true` with a warning naming the arcs and nodes whose parameters the
-optimization ignores, so the same model can be planned and then checked.
+Power-flow inputs in a planning payload are not an error. Sending the
+reactive payload in mode `plan` to Calliope answers `valid: true` with one
+warning that names everything the optimization ignores, so the same document
+serves both calls:
+
+```bash
+jq '.experiment = {"mode":"plan","solver":{"name":"cbc"}}' examples/pypsa_power_flow_reactive.json \
+  | curl -s -X POST 'localhost:8080/validate?target=calliope' -d @-
+# {"valid":true,"warnings":["power-flow inputs are only used by mode power_flow on a target with the
+#   power_flow capability; in mode \"plan\" on target \"calliope\" they are ignored: dispatch/electrical on
+#   technologies [dg grid load1 load2 load3 pv], electrical/dispatch on transmission [hvdc l12 trafo]
+#   (emitted as transport links), electrical on nodes [hv mv1 mv2 mv3]. Pin a dispatch in an
+#   optimization with operation.equals_pu instead"]}
+```

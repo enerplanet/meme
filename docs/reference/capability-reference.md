@@ -38,7 +38,7 @@ One `Job` = `model` (the physical system) + `experiment` (how to run it).
     "carriers":  { "<id>": { "unit": "MWh", "co2_intensity": 0.2, "color": "…", "native": { … } } },
     "nodes":     { "<id>": { "coords": {"lat":48,"lon":11,"alt":0}, "available_area": 1e4,
                              "climate": { "ghi": "ts-id", "temp_air": 8.5, … }, "native": { … } } },
-                             "electrical": { "v_nom": 20 },   // kV; the node's AC bus for a power flow (P, mode power_flow)
+                             "electrical": { "v_nom": 20, "shunt": {"g": 0, "b": 0.001} },   // kV + shunt (S); the node's AC bus for a power flow (P, mode power_flow)
     "timeseries":{ "<id>": { "source": "inline", "values": [ … ], "unit": "MW" }   // or
                             { "source": "file", "path": "…", "column": "…" } },  // file: schema-valid, but no target reads files yet -> 422
     "technologies": {
@@ -72,7 +72,9 @@ One `Job` = `model` (the physical system) + `experiment` (how to run it).
                        "spill_cost": 5, "initial_soc": 0.5, "cyclic": true,
                        "no_simultaneous_charge_discharge": true },
         "demand_profile": 100 | "ts-id", "demand_curtailable": false,
-        "dispatch": 3 | "ts-id",                 // fixed MW per timestep a power flow injects (P, mode power_flow only)
+        "dispatch": 3 | "ts-id",                 // fixed MW per timestep a power flow injects (P, mode power_flow; ignored elsewhere)
+        "electrical": { "reactive_dispatch": 1 | "ts-id", "power_factor": 0.95, "leading": false,   // Q one way or the other
+                        "control": "pq" | "pv", "voltage_setpoint": 1.0 },                        // pv holds its bus (supply)
         "area":   { "max": 5000, "per_capacity": 8 },
         "source": { "max": 0.25 | "ts-id", "unit": "per_area" | "per_cap" | "absolute", "cap": 900 },
         "costs": { "monetary": {                  // only the "monetary" class is priced
@@ -88,7 +90,9 @@ One `Job` = `model` (the physical system) + `experiment` (how to run it).
       }
     },
     "transmission": { "<id>": { "carrier": "…", "from": "n1", "to": "n2", "bidirectional": true,
-                                 "electrical": { "kind": "line" | "transformer", "r": 1.2, "x": 3.5, "s_nom": 20, "num_parallel": 1, "tap_ratio": 1 },  // AC branch for a power flow
+                                 "electrical": { "kind": "line" | "transformer", "r": 1.2, "x": 3.5, "r_per_length": 0.12, "x_per_length": 0.35,
+                                                 "s_nom": 20, "num_parallel": 1, "b": 0.0001, "g": 0, "tap_ratio": 1, "phase_shift": 0 },  // AC branch for a power flow
+                                 "dispatch": 3 | "ts-id",   // fixed transfer of a controlled link (HVDC) instead of an impedance
                                 "capacity": {…}, "efficiency": 0.97, "distance": 50,
                                 "loss_per_distance": 1e-4, "min_flow": 0.05, "emission_factor": 0.001,
                                 "energy_consumption": { "carrier": "…", "per_flow": 0.01, "per_flow_distance": 1e-4 },
@@ -275,7 +279,8 @@ storage (`Storage_Battery`) map canonically. Any other non-demand tech is
 | Property | P | C | A | Notes |
 |---|:-:|:-:|:-:|---|
 | `coords` | ✓ bus `x`/`y` | ✓ `latitude`/`longitude` | ✓ `NodeLocations.csv` | |
-| `electrical.v_nom` | ✓ bus `v_nom` under carrier `AC` (mode power_flow; ⚠ unused otherwise) | ⚠ unused | ⚠ unused | required on every bus of the power-flow network |
+| `electrical.v_nom` | ✓ bus `v_nom` under carrier `AC` (mode power_flow; ⚠ ignored otherwise) | ⚠ ignored | ⚠ ignored | required on every bus of the power-flow network |
+| `electrical.shunt` (`g`, `b`) | ✓ `ShuntImpedance` at the bus (mode power_flow) | ⚠ ignored | ⚠ ignored | siemens; `b` positive = capacitive |
 | `available_area` | ✗ (area is Calliope-only) | ✓ `available_area` | ✗ | gated with `technology.area` |
 | `climate` (ghi, dni, dhi, temp_air, rh, ws10, hydro_inflow) | — | — | ✓ `ClimateData.csv` (scalar or series) | feeds physics techs |
 | `allowed_techs` | · | · | · | informational (tech placement comes from `technology.node`) |
@@ -323,7 +328,9 @@ storage (`Storage_Battery`) map canonically. Any other non-demand tech is
 | `storage.cyclic` | ✓ `cyclic_state_of_charge` | ✓ `cyclic_storage` (operate: forced false) | — | |
 | `demand_profile` (scalar / series) | ✓ `p_set` / `loads-p_set.csv` | ✓ data table (scalar expanded) | ✓ `Demand` column | |
 | `demand_curtailable` | ✗ | ✓ `sink_use_max` instead of `sink_use_equals` | ✗ | |
-| `dispatch` (scalar / series) | ✓ `p_set` / `<component>-p_set.csv` on generators, storage units and links (mode power_flow) | ✗ | ✗ | a power-flow input: rejected in every optimization mode (pin dispatch with `operation.equals_pu` there); overridable per node |
+| `dispatch` (scalar / series) | ✓ `p_set` / `<component>-p_set.csv` on generators, storage units and links (mode power_flow) | ⚠ ignored | ⚠ ignored | a power-flow input: ignored with one warning wherever no power flow runs, PyPSA optimization modes included (pin dispatch in an optimization with `operation.equals_pu`); overridable per node |
+| `electrical.reactive_dispatch` (scalar / series) or `electrical.power_factor` (+ `leading`) | ✓ `q_set` / `<component>-q_set.csv` on generators, loads and storage units (mode power_flow; Q derived per snapshot from the active set-point at the power factor, in the component's own direction) | ⚠ ignored | ⚠ ignored | mutually exclusive; a conversion carries no reactive fields; `method: linear` ignores them (warned) |
+| `electrical.control: pv` + `electrical.voltage_setpoint` | ✓ generator `control: PV`, bus `v_mag_pu_set` (the slack may carry a set-point too) | ⚠ ignored | ⚠ ignored | supply only; a set-point needs `pv` or the slack role; set-points at one bus must agree |
 | `area.max` | ✗ gated | ✓ `area_use_max` (+node `available_area`) | ✗ gated | |
 | `area.per_capacity` | — | ⚠ not emitted (use native `area_use_per_flow_cap`) | — | |
 | `source.max` (scalar / series) | ✗ gated | ✓ `source_use_max` (+ data table) | ✗ gated | |
@@ -358,7 +365,8 @@ storage (`Storage_Battery`) map canonically. Any other non-demand tech is
 | `transmission.emission_factor` | ✗ (carrier-wide accounting) | ✓ co2 cost class on the link flow | ✗ | |
 | `transmission.energy_consumption` | ✓ multi-port link (`bus2`, negative `efficiency2`; one-way arcs only) | ✗ | ✗ | |
 | `transmission.active: false` | ✓ `active` column | ✓ `active: false` | ✗ | |
-| `transmission.electrical` (`kind`, `r`, `x`, `s_nom`, `num_parallel`, `tap_ratio`) | ✓ `lines.csv` / `transformers.csv` row with the impedance and rating (mode power_flow; ⚠ unused otherwise, arc stays a Link) | ⚠ unused (transmission tech) | ✗ | electrical arcs are bidirectional; a line joins equal `v_nom`; `s_nom` defaults to `capacity.existing` |
+| `transmission.electrical` (`kind`, `r`/`x` or `r_per_length`/`x_per_length`, `s_nom`, `num_parallel`, `b`, `g`, `tap_ratio`, `phase_shift`) | ✓ `lines.csv` / `transformers.csv` row with the impedance, admittance, rating and tap (mode power_flow; ⚠ ignored otherwise, arc stays a Link) | ⚠ ignored (transmission tech) | ✗ | electrical arcs are bidirectional; a line joins equal `v_nom`; `s_nom` defaults to `capacity.existing`; per-length impedance × `distance`; `b`/`g` lines only, `phase_shift` transformers only |
+| `transmission.dispatch` (scalar / series) | ✓ Link `p_set` / `links-p_set.csv`: a controlled HVDC transfer (mode power_flow) | ⚠ ignored | ✗ | exclusive with `electrical`; an electricity arc in a power flow needs one of the two; the island behind a link needs its own generator (PyPSA balances it, warned) |
 | `transmission.costs.investment_per_capacity_distance` | ⚠ warned & dropped | ✓ `cost_flow_cap_per_distance` | ✗ | |
 | `transmission.costs` (other fields) | ⚠ warned & dropped | ⚠ warned & dropped | ✗ | no lifetime/interest on transmission to annualize |
 | `trade.import.limit` (scalar / series) | ✓ `p_nom_max` / ✓ fixed `p_nom=1` + `p_max_pu` series | ✓ `flow_cap_max` / ✗ | ✓ / ✓ per-timestep column | |
@@ -377,7 +385,7 @@ storage (`Storage_Battery`) map canonically. Any other non-demand tech is
 | Executed driver | `run_i/run.py` | Calliope CLI (command in `results.json`) | `run_i/run.py` |
 | Solved model | `run_i/output/network.nc` (+ `network_baseline.nc` for MGA) | `run_i/output/results.nc` + `output/csv/*` (per-variable CSVs incl. `flow_out`, `storage`, `purchased_units`, costs) | `run_i/input/results/` (HDF5 per solve + `Summary.xlsx` + `solver_log.txt`) |
 | Objective / status in log | `status ok optimal`, `objective <v>` (non-optimal ⇒ non-zero exit ⇒ job `failed`); power flow: `power flow converged k/n snapshots`, `status ok power flow converged` (a non-converged snapshot ⇒ exit 3 ⇒ job `failed`) | `Optimal - objective value <v>`, `Calliope run complete` | Pyomo block (`Termination condition: optimal`, bounds) |
-| Power-flow results (mode power_flow) | `run_i/output/power_flow/`: `convergence.csv`, `buses-v_mag_pu/v_ang/p/q.csv`, `lines-p0/p1/q0/q1/loading.csv`, `transformers-…`, `generators-p/q.csv`, `storage_units-p.csv`, `links-p0.csv`, `summary.json` (method, slack bus, converged snapshots, voltage band, peak loadings) | — | — |
+| Power-flow results (mode power_flow) | `run_i/output/power_flow/`: `convergence.csv`, `buses-v_mag_pu/v_ang/p/q.csv`, `lines-p0/p1/q0/q1/loading.csv`, `transformers-…`, `generators-p/q.csv`, `loads-p/q.csv`, `storage_units-p/q.csv`, `links-p0/p1.csv`, `shunt_impedances-p/q.csv`, `summary.json` (method, slack bus, converged snapshots, voltage band, peak loadings) | — | — |
 | Job artifacts (all targets) | `GET /jobs/{id}` zip: `metadata.json`, `log.txt`, `results.json` (target-labeled per-run exit/stdout/plan), `config.json` (byte-identical initial config), `files/` (everything above; multi-target jobs nest as `files/<target>/run_i/…`) | — | — |
 | Status endpoint | `GET /jobs/{id}/status`: `state` (queued/running/succeeded/failed), live `log`, per-run results, timings | — | — |
 | Multi-target submit | `?target=pypsa,calliope,adopt-net0` or `target=all` on validate/convert/simulate: per-target verdicts/entrypoints, one job running every framework (422 up front if ANY requested target rejects the payload; see [`examples/shared_full.json`](https://github.com/enerplanet/meme/blob/main/examples/shared_full.json)) | — | — |

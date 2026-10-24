@@ -95,6 +95,8 @@ func TestScenarios(t *testing.T) {
 		{"calliope_multi_node.json", model.TargetCalliope, []string{"load__sink_use_equals", "techs,load,load", "nodes,n1,n2"}},
 		// A supply availability series at two nodes: one column per node too.
 		{"calliope_multi_node_supply.json", model.TargetCalliope, []string{"pv__source_use_max", "techs,pv,pv", "nodes,n1,n2", "source_unit: per_cap"}},
+		// Operate mode fixes the import at its limit and the line at its capacity.
+		{"calliope_operate_limits.json", model.TargetCalliope, []string{"mode: operate", "flow_cap: 50", "flow_cap: 40", "flow_cap: 1000"}},
 
 		// --- Calliope 0.6 (the 0.7 scenarios it accepts, plus its own) ---
 		{"calliope_plan.json", model.TargetCalliope06, []string{"calliope_version: 0.6.8", "mode: plan", "parent: supply", "solver: cbc", "file=load__resource.csv:n1", "timeseries_data_path"}},
@@ -112,6 +114,7 @@ func TestScenarios(t *testing.T) {
 		{"calliope_committable.json", model.TargetCalliope06, []string{"units_max: 3", "energy_cap_per_unit: 100", "energy_cap_min_use: 0.3", "purchase: 1000"}},
 		{"calliope_multi_node.json", model.TargetCalliope06, []string{",n1,n2", "file=load__resource.csv:n1", "file=load__resource.csv:n2"}},
 		{"calliope_multi_node_supply.json", model.TargetCalliope06, []string{"file=pv__resource.csv:n1", "file=pv__resource.csv:n2", "resource_unit: energy_per_cap"}},
+		{"calliope_operate_limits.json", model.TargetCalliope06, []string{"mode: operate", "energy_cap_max: 50", "energy_cap_equals: 50", "energy_cap_equals: 40", "energy_cap_equals: 1000"}},
 		{"calliope06_group_constraints.json", model.TargetCalliope06, []string{"group_constraints:", "energy_cap_max: 800", "carrier_prod_min:", "electricity: 100", "cost_max:", "emissions: 1.0e+06", "om_con: 0.2"}},
 		{"calliope06_min_emissions.json", model.TargetCalliope06, []string{"monetary: 0", "emissions: 1", "sense: minimize"}},
 

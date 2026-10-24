@@ -201,6 +201,17 @@ func (Calliope) ValidateJob(j *model.Job) ([]string, error) {
 		}
 	}
 
+	// Operate mode sizes nothing (flow_cap, storage_cap, source_cap and
+	// area_use become inputs): say where a maximum stands in for the installed
+	// size, and refuse a model with no fixed capacity at all.
+	if j.Experiment.EffectiveMode() == model.ModeOperate {
+		ow, err := operateChecks(m)
+		warns = append(warns, ow...)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	// HiGHS cannot drive Calliope 0.7 (a pyomo/persistent-solver
 	// incompatibility); the emitter substitutes cbc.
 	if j.Experiment.Solver.Name == "highs" {
@@ -208,6 +219,59 @@ func (Calliope) ValidateJob(j *model.Job) ([]string, error) {
 	}
 	if s := j.Experiment.Solver; calliopeSolverOptions(s) == nil && (s.TimeLimit != nil || s.MIPGap != nil || s.Threads != nil) {
 		warns = append(warns, fmt.Sprintf("solver %q: time_limit/mip_gap/threads are not mapped for this solver on calliope (mapped: gurobi, cbc); use config.solve.solver_options via native.calliope", s.Name))
+	}
+	return warns, nil
+}
+
+// operateChecks holds the operate-mode gates. Calliope 0.7 reads every size
+// as an input parameter in operate mode (default infinite), so the emitter
+// installs each element at its fixed capacity: capacity.existing, else
+// capacity.max — the latter is a choice the payload did not make explicitly
+// (PyPSA rejects an expandable element there), so it is reported. Trade
+// imports are installed at their limit (an unlimited import is legitimately
+// unbounded). A model in which nothing defines flow_cap would solve and then
+// abort in Calliope's postprocessing on the missing array; it is rejected
+// here, before any solver time is spent.
+func operateChecks(m *model.Model) ([]string, error) {
+	var warns []string
+	fixed := false
+	installedAtMax := func(c *model.Capacity) (float64, bool) {
+		v, ok := fixedCap(c)
+		return v, ok && c.Existing <= 0
+	}
+	for _, id := range emit.Keys(m.Technologies) {
+		t := m.Technologies[id]
+		if t.Role == model.RoleDemand {
+			continue
+		}
+		if _, ok := fixedCap(t.Capacity); ok {
+			fixed = true
+		}
+		if v, atMax := installedAtMax(t.Capacity); atMax {
+			warns = append(warns, fmt.Sprintf("tech %q: operate mode sizes nothing; capacity.max %s is installed as the fixed capacity (set capacity.existing to make it explicit)", id, emit.Ftoa(v)))
+		}
+		if t.Area != nil && t.Area.Max != nil {
+			warns = append(warns, fmt.Sprintf("tech %q: operate mode sizes nothing; area.max %s is installed as the used area (area_use)", id, emit.Ftoa(*t.Area.Max)))
+		}
+	}
+	for _, id := range emit.Keys(m.Transmission) {
+		l := m.Transmission[id]
+		if _, ok := fixedCap(l.Capacity); ok {
+			fixed = true
+		}
+		if v, atMax := installedAtMax(l.Capacity); atMax {
+			warns = append(warns, fmt.Sprintf("transmission %q: operate mode sizes nothing; capacity.max %s is installed as the fixed capacity (set capacity.existing to make it explicit)", id, emit.Ftoa(v)))
+		}
+	}
+	for _, id := range emit.Keys(m.Trade) {
+		if tr := m.Trade[id]; tr.Import != nil {
+			if _, ok := tr.Import.Limit.Reduce(); ok {
+				fixed = true
+			}
+		}
+	}
+	if !fixed {
+		return warns, fmt.Errorf("mode \"operate\" on calliope needs at least one fixed capacity (a tech or transmission capacity, or an import limit): Calliope's postprocessing reads flow_cap and aborts after the solve without it")
 	}
 	return warns, nil
 }

@@ -170,7 +170,12 @@ func (Emitter) Emit(j *model.Job, outDir string) (string, error) {
 		}
 	}
 	for _, id := range emit.Keys(m.Transmission) {
-		techs.set(id, calliopeTransmission(m.Transmission[id], &anyCO2))
+		l := m.Transmission[id]
+		tn := calliopeTransmission(l, &anyCO2)
+		if mode == model.ModeOperate {
+			operateFlowCap(tn, l.Capacity)
+		}
+		techs.set(id, tn)
 	}
 
 	// trade -> market techs. Import: a supply tech selling the carrier at the
@@ -191,6 +196,11 @@ func (Emitter) Emit(j *model.Job, outDir string) (string, error) {
 			imp.set("carrier_out", tr.Carrier)
 			if f, ok := tr.Import.Limit.Reduce(); ok {
 				imp.set("flow_cap_max", f)
+				if mode == model.ModeOperate {
+					// Operate mode sizes nothing: the limit is the installed
+					// capacity (flow_cap_max has no variable left to bound).
+					imp.set("flow_cap", f)
+				}
 			}
 			// Price and emission factor share one costs-indexed parameter:
 			// monetary carries the price, the co2 class the emission factor.
@@ -466,17 +476,20 @@ func calliopeSolverOptions(s model.Solver) *yamlNode {
 }
 
 // applyOperateCaps supplies the capacity input parameters operate mode needs:
-// Calliope 0.7 deactivates the capacity decision variables (flow_cap,
-// storage_cap) in operate mode, so fixed capacities must arrive as input
-// parameters — otherwise the solve finishes but postprocessing aborts on the
-// missing flow_cap result. Storage must also opt out of cyclic behavior.
+// Calliope 0.7 deactivates every sizing decision variable (flow_cap,
+// storage_cap, source_cap, area_use) in operate mode and reads them as input
+// parameters instead (default infinite), so a *_max bound has no variable left
+// to bound. Fixed sizes must therefore arrive as inputs — otherwise the solve
+// finishes and postprocessing aborts on a missing flow_cap array, or a bound
+// is silently ignored. Imports and transmission get the same treatment in
+// Emit (operateFlowCap); storage must also opt out of cyclic behavior.
+// ValidateJob warns where capacity.max / area.max stand in for an installed
+// size and rejects a model with no fixed capacity anywhere.
 func applyOperateCaps(n *yamlNode, t model.Technology) {
 	if t.Role == model.RoleDemand {
 		return
 	}
-	if v, ok := fixedCap(t.Capacity); ok {
-		n.set("flow_cap", v)
-	}
+	operateFlowCap(n, t.Capacity)
 	if t.Role == model.RoleStorage {
 		n.set("cyclic_storage", false)
 		if t.Storage != nil {
@@ -484,6 +497,21 @@ func applyOperateCaps(n *yamlNode, t model.Technology) {
 				n.set("storage_cap", v)
 			}
 		}
+	}
+	if t.Source != nil && t.Source.Cap != nil {
+		n.set("source_cap", *t.Source.Cap)
+	}
+	if t.Area != nil && t.Area.Max != nil {
+		n.set("area_use", *t.Area.Max)
+	}
+}
+
+// operateFlowCap fixes an element's flow_cap for operate mode when its
+// capacity resolves (existing, else max); an element without any capacity
+// keeps Calliope's infinite default.
+func operateFlowCap(n *yamlNode, c *model.Capacity) {
+	if v, ok := fixedCap(c); ok {
+		n.set("flow_cap", v)
 	}
 }
 
@@ -963,9 +991,10 @@ func calliopeTransmission(l model.Transmission, anyCO2 *bool) *yamlNode {
 	if f, ok := l.Efficiency.Reduce(); ok {
 		n.set("flow_out_eff", f)
 	}
-	if l.Capacity != nil && l.Capacity.Max != nil {
-		n.set("flow_cap_max", *l.Capacity.Max)
-	}
+	// Same capacity rule as technologies: expandable bounds, or existing
+	// capacity fixed (previously only max was emitted, leaving a fixed
+	// line unbounded).
+	calliopeCapacity(n, l.Capacity)
 	if l.Distance != nil {
 		n.set("distance", *l.Distance)
 	}

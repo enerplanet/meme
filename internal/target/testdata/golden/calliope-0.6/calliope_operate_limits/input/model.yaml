@@ -1,0 +1,82 @@
+model:
+  name: calliope_operate_limits
+  calliope_version: 0.6.8
+  timeseries_data_path: timeseries_data
+run:
+  mode: operate
+  solver: cbc
+  objective_options:
+    cost_class:
+      monetary: 1
+    sense: minimize
+  operation:
+    window: 12
+    horizon: 24
+techs:
+  gen1:
+    essentials:
+      name: gen1
+      parent: supply
+      carrier_out: electricity
+    constraints:
+      energy_cap_equals: 1000
+    costs:
+      monetary:
+        om_prod: 20
+  gen2:
+    essentials:
+      name: gen2
+      parent: supply
+      carrier_out: electricity
+    constraints:
+      energy_cap_equals: 1000
+    costs:
+      monetary:
+        om_prod: 100
+  load1:
+    essentials:
+      name: load1
+      parent: demand
+      carrier_in: electricity
+  load2:
+    essentials:
+      name: load2
+      parent: demand
+      carrier_in: electricity
+  line:
+    essentials:
+      name: line
+      parent: transmission
+      carrier: electricity
+    constraints:
+      energy_eff: 1
+      energy_cap_equals: 40
+  market_import:
+    essentials:
+      name: "market import"
+      parent: supply
+      carrier_out: electricity
+    constraints:
+      energy_cap_max: 50
+      energy_cap_equals: 50
+    costs:
+      monetary:
+        om_prod: 10
+locations:
+  n1:
+    techs:
+      gen1:
+      load1:
+        constraints:
+          resource: "file=load1__resource.csv:n1"
+      market_import:
+  n2:
+    techs:
+      gen2:
+      load2:
+        constraints:
+          resource: "file=load2__resource.csv:n2"
+links:
+  n1,n2:
+    techs:
+      line: {}

@@ -912,3 +912,32 @@ func TestE2EMultiNodeDemandConsistency(t *testing.T) {
 		}
 	}
 }
+
+// TestE2EOperateLimitsConsistency pins issue #8 across frameworks: in operate
+// mode an import limit (50 MW) and a line capacity (40 MW) must bind on every
+// target. Generation at n1 costs 20, at n2 100, imports 10: the optimum per
+// hour is 50 x 10 + 20 x 20 + 60 x 100 = 6900, i.e. 165600 over 24 h. A
+// Calliope translation that leaves the import and the line unbounded imports
+// everything at 10 and lands far below.
+func TestE2EOperateLimitsConsistency(t *testing.T) {
+	requireFull(t)
+	t.Parallel()
+	const want = 24 * 6900.0
+	payload := readScenario(t, "calliope_operate_limits.json")
+	for _, tgt := range []model.Target{model.TargetPyPSA, model.TargetCalliope, model.TargetCalliope06} {
+		srv, _ := newE2EServer(t)
+		sub := submit(t, srv.URL, tgt, payload)
+		status := awaitJob(t, srv.URL, sub["id"].(string))
+		logText, _ := status["log"].(string)
+		if status["state"] != string(service.StateSucceeded) {
+			t.Fatalf("%s: job failed: %v\nlog:\n%s", tgt, status["error"], logText)
+		}
+		obj, ok := anyObjectiveFromLog(logText)
+		if !ok {
+			t.Fatalf("%s: no objective found in log:\n%s", tgt, logText)
+		}
+		if obj < want*0.99 || obj > want*1.01 {
+			t.Errorf("%s: objective = %v, want %v +-1%% (import limit and line capacity must bind)", tgt, obj, want)
+		}
+	}
+}

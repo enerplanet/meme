@@ -1,0 +1,79 @@
+config:
+  init:
+    mode: operate
+    broadcast_input_data: true
+  solve:
+    solver: cbc
+  build:
+    operate:
+      window: 12h
+      horizon: 24h
+techs:
+  gen1:
+    base_tech: supply
+    carrier_out: electricity
+    flow_cap_max: 1000
+    flow_cap_min: 1000
+    cost_flow_out:
+      data: 20
+      index: monetary
+      dims: costs
+    flow_cap: 1000
+  gen2:
+    base_tech: supply
+    carrier_out: electricity
+    flow_cap_max: 1000
+    flow_cap_min: 1000
+    cost_flow_out:
+      data: 100
+      index: monetary
+      dims: costs
+    flow_cap: 1000
+  load1:
+    base_tech: demand
+    carrier_in: electricity
+  load2:
+    base_tech: demand
+    carrier_in: electricity
+  line:
+    base_tech: transmission
+    carrier_in: electricity
+    carrier_out: electricity
+    link_from: n1
+    link_to: n2
+    flow_out_eff: 1
+    flow_cap_max: 40
+    flow_cap_min: 40
+    flow_cap: 40
+  market_import:
+    base_tech: supply
+    carrier_out: electricity
+    flow_cap_max: 50
+    flow_cap: 50
+    cost_flow_out:
+      data: [10]
+      index: [monetary]
+      dims: costs
+nodes:
+  n1:
+    techs:
+      gen1:
+      load1:
+      market_import:
+  n2:
+    techs:
+      gen2:
+      load2:
+data_tables:
+  load1__sink_use_equals:
+    table: load1__sink_use_equals.csv
+    rows: timesteps
+    columns: [techs, nodes]
+    add_dims:
+      inputs: sink_use_equals
+  load2__sink_use_equals:
+    table: load2__sink_use_equals.csv
+    rows: timesteps
+    columns: [techs, nodes]
+    add_dims:
+      inputs: sink_use_equals

@@ -1,0 +1,4 @@
+name,bus,carrier,p_nom,p_nom_extendable,p_nom_max,capital_cost,marginal_cost,efficiency
+gen1,n1::electricity,electricity,1000,False,inf,0,20,1
+gen2,n2::electricity,electricity,1000,False,inf,0,100,1
+market_import,n1::electricity,electricity,0,True,50,,10,1

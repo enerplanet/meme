@@ -1,0 +1,93 @@
+{
+  "model": {
+    "metadata": {
+      "name": "calliope_operate_limits",
+      "description": "operate mode with a limited import and a capacity-bound line between two nodes (#8): per hour import 50 x 10 + gen1 20 x 20 + gen2 60 x 100 = 6900, i.e. 165600 over 24 h on every target"
+    },
+    "time": {
+      "start": "2025-01-01",
+      "end": "2025-01-01T23:00",
+      "resolution": "1H"
+    },
+    "carriers": {
+      "electricity": {
+        "unit": "MWh"
+      }
+    },
+    "nodes": {
+      "n1": {},
+      "n2": {}
+    },
+    "technologies": {
+      "gen1": {
+        "role": "supply",
+        "node": "n1",
+        "carrier_out": "electricity",
+        "capacity": {
+          "existing": 1000,
+          "expandable": false
+        },
+        "costs": {
+          "monetary": {
+            "variable_om": 20
+          }
+        }
+      },
+      "gen2": {
+        "role": "supply",
+        "node": "n2",
+        "carrier_out": "electricity",
+        "capacity": {
+          "existing": 1000,
+          "expandable": false
+        },
+        "costs": {
+          "monetary": {
+            "variable_om": 100
+          }
+        }
+      },
+      "load1": {
+        "role": "demand",
+        "node": "n1",
+        "carrier_in": "electricity",
+        "demand_profile": 30
+      },
+      "load2": {
+        "role": "demand",
+        "node": "n2",
+        "carrier_in": "electricity",
+        "demand_profile": 100
+      }
+    },
+    "transmission": {
+      "line": {
+        "carrier": "electricity",
+        "from": "n1",
+        "to": "n2",
+        "bidirectional": true,
+        "capacity": {
+          "existing": 40,
+          "expandable": false
+        },
+        "efficiency": 1
+      }
+    },
+    "trade": {
+      "market": {
+        "node": "n1",
+        "carrier": "electricity",
+        "import": {
+          "limit": 50,
+          "price": 10
+        }
+      }
+    }
+  },
+  "experiment": {
+    "mode": "operate",
+    "solver": {
+      "name": "highs"
+    }
+  }
+}

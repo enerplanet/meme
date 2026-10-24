@@ -677,6 +677,13 @@ with a pointer to the 0.7 target.
     a tech burning two different co2 carriers would need per-carrier indexing
     (which clashes with Calliope's built-in cost expression).
   - Inline time series are materialized to data-table CSVs at emit time.
+  - Operate mode sizes nothing: Calliope reads `flow_cap`, `storage_cap`,
+    `source_cap` and `area_use` as inputs (default infinite) and ignores
+    `*_max` bounds. The emitter installs every element at its fixed size —
+    techs and lines at `capacity.existing`, else `capacity.max` (warned),
+    imports at their `limit`, `source.cap`/`area.max` as `source_cap`/
+    `area_use` — and validation rejects a model with no fixed capacity at
+    all, which Calliope would otherwise solve and then abort on (#8).
 - **Calliope 0.6 specifics** (all verified against `calliope==0.6.8`):
   - The whole model is one document: `model` (incl. `calliope_version`,
     `timeseries_data_path`), `run`, `techs`, `locations`, `links`,
@@ -889,6 +896,7 @@ directly loadable by the pinned framework (see §7), so "emits cleanly" means
 | `calliope_piecewise` | piecewise part-load curve → `piecewise_constraints` math on a fixed-capacity conversion | `piecewise_x`, `breakpoints` |
 | **`calliope_multi_node`** ✎ | one demand tech at two nodes → one data table with a column per node (#7); solves to the same objective on PyPSA and both Calliope releases (`TestE2EMultiNodeDemandConsistency`) | `techs,load,load`, `nodes,n1,n2` |
 | **`calliope_multi_node_supply`** ✎ | one PV tech with an availability series at two nodes → `source_use_max` table with a column per node (#7, supply side); same-objective check on all three targets (`TestE2EMultiNodeAvailabilityConsistency`) | `techs,pv,pv`, `source_unit: per_cap` |
+| **`calliope_operate_limits`** ✎ | operate mode with a limited import and a capacity-bound line (#8): both installed as fixed `flow_cap`; same-objective check on PyPSA and both Calliope releases (`TestE2EOperateLimitsConsistency`) | `flow_cap: 50`, `flow_cap: 40` |
 
 ### 9.3 Calliope 0.6 (`calliope-0.6`)
 

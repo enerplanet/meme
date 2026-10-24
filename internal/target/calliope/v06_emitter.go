@@ -142,6 +142,11 @@ func (Emitter06) Emit(j *model.Job, outDir string) (string, error) {
 		if err != nil {
 			return "", err
 		}
+		if mode == model.ModeOperate {
+			if v, ok := fixedCap(l.Capacity); ok {
+				operateCap06(tn, v)
+			}
+		}
 		techs.set(id, tn)
 		key := l.From + "," + l.To
 		ln, ok := links.vals[key].(*yamlNode)
@@ -158,6 +163,11 @@ func (Emitter06) Emit(j *model.Job, outDir string) (string, error) {
 			tn, err := tradeImport06(tr, id, st)
 			if err != nil {
 				return "", err
+			}
+			if mode == model.ModeOperate {
+				if f, ok := tr.Import.Limit.Reduce(); ok {
+					operateCap06(tn, f)
+				}
 			}
 			techs.set(id+"_import", tn)
 			place(tr.Node, id+"_import", nil)
@@ -840,6 +850,20 @@ func lifetime06(t model.Technology) float64 {
 		return *t.Lifetime
 	}
 	return 1
+}
+
+// operateCap06 pins an element's size for operate mode as energy_cap_equals.
+// Calliope 0.6 documents a fallback from energy_cap_max to a fixed size in
+// operate mode, but it does not reach every tech — a market import with only
+// energy_cap_max ran unbounded (issue #8) — so every sized element gets the
+// explicit value.
+func operateCap06(n *yamlNode, v float64) {
+	cons, ok := n.vals["constraints"].(*yamlNode)
+	if !ok {
+		cons = newYAML()
+		n.set("constraints", cons)
+	}
+	cons.set("energy_cap_equals", v)
 }
 
 // applyOperateCaps06 fixes every capacity for operate mode: 0.6 falls back to

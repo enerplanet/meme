@@ -220,7 +220,7 @@ storage (`Storage_Battery`) map canonically. Any other non-demand tech is
 | Property | P | C | A | Notes |
 |---|:-:|:-:|:-:|---|
 | `mode: plan` | ✓ | ✓ | ✓ | default |
-| `mode: operate` | ✓ rolling horizon (`experiment.operate.horizon`; fixed capacities enforced; no horizon-wide constraints) | ✓ receding horizon (`experiment.operate.{window,horizon}`; capacities become inputs) | ✗ | typed block wins over legacy `solver.options.operate` (deprecation warning) |
+| `mode: operate` | ✓ rolling horizon (`experiment.operate.horizon`; fixed capacities enforced; no horizon-wide constraints) | ✓ receding horizon (`experiment.operate.{window,horizon}`; every size becomes an input: techs, lines and imports are installed at `existing`, else `max` ⚠, imports at their `limit`; `source.cap` → `source_cap`, `area.max` → `area_use` ⚠; ✗ when nothing defines a capacity) | ✗ | typed block wins over legacy `solver.options.operate` (deprecation warning) |
 | `mode: alternatives` | ✓ MGA (`experiment.alternatives.slack`; baseline + alternative exported) | ✓ SPORES (`experiment.alternatives.{number,slack,scoring_algorithm}`) | ✗ | legacy `options.spores`/`options.mga` warn |
 | `mode: pareto` | ✗ | ✗ | ✓ (`experiment.pareto.points`) | |
 | `mode: monte_carlo` | ✗ | ✗ | ✓ (`experiment.monte_carlo.{samples,standard_deviation,on}`) | |

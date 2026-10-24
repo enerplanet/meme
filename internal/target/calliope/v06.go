@@ -217,12 +217,24 @@ func (Calliope06) ValidateJob(j *model.Job) ([]string, error) {
 			}
 		}
 		if mode == model.ModeOperate && t.Role != model.RoleDemand {
-			if _, ok := fixedCap(t.Capacity); !ok {
+			v, ok := fixedCap(t.Capacity)
+			if !ok {
 				return nil, fmt.Errorf("mode \"operate\" on calliope-0.6 needs a fixed capacity for every tech, but tech %q has neither capacity.existing nor capacity.max", id)
+			}
+			if t.Capacity.Existing <= 0 {
+				warns = append(warns, fmt.Sprintf("tech %q: operate mode sizes nothing; capacity.max %s is installed as the fixed capacity (set capacity.existing to make it explicit)", id, emit.Ftoa(v)))
 			}
 		}
 		if t.Area != nil && t.Area.PerCapacity == nil && (t.Source == nil || t.Source.Unit != "per_area") {
 			warns = append(warns, fmt.Sprintf("tech %q: area.max only binds on calliope-0.6 when the resource is per area (source.unit \"per_area\") or area.per_capacity is set", id))
+		}
+	}
+	if mode == model.ModeOperate {
+		for _, id := range emit.Keys(m.Transmission) {
+			l := m.Transmission[id]
+			if v, ok := fixedCap(l.Capacity); ok && l.Capacity.Existing <= 0 {
+				warns = append(warns, fmt.Sprintf("transmission %q: operate mode sizes nothing; capacity.max %s is installed as the fixed capacity (set capacity.existing to make it explicit)", id, emit.Ftoa(v)))
+			}
 		}
 	}
 	if cyclic > 0 && nonCyclic > 0 {

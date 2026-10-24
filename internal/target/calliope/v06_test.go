@@ -317,3 +317,27 @@ func TestCalliope06MultiNodeNodeData(t *testing.T) {
 		t.Errorf("demand override not written per node (negative in 0.6): %q", loadCSV[:2])
 	}
 }
+
+// Operate mode on 0.6 (issue #8): the import market and the line get an
+// explicit energy_cap_equals — 0.6's documented fallback from energy_cap_max
+// to a fixed size did not reach the market tech, which ran above its limit.
+// An expandable line is installed at capacity.max with a warning.
+func TestCalliope06OperateFixesImportAndLine(t *testing.T) {
+	j := loadScenario(t, "calliope_operate_limits.json")
+	doc := emit06(t, j)
+	wantAll(t, block(doc, "market_import"), "energy_cap_max: 50", "energy_cap_equals: 50")
+	wantAll(t, block(doc, "line"), "energy_cap_equals: 40")
+
+	l := j.Model.Transmission["line"]
+	l.Capacity = &model.Capacity{Expandable: true, Max: fp(40)}
+	j.Model.Transmission["line"] = l
+	warns, err := validateFor(&j, model.TargetCalliope06)
+	if err != nil {
+		t.Fatalf("validate: %v", err)
+	}
+	if joined := strings.Join(warns, "\n"); !strings.Contains(joined, `transmission "line"`) || !strings.Contains(joined, "capacity.max") {
+		t.Errorf("expandable line in operate mode must warn, got %v", warns)
+	}
+	doc = readFile(t, emit06Dir(t, j), "model.yaml")
+	wantAll(t, block(doc, "line"), "energy_cap_max: 40", "energy_cap_equals: 40")
+}

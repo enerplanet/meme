@@ -856,6 +856,35 @@ func TestE2ECalliope06Corpus(t *testing.T) {
 	}
 }
 
+// TestE2EMultiNodeAvailabilityConsistency does the same for the supply side
+// of issue #7: a PV technology with an availability series placed at two
+// nodes must be capped by the profile at both. With 100 MW of free PV and gas
+// at 50/MWh behind a flat 100 MW demand at each node, every target must pay
+// 2 x 50 x 100 x sum(1 - cf) = 195500; an unconstrained PV at the second node
+// would roughly halve that.
+func TestE2EMultiNodeAvailabilityConsistency(t *testing.T) {
+	requireFull(t)
+	t.Parallel()
+	const want = 2 * 50 * 100 * (24 - 4.45)
+	payload := readScenario(t, "calliope_multi_node_supply.json")
+	for _, tgt := range []model.Target{model.TargetPyPSA, model.TargetCalliope, model.TargetCalliope06} {
+		srv, _ := newE2EServer(t)
+		sub := submit(t, srv.URL, tgt, payload)
+		status := awaitJob(t, srv.URL, sub["id"].(string))
+		logText, _ := status["log"].(string)
+		if status["state"] != string(service.StateSucceeded) {
+			t.Fatalf("%s: job failed: %v\nlog:\n%s", tgt, status["error"], logText)
+		}
+		obj, ok := anyObjectiveFromLog(logText)
+		if !ok {
+			t.Fatalf("%s: no objective found in log:\n%s", tgt, logText)
+		}
+		if obj < want*0.99 || obj > want*1.01 {
+			t.Errorf("%s: objective = %v, want %v +-1%% (the availability must bind at both nodes)", tgt, obj, want)
+		}
+	}
+}
+
 // TestE2EMultiNodeDemandConsistency pins the multi-node semantics across
 // frameworks (issue #7): a demand technology placed at two nodes is one copy
 // per node, so both nodes draw the full profile. With generation only at n1

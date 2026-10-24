@@ -320,6 +320,26 @@
       "verdict": "ok"
     }
   },
+  "calliope_multi_node_supply.json": {
+    "adopt-net0": {
+      "verdict": "error: tech \"gas\" (supply) has no adopt_net0 database mapping (only pv/wind/heat_pump physics and storage map); model it via nodes.\u003cnode\u003e.native.adopt-net0 naming a database technology"
+    },
+    "calliope": {
+      "verdict": "ok",
+      "warnings": [
+        "solver \"highs\" is not usable with Calliope; emitting cbc instead"
+      ]
+    },
+    "calliope-0.6": {
+      "verdict": "ok",
+      "warnings": [
+        "solver \"highs\" is not usable with Calliope; emitting cbc instead"
+      ]
+    },
+    "pypsa": {
+      "verdict": "ok"
+    }
+  },
   "calliope_node_override.json": {
     "adopt-net0": {
       "verdict": "error: tech \"pv\" (supply) has no adopt_net0 database mapping (only pv/wind/heat_pump physics and storage map); model it via nodes.\u003cnode\u003e.native.adopt-net0 naming a database technology"

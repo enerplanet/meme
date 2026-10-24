@@ -281,3 +281,39 @@ func TestCalliope06Plan(t *testing.T) {
 		t.Errorf("plan = %+v, want the calliope-0.6 CLI", plan)
 	}
 }
+
+// Parity with the 0.7 target (issue #7): a multi-node tech's node data reaches
+// every node on 0.6 as well — one timeseries_data column per node, each
+// referenced as file=<file>:<node>, and a per-node demand_profile override
+// lands in its node's column.
+func TestCalliope06MultiNodeNodeData(t *testing.T) {
+	j := loadScenario(t, "calliope_transmission.json")
+	for _, id := range []string{"gen", "load"} {
+		tech := j.Model.Technologies[id]
+		tech.Node = model.StringList{"n1", "n2"}
+		j.Model.Technologies[id] = tech
+	}
+	setSeries(&j, "cf", 0, 0.2, 0.6, 0.9)
+	setSeries(&j, "dem2", 7, 8, 9)
+	gen := j.Model.Technologies["gen"]
+	gen.Operation = &model.Operation{MaxPU: model.Series("cf")}
+	j.Model.Technologies["gen"] = gen
+	load := j.Model.Technologies["load"]
+	load.NodeOverrides = map[string]model.NodeOverride{"n2": {DemandProfile: model.Series("dem2")}}
+	j.Model.Technologies["load"] = load
+
+	doc := emit06(t, j)
+	wantAll(t, doc,
+		`resource: "file=gen__resource.csv:n1"`, `resource: "file=gen__resource.csv:n2"`,
+		`resource: "file=load__resource.csv:n1"`, `resource: "file=load__resource.csv:n2"`,
+		"resource_unit: energy_per_cap")
+	dir := emit06Dir(t, j)
+	genCSV := strings.Split(strings.TrimSpace(readFile(t, dir, "timeseries_data/gen__resource.csv")), "\n")
+	if genCSV[0] != ",n1,n2" || !strings.HasPrefix(genCSV[1], "2025-01-01 00:00:00,0,0") || !strings.HasPrefix(genCSV[2], "2025-01-01 01:00:00,0.2,0.2") {
+		t.Errorf("availability not written per node: %q", genCSV[:3])
+	}
+	loadCSV := strings.Split(strings.TrimSpace(readFile(t, dir, "timeseries_data/load__resource.csv")), "\n")
+	if loadCSV[0] != ",n1,n2" || !strings.HasPrefix(loadCSV[1], "2025-01-01 00:00:00,-100,-7") {
+		t.Errorf("demand override not written per node (negative in 0.6): %q", loadCSV[:2])
+	}
+}

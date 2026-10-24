@@ -888,6 +888,7 @@ directly loadable by the pinned framework (see §7), so "emits cleanly" means
 | `calliope_resample` | `time_aggregation: resample` → `config.init.resample.timesteps` | `resample:`, `timesteps: 3h` |
 | `calliope_piecewise` | piecewise part-load curve → `piecewise_constraints` math on a fixed-capacity conversion | `piecewise_x`, `breakpoints` |
 | **`calliope_multi_node`** ✎ | one demand tech at two nodes → one data table with a column per node (#7); solves to the same objective on PyPSA and both Calliope releases (`TestE2EMultiNodeDemandConsistency`) | `techs,load,load`, `nodes,n1,n2` |
+| **`calliope_multi_node_supply`** ✎ | one PV tech with an availability series at two nodes → `source_use_max` table with a column per node (#7, supply side); same-objective check on all three targets (`TestE2EMultiNodeAvailabilityConsistency`) | `techs,pv,pv`, `source_unit: per_cap` |
 
 ### 9.3 Calliope 0.6 (`calliope-0.6`)
 

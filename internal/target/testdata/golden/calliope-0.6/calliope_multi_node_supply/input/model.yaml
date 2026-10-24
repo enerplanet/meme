@@ -1,0 +1,60 @@
+model:
+  name: calliope_multi_node_supply
+  calliope_version: 0.6.8
+  timeseries_data_path: timeseries_data
+run:
+  mode: plan
+  solver: cbc
+  objective_options:
+    cost_class:
+      monetary: 1
+    sense: minimize
+techs:
+  gas:
+    essentials:
+      name: gas
+      parent: supply
+      carrier_out: electricity
+    constraints:
+      energy_cap_max: 1000
+    costs:
+      monetary:
+        om_prod: 50
+  load:
+    essentials:
+      name: load
+      parent: demand
+      carrier_in: electricity
+  pv:
+    essentials:
+      name: pv
+      parent: supply
+      carrier_out: electricity
+    constraints:
+      resource_unit: energy_per_cap
+      energy_cap_equals: 100
+locations:
+  n1:
+    coordinates:
+      lat: 48.0
+      lon: 11.0
+    techs:
+      gas:
+      load:
+        constraints:
+          resource: "file=load__resource.csv:n1"
+      pv:
+        constraints:
+          resource: "file=pv__resource.csv:n1"
+  n2:
+    coordinates:
+      lat: 49.0
+      lon: 12.0
+    techs:
+      gas:
+      load:
+        constraints:
+          resource: "file=load__resource.csv:n2"
+      pv:
+        constraints:
+          resource: "file=pv__resource.csv:n2"

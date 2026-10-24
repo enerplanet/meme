@@ -1,0 +1,52 @@
+config:
+  init:
+    mode: base
+    broadcast_input_data: true
+  solve:
+    solver: cbc
+techs:
+  gas:
+    base_tech: supply
+    carrier_out: electricity
+    flow_cap_max: 1000
+    cost_flow_out:
+      data: 50
+      index: monetary
+      dims: costs
+  load:
+    base_tech: demand
+    carrier_in: electricity
+  pv:
+    base_tech: supply
+    carrier_out: electricity
+    source_unit: per_cap
+    flow_cap_max: 100
+    flow_cap_min: 100
+nodes:
+  n1:
+    latitude: 48.0
+    longitude: 11.0
+    techs:
+      gas:
+      load:
+      pv:
+  n2:
+    latitude: 49.0
+    longitude: 12.0
+    techs:
+      gas:
+      load:
+      pv:
+data_tables:
+  load__sink_use_equals:
+    table: load__sink_use_equals.csv
+    rows: timesteps
+    columns: [techs, nodes]
+    add_dims:
+      inputs: sink_use_equals
+  pv__source_use_max:
+    table: pv__source_use_max.csv
+    rows: timesteps
+    columns: [techs, nodes]
+    add_dims:
+      inputs: source_use_max

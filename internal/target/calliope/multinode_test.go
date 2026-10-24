@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/enerplanet/meme/internal/model"
+	"github.com/enerplanet/meme/internal/target/calliope"
 )
 
 // A technology listed at several nodes is one copy of the technology per node
@@ -181,5 +182,160 @@ func TestCalliopeSharedSeriesSeparateTables(t *testing.T) {
 	}
 	if _, nodes, _ := csvHeader(t, dir, f2); nodes != "nodes,n2" {
 		t.Errorf("l2 nodes header = %q, want nodes,n2", nodes)
+	}
+}
+
+// A source.max series is the third node-data path: it is written per node,
+// and when both a source series and an availability series are given the
+// source wins (both target source_use_max, one table, source's values).
+func TestCalliopeMultiNodeSourceSeries(t *testing.T) {
+	j := twoNodeTransmission(t)
+	setSeries(&j, "res", 5, 6, 7)
+	gen := j.Model.Technologies["gen"]
+	gen.Source = &model.SourceSpec{Max: model.Series("res"), Unit: "absolute"}
+	j.Model.Technologies["gen"] = gen
+	if _, err := validateFor(&j, model.TargetCalliope); err != nil {
+		t.Fatalf("validate: %v", err)
+	}
+	dir := emitCalliopeDir(t, j)
+	doc := readFile(t, dir, "model.yaml")
+	file := dataTableFile(doc, "gen__source_use_max")
+	if file == "" {
+		t.Fatalf("no gen__source_use_max data table:\n%s", doc)
+	}
+	_, nodes, first := csvHeader(t, dir, file)
+	if nodes != "nodes,n1,n2" || !strings.HasPrefix(first, "2025-01-01 00:00:00,5,5") {
+		t.Errorf("source series not written per node: nodes=%q first=%q", nodes, first)
+	}
+
+	// Source wins over availability when both are series on the same param.
+	setSeries(&j, "cf", 0.1, 0.2, 0.3)
+	gen = j.Model.Technologies["gen"]
+	gen.Operation = &model.Operation{MaxPU: model.Series("cf")}
+	j.Model.Technologies["gen"] = gen
+	if _, err := validateFor(&j, model.TargetCalliope); err != nil {
+		t.Fatalf("validate: %v", err)
+	}
+	dir = emitCalliopeDir(t, j)
+	doc = readFile(t, dir, "model.yaml")
+	if strings.Count(doc, "gen__source_use_max:") != 1 {
+		t.Errorf("want one source_use_max table, got:\n%s", doc)
+	}
+	_, _, first = csvHeader(t, dir, dataTableFile(doc, "gen__source_use_max"))
+	if !strings.HasPrefix(first, "2025-01-01 00:00:00,5,5") {
+		t.Errorf("source.max must win over the availability series, got first row %q", first)
+	}
+}
+
+// A scalar availability stays a tech-level parameter (applies at every node)
+// and creates no data table; only series are node data.
+func TestCalliopeMultiNodeScalarAvailabilityStaysOnTech(t *testing.T) {
+	j := twoNodeTransmission(t)
+	gen := j.Model.Technologies["gen"]
+	gen.Operation = &model.Operation{MaxPU: model.Num(0.4)}
+	j.Model.Technologies["gen"] = gen
+	if _, err := validateFor(&j, model.TargetCalliope); err != nil {
+		t.Fatalf("validate: %v", err)
+	}
+	doc := readFile(t, emitCalliopeDir(t, j), "model.yaml")
+	gen07 := doc[strings.Index(doc, "  gen:\n"):strings.Index(doc, "  load:\n")]
+	if !strings.Contains(gen07, "source_use_max: 0.4") || !strings.Contains(gen07, "source_unit: per_cap") {
+		t.Errorf("scalar availability must stay on the tech:\n%s", gen07)
+	}
+	if strings.Contains(doc, "gen__source_use_max") {
+		t.Errorf("a scalar availability must not create a data table:\n%s", doc)
+	}
+}
+
+// A curtailable multi-node demand targets sink_use_max, still one column per
+// node.
+func TestCalliopeMultiNodeCurtailableDemand(t *testing.T) {
+	j := twoNodeTransmission(t)
+	load := j.Model.Technologies["load"]
+	load.DemandCurtailable = true
+	j.Model.Technologies["load"] = load
+	if _, err := validateFor(&j, model.TargetCalliope); err != nil {
+		t.Fatalf("validate: %v", err)
+	}
+	dir := emitCalliopeDir(t, j)
+	doc := readFile(t, dir, "model.yaml")
+	if strings.Contains(doc, "sink_use_equals") {
+		t.Errorf("curtailable demand must not pin sink_use_equals:\n%s", doc)
+	}
+	file := dataTableFile(doc, "load__sink_use_max")
+	if file == "" {
+		t.Fatalf("no load__sink_use_max table:\n%s", doc)
+	}
+	if _, nodes, _ := csvHeader(t, dir, file); nodes != "nodes,n1,n2" {
+		t.Errorf("nodes header = %q, want nodes,n1,n2", nodes)
+	}
+}
+
+// Columns of one table share the snapshot calendar: a series shorter than
+// the calendar repeats its last value, so every row has a value per node and
+// the row count is the calendar length (the longest inline series).
+func TestCalliopeMultiNodeShortSeriesPadded(t *testing.T) {
+	j := twoNodeTransmission(t)
+	setSeries(&j, "long", 1, 2, 3, 4, 5, 6)
+	setSeries(&j, "short", 7, 8)
+	load := j.Model.Technologies["load"]
+	load.DemandProfile = model.Series("long")
+	load.NodeOverrides = map[string]model.NodeOverride{"n2": {DemandProfile: model.Series("short")}}
+	j.Model.Technologies["load"] = load
+	if _, err := validateFor(&j, model.TargetCalliope); err != nil {
+		t.Fatalf("validate: %v", err)
+	}
+	dir := emitCalliopeDir(t, j)
+	file := dataTableFile(readFile(t, dir, "model.yaml"), "load__sink_use_equals")
+	lines := strings.Split(strings.TrimSpace(readFile(t, dir, file)), "\n")
+	if len(lines) != 2+6 {
+		t.Fatalf("%d lines, want 2 header rows + 6 snapshots", len(lines))
+	}
+	for i, want := range []string{",1,7", ",2,8", ",3,8", ",4,8", ",5,8", ",6,8"} {
+		if !strings.HasSuffix(lines[2+i], want) {
+			t.Errorf("row %d = %q, want suffix %q (short series padded with its last value)", i, lines[2+i], want)
+		}
+	}
+}
+
+// A node listed twice yields one column (the table is keyed by node), not a
+// duplicate column Calliope would reject; model validation does not currently
+// reject the duplicate listing itself.
+func TestCalliopeDuplicateNodeListingOneColumn(t *testing.T) {
+	j := loadScenario(t, "calliope_plan.json")
+	load := j.Model.Technologies["load"]
+	load.Node = model.StringList{"n1", "n1"}
+	j.Model.Technologies["load"] = load
+	if _, err := validateFor(&j, model.TargetCalliope); err != nil {
+		t.Fatalf("validate: %v", err)
+	}
+	dir := emitCalliopeDir(t, j)
+	file := dataTableFile(readFile(t, dir, "model.yaml"), "load__sink_use_equals")
+	if techs, nodes, _ := csvHeader(t, dir, file); techs != "techs,load" || nodes != "nodes,n1" {
+		t.Errorf("duplicate node listing must yield one column, got %q / %q", techs, nodes)
+	}
+}
+
+// A profile that references a file-backed series cannot be materialized; the
+// error names the technology, the node and the series instead of writing an
+// empty table (validation does not inspect timeseries.source, so this is a
+// reachable path).
+func TestCalliopeFileBackedSeriesIsAnError(t *testing.T) {
+	j := twoNodeTransmission(t)
+	j.Model.Timeseries = map[string]model.TimeSeries{"ext": {Source: "file", Path: "demand.csv", Column: "n2"}}
+	load := j.Model.Technologies["load"]
+	load.NodeOverrides = map[string]model.NodeOverride{"n2": {DemandProfile: model.Series("ext")}}
+	j.Model.Technologies["load"] = load
+	if _, err := validateFor(&j, model.TargetCalliope); err != nil {
+		t.Fatalf("validate: %v", err)
+	}
+	_, err := (calliope.Calliope{}).Emit(&j, t.TempDir())
+	if err == nil {
+		t.Fatal("emit must fail for a file-backed series")
+	}
+	for _, want := range []string{`tech "load"`, `node "n2"`, `"ext"`, "inline"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q should mention %s", err, want)
+		}
 	}
 }

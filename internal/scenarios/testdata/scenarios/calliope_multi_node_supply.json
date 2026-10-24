@@ -1,0 +1,112 @@
+{
+  "model": {
+    "metadata": {
+      "name": "calliope_multi_node_supply",
+      "description": "one PV technology with an availability series placed at two nodes, backed by gas at each: the profile must bind at both (objective = 2 x 50 x 100 x (24 - 4.45) = 195500 on every target)"
+    },
+    "time": {
+      "start": "2025-01-01",
+      "end": "2025-01-01T23:00",
+      "resolution": "1H"
+    },
+    "carriers": {
+      "electricity": {
+        "unit": "MWh"
+      }
+    },
+    "nodes": {
+      "n1": {
+        "coords": {
+          "lat": 48,
+          "lon": 11
+        }
+      },
+      "n2": {
+        "coords": {
+          "lat": 49,
+          "lon": 12
+        }
+      }
+    },
+    "technologies": {
+      "pv": {
+        "role": "supply",
+        "node": [
+          "n1",
+          "n2"
+        ],
+        "carrier_out": "electricity",
+        "capacity": {
+          "existing": 100,
+          "expandable": false
+        },
+        "operation": {
+          "max_pu": "cf"
+        }
+      },
+      "gas": {
+        "role": "supply",
+        "node": [
+          "n1",
+          "n2"
+        ],
+        "carrier_out": "electricity",
+        "capacity": {
+          "expandable": true,
+          "max": 1000
+        },
+        "costs": {
+          "monetary": {
+            "variable_om": 50
+          }
+        }
+      },
+      "load": {
+        "role": "demand",
+        "node": [
+          "n1",
+          "n2"
+        ],
+        "carrier_in": "electricity",
+        "demand_profile": 100
+      }
+    },
+    "timeseries": {
+      "cf": {
+        "source": "inline",
+        "values": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0.05,
+          0.15,
+          0.3,
+          0.45,
+          0.55,
+          0.6,
+          0.62,
+          0.6,
+          0.5,
+          0.35,
+          0.2,
+          0.08,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      }
+    }
+  },
+  "experiment": {
+    "mode": "plan",
+    "solver": {
+      "name": "highs"
+    }
+  }
+}

@@ -98,6 +98,27 @@ The site is MkDocs with the Material theme; `make docs-serve` previews it,
 links in them as absolute URLs. Keep the capability reference and the
 validation gates in step: a changed verdict needs a changed row.
 
+## Releasing
+
+Versions follow [Semantic Versioning](https://semver.org); before 1.0 every
+release is a pre-release (`0.1.0-alpha`) and the API and the canonical model
+may still change between them. The git tag carries the `v` prefix Go modules
+require (`v0.1.0-alpha`); the changelog, `CITATION.cff` and the binary name
+the version without it. Nothing in the source changes for a release:
+`make build` stamps the version from the tag (`meme -version`,
+`GET /healthz`). To cut one from a green `main`:
+
+1. On a `release/<version>` branch, move the *Unreleased* entries of
+   `CHANGELOG.md` under `## [<version>] - <date>`, link the heading to the
+   release and point *Unreleased* at `compare/v<version>...HEAD`; set
+   `version` and `date-released` in `CITATION.cff`. Commit as
+   `chore(release): prepare <version>` and land it through a pull request.
+2. Tag the landed commit with a signed, annotated tag and push it:
+   `git tag -s v<version> -m "MEME <version>" && git push origin v<version>`.
+3. Publish the GitHub release from the tag with the changelog section as its
+   notes, marked as a pre-release while the version says so:
+   `gh release create v<version> --verify-tag --prerelease --title "MEME <version>" --notes-file <notes>`.
+
 ## Licensing of contributions
 
 By contributing you confirm that the contribution is your own work (or that

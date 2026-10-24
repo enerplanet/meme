@@ -56,6 +56,11 @@ func (Emitter) Emit(j *model.Job, outDir string) (string, error) {
 		return "", err
 	}
 
+	// In mode power_flow the electrical carrier is a PyPSA AC network: its
+	// buses carry v_nom under carrier "AC", its arcs become Lines and
+	// Transformers, every injection is a fixed p_set (see powerflow.go).
+	pf, isPF := powerFlowOf(j)
+
 	// buses (one per node,carrier) + carriers ---------------------------------
 	buses := &pcsv{base: []string{"name", "carrier", "x", "y"}}
 	grid := busGrid(m)
@@ -77,6 +82,10 @@ func (Emitter) Emit(j *model.Job, outDir string) (string, error) {
 				row["x"] = emit.Ftoa(n.Coords.Lon)
 				row["y"] = emit.Ftoa(n.Coords.Lat)
 			}
+			if isPF && carrier == pf.carrier && n.Electrical != nil {
+				row["carrier"] = acCarrier
+				row["v_nom"] = emit.Ftoa(n.Electrical.VNom)
+			}
 			if err := mergeNativeInto(row, n.Native.For(model.TargetPyPSA)); err != nil {
 				return "", fmt.Errorf("node %q: %w", node, err)
 			}
@@ -88,6 +97,9 @@ func (Emitter) Emit(j *model.Job, outDir string) (string, error) {
 	}
 
 	carriers := &pcsv{base: []string{"name", "co2_emissions"}}
+	if isPF {
+		carriers.add(map[string]string{"name": acCarrier, "co2_emissions": "0"})
+	}
 	for _, id := range emit.Keys(m.Carriers) {
 		c := m.Carriers[id]
 		row := map[string]string{"name": id, "co2_emissions": "0"}
@@ -108,6 +120,8 @@ func (Emitter) Emit(j *model.Job, outDir string) (string, error) {
 	loads := &pcsv{base: []string{"name", "bus", "p_set"}}
 	links := &pcsv{base: []string{"name", "bus0", "bus1", "p_nom", "p_nom_extendable", "p_nom_max", "efficiency", "capital_cost"}}
 	sus := &pcsv{base: []string{"name", "bus", "carrier", "p_nom", "p_nom_extendable", "max_hours", "efficiency_store", "efficiency_dispatch", "capital_cost"}}
+	lines := &pcsv{base: []string{"name", "bus0", "bus1", "r", "x", "s_nom", "num_parallel", "length"}}
+	trafos := &pcsv{base: []string{"name", "bus0", "bus1", "s_nom", "r", "x", "num_parallel", "tap_ratio"}}
 
 	var perfSpecs []model.PerfEntry
 	for _, id := range emit.Keys(m.Technologies) {
@@ -172,6 +186,9 @@ func (Emitter) Emit(j *model.Job, outDir string) (string, error) {
 			default:
 				continue
 			}
+			if isPF {
+				pf.injection(row, name, eff)
+			}
 			setPNomMin(row, eff.Capacity)
 			if eff.BuildYear != nil {
 				row["build_year"] = strconv.Itoa(*eff.BuildYear)
@@ -189,6 +206,20 @@ func (Emitter) Emit(j *model.Job, outDir string) (string, error) {
 	// transmission -> links across the node grid ------------------------------
 	for _, id := range emit.Keys(m.Transmission) {
 		l := m.Transmission[id]
+		if isPF && l.Electrical != nil {
+			// An AC branch of the power flow: a Line or a Transformer with its
+			// impedance and rating instead of a transport link.
+			row := pf.branch(id, l)
+			if err := mergeNativeInto(row, l.Native.For(model.TargetPyPSA)); err != nil {
+				return "", fmt.Errorf("transmission %q: %w", id, err)
+			}
+			if l.Electrical.Kind == model.ElectricalTransformer {
+				trafos.add(row)
+			} else {
+				lines.add(row)
+			}
+			continue
+		}
 		eff := 1.0
 		if f, ok := l.Efficiency.Reduce(); ok {
 			eff = f
@@ -284,6 +315,7 @@ func (Emitter) Emit(j *model.Job, outDir string) (string, error) {
 
 	for file, tbl := range map[string]*pcsv{
 		"generators.csv": gens, "loads.csv": loads, "links.csv": links, "storage_units.csv": sus,
+		"lines.csv": lines, "transformers.csv": trafos,
 	} {
 		if err := tbl.write(outDir, file); err != nil {
 			return "", err

@@ -129,10 +129,123 @@ elif MODE == "alternatives":
         ext = n.generators.index[n.generators.p_nom_extendable]
         weights = {"Generator": {"p_nom": {x: 1.0 for x in ext}}}
         status, cond = n.optimize.optimize_mga(slack=CFG["mga_slack"], weights=weights, **SOLVER_OPTS)
+elif MODE == "power_flow":
+    # No optimization: the payload fixed every injection (p_set) and the
+    # emitter wrote the AC network (buses with v_nom, lines, transformers).
+    # A linear solve first — the result for method "linear", the seed for
+    # Newton-Raphson otherwise — then the result tables under power_flow/.
+    import math
+    import pandas as pd
+
+    PF = CFG["power_flow"]
+    pf_dir = os.path.join(OUTPUT, "power_flow")
+    os.makedirs(pf_dir, exist_ok=True)
+    n_snap = len(n.snapshots)
+    converged = pd.Series(False, index=n.snapshots)
+    iterations = None
+    failure = None
+    try:
+        n.lpf()
+        if PF["method"] == "linear":
+            converged[:] = True
+        else:
+            res = n.pf(use_seed=True, x_tol=PF["tolerance"], distribute_slack=PF["distribute_slack"])
+            converged = res["converged"].all(axis=1)
+            iterations = res["n_iter"].max(axis=1)
+    except Exception as exc:  # a singular Jacobian or a NaN cascade is a failed flow, not a crash
+        failure = "%s: %s" % (type(exc).__name__, exc)
+        print("power flow aborted:", failure)
+
+    def num(x):
+        """A JSON number or None (NaN never reaches summary.json)."""
+        if x is None:
+            return None
+        x = float(x)
+        return None if math.isnan(x) or math.isinf(x) else x
+
+    def table(name, df):
+        """One result table per quantity: snapshots down, components across."""
+        if df is None or df.empty or df.shape[1] == 0:
+            return False
+        df.to_csv(os.path.join(pf_dir, name), index_label="snapshot")
+        return True
+
+    conv = pd.DataFrame({"converged": converged.astype(bool)})
+    if iterations is not None:
+        conv["iterations"] = iterations.astype(int)
+    conv.to_csv(os.path.join(pf_dir, "convergence.csv"), index_label="snapshot")
+
+    # The tables carry every snapshot (a diverged one is worth inspecting);
+    # the summary figures come from the converged snapshots only, where the
+    # numbers mean something.
+    ok_snaps = converged[converged].index
+
+    def peak(df):
+        """The largest value over the converged snapshots, or None."""
+        df = df.reindex(ok_snaps)
+        return num(df.max().max()) if not df.empty and df.shape[1] else None
+
+    def branch_tables(comp, df_t, rating):
+        """Flows at both ends, reactive flows when solved, and the loading:
+        apparent power over the rating, the larger end counting."""
+        p0, p1 = df_t.p0, df_t.p1
+        if p0.empty:
+            return None
+        table(comp + "-p0.csv", p0)
+        table(comp + "-p1.csv", p1)
+        s0, s1 = p0.abs(), p1.abs()
+        if not df_t.q0.empty:
+            table(comp + "-q0.csv", df_t.q0)
+            table(comp + "-q1.csv", df_t.q1)
+            s0 = (p0 ** 2 + df_t.q0 ** 2) ** 0.5
+            s1 = (p1 ** 2 + df_t.q1 ** 2) ** 0.5
+        load = s0.where(s0 >= s1, s1).div(rating, axis="columns")
+        table(comp + "-loading.csv", load)
+        return peak(load)
+
+    max_line = branch_tables("lines", n.lines_t, n.lines.s_nom) if len(n.lines) else None
+    max_trafo = branch_tables("transformers", n.transformers_t, n.transformers.s_nom) if len(n.transformers) else None
+    table("buses-v_mag_pu.csv", n.buses_t.v_mag_pu)
+    table("buses-v_ang.csv", n.buses_t.v_ang)
+    table("buses-p.csv", n.buses_t.p)
+    table("buses-q.csv", n.buses_t.q)
+    table("generators-p.csv", n.generators_t.p)
+    table("generators-q.csv", n.generators_t.q)
+    if len(n.storage_units):
+        table("storage_units-p.csv", n.storage_units_t.p)
+    if len(n.links):
+        table("links-p0.csv", n.links_t.p0)
+
+    ac_buses = n.buses.index[n.buses.carrier == "AC"]
+    vmag = n.buses_t.v_mag_pu.reindex(index=ok_snaps, columns=ac_buses) if not n.buses_t.v_mag_pu.empty else None
+    ac_sub = n.sub_networks[n.sub_networks.carrier == "AC"] if len(n.sub_networks) else None
+    n_ok = int(converged.sum())
+    summary = {
+        "method": PF["method"],
+        "slack": PF["slack"],
+        "slack_bus": (ac_sub.slack_bus.iloc[0] if ac_sub is not None and len(ac_sub) else None),
+        "snapshots": n_snap,
+        "converged_snapshots": n_ok,
+        "min_v_mag_pu": num(vmag.min().min()) if vmag is not None and not vmag.empty else None,
+        "max_v_mag_pu": num(vmag.max().max()) if vmag is not None and not vmag.empty else None,
+        "max_line_loading": max_line,
+        "max_transformer_loading": max_trafo,
+        "failure": failure,
+    }
+    with open(os.path.join(pf_dir, "summary.json"), "w") as fh:
+        json.dump(summary, fh, indent=2)
+    print("power flow converged %d/%d snapshots" % (n_ok, n_snap))
+    if n_ok == n_snap and failure is None:
+        status, cond = "ok", "power flow converged"
+    else:
+        status, cond = "failed", "power flow did not converge in %d snapshot(s)" % (n_snap - n_ok)
+        if failure:
+            cond += " (%s)" % failure
 else:
     status, cond = solve_plan()
 
 print("status", status, cond)
 n.export_to_netcdf(os.path.join(OUTPUT, "network.nc"))
-print("objective", n.objective)
+if MODE != "power_flow":  # a power flow has no objective
+    print("objective", n.objective)
 sys.exit(0 if status == "ok" else 3)

@@ -1,0 +1,3 @@
+name,bus,p_set
+load1,mv1::electricity,0
+load2,mv2::electricity,0

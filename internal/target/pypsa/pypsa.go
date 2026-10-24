@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/enerplanet/meme/internal/emit"
 	"github.com/enerplanet/meme/internal/model"
@@ -38,9 +39,10 @@ func (PyPSA) Capabilities() map[model.Feature]bool {
 		model.FeatModeOperate:      true, // fixed capacities + rolling-horizon dispatch
 		model.FeatModeAlternatives: true, // MGA (optimize_mga)
 		model.FeatModeStochastic:   true, // two-stage stochastic (set_scenarios)
-		// power_flow (Lines/Transformers, KVL) is NOT claimed: no canonical field
-		// emits a lines.csv — all transmission becomes transport Links. Reclaim
-		// once the schema carries electrical parameters (r, x, s_nom).
+		// power_flow: mode power_flow solves the AC network the electrical
+		// fields describe (Lines/Transformers with impedance, buses with
+		// v_nom, fixed p_set) with lpf()/pf(); see powerflow.go and ADR-0008.
+		model.FeatPowerFlow:              true,
 		model.FeatMultiCarrierConversion: true, // multi-output Links
 		model.FeatEmissionLimit:          true, // GlobalConstraint
 		model.FeatImportExport:           true, // via generators/loads + marginal_cost
@@ -102,6 +104,12 @@ func (PyPSA) ValidateJob(j *model.Job) ([]string, error) {
 		if len(m.Constraints) > 0 {
 			return nil, fmt.Errorf("mode \"stochastic\" on pypsa does not support portable linear constraints")
 		}
+	case model.ModePowerFlow:
+		pfWarns, err := validatePowerFlow(j)
+		if err != nil {
+			return nil, err
+		}
+		warns = append(warns, pfWarns...)
 	}
 
 	// Constraints that don't project onto a GlobalConstraint are applied by
@@ -255,10 +263,12 @@ func (PyPSA) Plan(j *model.Job, entrypoint string, dirs target.RunDirs) (target.
 
 // runPy drives PyPSA: import the CSV folder, apply the _constraints.json
 // sidecar as linopy constraints, branch on the experiment mode (plan, operate =
-// rolling horizon, alternatives = MGA, stochastic = set_scenarios), export the
-// solved network, and exit non-zero unless the solve is optimal. The static
-// body is embedded from internal/scripts/pypsa_run.py; this prepends the run
-// configuration.
+// rolling horizon, alternatives = MGA, stochastic = set_scenarios, power_flow =
+// lpf/pf), export the solved network, and exit non-zero unless the solve is
+// optimal (or the power flow converged). The static body is embedded from
+// internal/scripts/pypsa_run.py; this prepends the run configuration as JSON
+// the script parses — JSON is not a Python literal (false/true/null), so it is
+// never pasted in as one.
 func runPy(j *model.Job, inputDir, outDir string) string {
 	e := &j.Experiment
 	// First-class experiment blocks win over the legacy solver.options
@@ -283,8 +293,21 @@ func runPy(j *model.Job, inputDir, outDir string) string {
 	if so := solverOptions(e.Solver); so != nil {
 		cfgMap["solver_options"] = so
 	}
+	// Only a power flow carries its block, so every other run.py stays
+	// byte-identical to its golden.
+	if pf, ok := powerFlowOf(j); ok {
+		cfgMap["power_flow"] = map[string]any{
+			"method":           pf.opts.EffectiveMethod(),
+			"slack":            pf.slack,
+			"distribute_slack": pf.opts.DistributeSlack,
+			"tolerance":        pf.opts.EffectiveTolerance(),
+		}
+	}
 	cfg, _ := json.Marshal(cfgMap)
-	return "CFG = " + string(cfg) + "\n" + scripts.PyPSARun
+	// A single quote cannot appear in the raw triple-quoted Python string:
+	// escape it as the JSON code point it is.
+	literal := strings.ReplaceAll(string(cfg), "'", `\u0027`)
+	return "import json\nCFG = json.loads(r'''" + literal + "''')\n" + scripts.PyPSARun
 }
 
 // solverOptions maps the canonical solver fields (time_limit seconds, mip_gap,

@@ -20,8 +20,10 @@ type seriesRef struct {
 // generators-p_max_pu.csv / p_min_pu.csv (availability and series trade
 // limits), generators-marginal_cost.csv (series variable_om and trade prices),
 // links-marginal_cost.csv (series variable_om on conversions) and
-// storage_units-inflow.csv. This completes the emitter's writeTimeVarying
-// hook — a series-valued parameter never silently collapses to a scalar.
+// storage_units-inflow.csv, and in a power flow the fixed dispatch series as
+// generators-/storage_units-/links-p_set.csv. This completes the emitter's
+// writeTimeVarying hook — a series-valued parameter never silently collapses
+// to a scalar.
 func MaterializeTimeSeries(m *model.Model, dir string) error {
 	files := map[string]map[string]seriesRef{} // file -> component -> series
 	addScaled := func(file, component, seriesID string, scale float64) {
@@ -39,6 +41,14 @@ func MaterializeTimeSeries(m *model.Model, dir string) error {
 				name = id + "@" + node
 			}
 			eff := t.At(node)
+			// A fixed dispatch (power flow) is the component's p_set; validation
+			// admits it in mode power_flow only, so no optimization run sees
+			// these files.
+			if eff.Dispatch.IsSeries() {
+				if file, ok := dispatchFile[eff.Role]; ok {
+					add(file, name, eff.Dispatch.SeriesID())
+				}
+			}
 			switch eff.Role {
 			case model.RoleDemand:
 				if eff.DemandProfile.IsSeries() {

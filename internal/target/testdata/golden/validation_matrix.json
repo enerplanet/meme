@@ -736,6 +736,20 @@
       "verdict": "ok"
     }
   },
+  "pypsa_power_flow.json": {
+    "adopt-net0": {
+      "verdict": "error: mode \"power_flow\" is not supported by target \"adopt-net0\""
+    },
+    "calliope": {
+      "verdict": "error: mode \"power_flow\" is not supported by target \"calliope\""
+    },
+    "calliope-0.6": {
+      "verdict": "error: mode \"power_flow\" is not supported by target \"calliope-0.6\""
+    },
+    "pypsa": {
+      "verdict": "ok"
+    }
+  },
   "pypsa_stochastic.json": {
     "adopt-net0": {
       "verdict": "error: mode \"stochastic\" is not supported by target \"adopt-net0\""

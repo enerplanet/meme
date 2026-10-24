@@ -29,6 +29,7 @@ var featureScenarios = map[model.Target]map[model.Feature]string{
 		model.FeatCommittable:            "pypsa_committable.json",
 		model.FeatNodeOverride:           "pypsa_node_override.json",
 		model.FeatLinearConstraint:       "pypsa_constraints_sidecar.json",
+		model.FeatPowerFlow:              "pypsa_power_flow.json",
 	},
 	model.TargetCalliope: {
 		model.FeatModePlan:               "calliope_plan.json",

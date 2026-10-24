@@ -74,9 +74,40 @@ func modeFeature(m model.Mode) model.Feature {
 		return model.FeatModeMonteCarlo
 	case model.ModeStochastic:
 		return model.FeatModeStochastic
+	case model.ModePowerFlow:
+		return model.FeatPowerFlow
 	default:
 		return model.FeatModePlan
 	}
+}
+
+// electricalIDs lists the arcs and nodes carrying electrical parameters.
+func electricalIDs(m *model.Model) (arcs, nodes []string) {
+	for _, id := range sortedTransmissionIDs(m) {
+		if m.Transmission[id].Electrical != nil {
+			arcs = append(arcs, id)
+		}
+	}
+	for _, id := range sortedKeys(m.Nodes) {
+		if m.Nodes[id].Electrical != nil {
+			nodes = append(nodes, id)
+		}
+	}
+	return arcs, nodes
+}
+
+// hasDispatch reports whether a technology fixes its dispatch anywhere (base
+// field or a per-node override).
+func hasDispatch(t model.Technology) bool {
+	if t.Dispatch != nil {
+		return true
+	}
+	for _, ov := range t.NodeOverrides {
+		if ov.Dispatch != nil {
+			return true
+		}
+	}
+	return false
 }
 
 // validateGeneric holds every gate that is purely capability-driven — no
@@ -94,6 +125,53 @@ func validateGeneric(t Target, j *model.Job) ([]string, error) {
 	}
 	if !caps[modeFeature(mode)] {
 		return nil, fmt.Errorf("mode %q is not supported by target %q", mode, t.Name())
+	}
+
+	// Power-flow inputs (ADR-0008). A fixed dispatch only means something
+	// where nothing is optimized: in every optimization mode the solver
+	// decides dispatch, so the field is rejected with a pointer to the knob
+	// that pins dispatch there. Electrical parameters, by contrast, are
+	// harmless outside a power flow — the same model serves the planning call
+	// and the power-flow call — so they are named as unused and the arcs stay
+	// transport links. Inside a power flow nothing may be a decision.
+	if mode != model.ModePowerFlow {
+		for _, id := range sortedTechIDs(m) {
+			if hasDispatch(m.Technologies[id]) {
+				return nil, fmt.Errorf("tech %q: dispatch is a power-flow input (mode power_flow); in mode %q the solver decides dispatch, pin it with operation.equals_pu instead", id, mode)
+			}
+		}
+		if arcs, nodes := electricalIDs(m); len(arcs)+len(nodes) > 0 {
+			warns = append(warns, fmt.Sprintf("electrical parameters on transmission %v and nodes %v are only used by a power flow (mode power_flow on a target with the power_flow capability); in mode %q the arcs are emitted as transport links", arcs, nodes, mode))
+		}
+	} else {
+		for _, id := range sortedTechIDs(m) {
+			if c := m.Technologies[id].Capacity; c != nil && c.Expandable {
+				return nil, fmt.Errorf("mode %q has no decision variables, but tech %q is expandable", mode, id)
+			}
+			for _, nid := range sortedKeys(m.Technologies[id].NodeOverrides) {
+				if c := m.Technologies[id].NodeOverrides[nid].Capacity; c != nil && c.Expandable {
+					return nil, fmt.Errorf("mode %q has no decision variables, but tech %q is expandable at node %q", mode, id, nid)
+				}
+			}
+		}
+		for _, id := range sortedTransmissionIDs(m) {
+			if c := m.Transmission[id].Capacity; c != nil && c.Expandable {
+				return nil, fmt.Errorf("mode %q has no decision variables, but transmission %q is expandable", mode, id)
+			}
+		}
+		for _, d := range []struct {
+			used bool
+			what string
+		}{
+			{len(m.Trade) > 0, "trade (import/export)"},
+			{len(m.Constraints) > 0, "constraints"},
+			{len(m.EmissionLimits) > 0, "emission_limits"},
+			{len(e.Scenarios) > 0, "scenarios"},
+		} {
+			if d.used {
+				return nil, fmt.Errorf("mode %q has no decision variables, but the payload carries %s", mode, d.what)
+			}
+		}
 	}
 
 	obj := e.Objective

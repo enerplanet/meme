@@ -1,0 +1,4 @@
+name,carrier,x,y,v_nom
+hv::electricity,AC,11,48,110
+mv1::electricity,AC,11.1,48.1,20
+mv2::electricity,AC,11.2,48.2,20

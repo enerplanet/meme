@@ -1,0 +1,221 @@
+// Copyright (c) 2026 BigGeoData & Spatial AI, Technische Hochschule Deggendorf
+// SPDX-License-Identifier: MIT
+
+package pypsa
+
+import (
+	"fmt"
+	"sort"
+	"strings"
+
+	"github.com/enerplanet/meme/internal/emit"
+	"github.com/enerplanet/meme/internal/model"
+)
+
+// acCarrier is the bus carrier PyPSA treats as an electrical sub-network: the
+// power-flow routines build an admittance matrix for "AC" buses only, so the
+// electrical carrier's buses are emitted under this name in mode power_flow.
+const acCarrier = "AC"
+
+// dispatchFile maps a role onto the time-varying p_set file its component
+// reads in a power flow.
+var dispatchFile = map[model.Role]string{
+	model.RoleSupply:     "generators-p_set.csv",
+	model.RoleStorage:    "storage_units-p_set.csv",
+	model.RoleConversion: "links-p_set.csv",
+}
+
+// powerFlow is the resolved power-flow configuration of a job (ADR-0008): the
+// carrier whose network is solved, the emitted name of the slack generator,
+// and the run options. powerFlowOf yields it for mode power_flow only.
+type powerFlow struct {
+	carrier string
+	slack   string
+	opts    *model.PowerFlowOptions
+}
+
+// powerFlowOf resolves the power-flow configuration of a job that validated
+// for mode power_flow; ok is false for every other mode.
+func powerFlowOf(j *model.Job) (powerFlow, bool) {
+	if j.Experiment.EffectiveMode() != model.ModePowerFlow {
+		return powerFlow{}, false
+	}
+	carriers := electricalCarriers(&j.Model)
+	pf := powerFlow{opts: j.Experiment.PowerFlow}
+	if pf.opts == nil {
+		pf.opts = &model.PowerFlowOptions{}
+	}
+	if len(carriers) > 0 {
+		pf.carrier = carriers[0]
+	}
+	if name, _, err := slackComponent(&j.Model, pf.carrier, pf.opts.Slack); err == nil {
+		pf.slack = name
+	}
+	return pf, true
+}
+
+// electricalCarriers lists the distinct carriers of the arcs that carry
+// electrical parameters, sorted.
+func electricalCarriers(m *model.Model) []string {
+	seen := map[string]bool{}
+	for _, l := range m.Transmission {
+		if l.Electrical != nil {
+			seen[l.Carrier] = true
+		}
+	}
+	return emit.Keys(seen)
+}
+
+// slackComponent resolves experiment.power_flow.slack ("tech" or "tech@node")
+// onto the emitted generator name of a supply technology on the electrical
+// carrier. A technology placed at several nodes must be spelled tech@node.
+func slackComponent(m *model.Model, carrier, slack string) (name, node string, err error) {
+	if slack == "" {
+		return "", "", fmt.Errorf("experiment.power_flow.slack is required: the supply technology that balances the AC network (id, or id@node)")
+	}
+	tid, nid, hasNode := strings.Cut(slack, "@")
+	t, ok := m.Technologies[tid]
+	if !ok || t.Role != model.RoleSupply || t.CarrierOut.First() != carrier {
+		return "", "", fmt.Errorf("experiment.power_flow.slack %q names no supply technology on the %s network", slack, carrier)
+	}
+	switch {
+	case hasNode && !model.ContainsStr(t.Node, nid):
+		return "", "", fmt.Errorf("experiment.power_flow.slack %q: tech %q is not placed at node %q", slack, tid, nid)
+	case !hasNode && len(t.Node) > 1:
+		return "", "", fmt.Errorf("experiment.power_flow.slack %q: tech %q is placed at %v; spell the slack as id@node", slack, tid, t.Node)
+	case !hasNode:
+		nid = t.Node[0]
+	}
+	return componentName(tid, t, nid), nid, nil
+}
+
+// componentName is the emitted name of a technology's instance at a node: the
+// id alone for a single-node technology, id@node otherwise (as Emit names it).
+func componentName(id string, t model.Technology, node string) string {
+	if len(t.Node) > 1 {
+		return id + "@" + node
+	}
+	return id
+}
+
+// validatePowerFlow holds the PyPSA preconditions of mode power_flow: one AC
+// network with a voltage level on every bus it touches and an impedance and a
+// rating on every arc of it, a named slack, and a fixed dispatch for every
+// injection that is not the slack. The generic gates already rejected every
+// decision variable (expandable capacities, trade, constraints, scenarios).
+func validatePowerFlow(j *model.Job) ([]string, error) {
+	m := &j.Model
+	carriers := electricalCarriers(m)
+	switch len(carriers) {
+	case 0:
+		return nil, fmt.Errorf("mode \"power_flow\" needs at least one transmission with electrical parameters (kind, r, x): the arcs of the AC network to solve")
+	case 1:
+	default:
+		return nil, fmt.Errorf("electrical arcs span carriers %v; a power flow solves one AC network", carriers)
+	}
+	carrier := carriers[0]
+
+	for _, id := range emit.Keys(m.Transmission) {
+		l := m.Transmission[id]
+		if l.Carrier == carrier && l.Electrical == nil {
+			return nil, fmt.Errorf("transmission %q carries %s without electrical parameters; a power flow needs kind, r and x on every arc of the network", id, carrier)
+		}
+		if l.Electrical != nil {
+			if _, ok := l.Electrical.Rating(l.Capacity); !ok {
+				return nil, fmt.Errorf("transmission %q needs electrical.s_nom or capacity.existing (the branch rating for the loading output)", id)
+			}
+		}
+	}
+
+	// Every bus of the network needs a voltage level; the other carriers'
+	// buses ride along as fixed injections the power flow does not balance.
+	grid := busGrid(m)
+	var acNodes, others []string
+	otherSet := map[string]bool{}
+	for pair := range grid {
+		if pair[1] == carrier {
+			acNodes = append(acNodes, pair[0])
+		} else {
+			otherSet[pair[1]] = true
+		}
+	}
+	sort.Strings(acNodes)
+	for _, node := range acNodes {
+		if n := m.Nodes[node]; n.Electrical == nil || n.Electrical.VNom <= 0 {
+			return nil, fmt.Errorf("node %q hosts %s components but has no electrical.v_nom (the voltage level of its AC bus)", node, carrier)
+		}
+	}
+	others = emit.Keys(otherSet)
+
+	slackName, _, err := slackComponent(m, carrier, j.Experiment.PowerFlow.SlackOrEmpty())
+	if err != nil {
+		return nil, err
+	}
+	for _, id := range emit.Keys(m.Technologies) {
+		t := m.Technologies[id]
+		if t.Role == model.RoleDemand || !t.IsActive() {
+			continue
+		}
+		for _, node := range t.Node {
+			name := componentName(id, t, node)
+			if name == slackName {
+				continue
+			}
+			if t.At(node).Dispatch == nil {
+				return nil, fmt.Errorf("mode \"power_flow\" needs a fixed dispatch for tech %q (only the slack %q balances); set technology.dispatch", name, slackName)
+			}
+		}
+	}
+
+	var warns []string
+	if len(others) > 0 {
+		warns = append(warns, fmt.Sprintf("power flow balances the %s network only; carriers %v are carried as fixed injections and not balanced", carrier, others))
+	}
+	if s := j.Experiment.Solver; s.TimeLimit != nil || s.MIPGap != nil || s.Threads != nil || len(s.Options) > 0 {
+		warns = append(warns, "solver settings are not used by a power flow (it is not an optimization)")
+	}
+	return warns, nil
+}
+
+// injection writes a component's power-flow attributes: the fixed p_set (a
+// scalar here, a series through MaterializeTimeSeries) and, for generators,
+// the control type — Slack for the balancing technology, PQ otherwise.
+func (pf powerFlow) injection(row map[string]string, name string, t model.Technology) {
+	if _, ok := dispatchFile[t.Role]; !ok {
+		return
+	}
+	if f, ok := t.Dispatch.Reduce(); ok {
+		row["p_set"] = emit.Ftoa(f)
+	} else {
+		row["p_set"] = "0"
+	}
+	if t.Role == model.RoleSupply {
+		row["control"] = "PQ"
+		if name == pf.slack {
+			row["control"] = "Slack"
+		}
+	}
+}
+
+// branch builds the Line or Transformer row of an electrical arc.
+func (pf powerFlow) branch(id string, l model.Transmission) map[string]string {
+	e := l.Electrical
+	rating, _ := e.Rating(l.Capacity)
+	row := map[string]string{
+		"name": id, "bus0": BusID(l.From, l.Carrier), "bus1": BusID(l.To, l.Carrier),
+		"r": emit.Ftoa(e.R), "x": emit.Ftoa(e.X), "s_nom": emit.Ftoa(rating),
+		"num_parallel": fmt.Sprint(e.Circuits()),
+	}
+	if e.Kind == model.ElectricalTransformer {
+		row["tap_ratio"] = emit.Ftoa(e.Tap())
+	} else {
+		row["length"] = "0"
+		if l.Distance != nil {
+			row["length"] = emit.Ftoa(*l.Distance)
+		}
+	}
+	if !l.IsActive() {
+		row["active"] = "False"
+	}
+	return row
+}

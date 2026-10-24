@@ -75,6 +75,9 @@ func TestScenarios(t *testing.T) {
 		{"pypsa_stochastic.json", model.TargetPyPSA, []string{"fuel_high", "marginal_cost", "90"}},
 		{"pypsa_constraints_sidecar.json", model.TargetPyPSA, []string{"force_pv", "capacity"}},
 		{"pypsa_trade_price_series.json", model.TargetPyPSA, []string{"market_import"}},
+		// An AC network: buses with a voltage level, a line and a transformer
+		// table, a slack generator and fixed dispatch.
+		{"pypsa_power_flow.json", model.TargetPyPSA, []string{"v_nom", "num_parallel", "tap_ratio", "Slack", "snapshot,pv"}},
 
 		// --- Calliope ---
 		{"calliope_plan.json", model.TargetCalliope, []string{"mode: base", "base_tech: supply", "solver: cbc"}},
@@ -170,6 +173,14 @@ func TestScenariosCapabilityGating(t *testing.T) {
 			if _, err := target.ValidateFor(&j, tgt); err == nil {
 				t.Errorf("%s should be rejected for %s (AdOpT-only mode)", f, tgt)
 			}
+		}
+	}
+	// power_flow is a PyPSA-only run mode (the only target with an electrical
+	// network); every other target rejects it through the mode gate.
+	pf := load("pypsa_power_flow.json")
+	for _, tgt := range []model.Target{model.TargetCalliope, model.TargetCalliope06, model.TargetAdOpt} {
+		if _, err := target.ValidateFor(&pf, tgt); err == nil || !strings.Contains(err.Error(), "power_flow") {
+			t.Errorf("pypsa_power_flow.json should be rejected for %s (PyPSA-only mode), got %v", tgt, err)
 		}
 	}
 	td := load("adopt_typicaldays.json")

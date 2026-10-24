@@ -1,0 +1,2 @@
+name,bus0,bus1,r,x,s_nom,num_parallel,length
+l12,mv1::electricity,mv2::electricity,1.2,3.5,20,1,10

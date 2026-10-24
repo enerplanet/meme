@@ -73,8 +73,10 @@ var scoringAlgorithms = map[string]bool{
 
 // Mode is the kind of run to perform. Each maps either to a target's native run
 // configuration (operate/alternatives -> Calliope, pareto/monte_carlo -> AdOpT,
-// stochastic -> PyPSA) or to orchestration the service performs itself (a sweep
-// is N plan runs). Capability support is declared in capability.go.
+// stochastic and power_flow -> PyPSA) or to orchestration the service performs
+// itself (a sweep is N plan runs). Capability support is declared in
+// capability.go. power_flow is the one mode that optimizes nothing: it solves
+// the AC network for the fixed dispatch the payload carries (ADR-0008).
 type Mode string
 
 const (
@@ -84,12 +86,13 @@ const (
 	ModePareto       Mode = "pareto"       // multi-objective front
 	ModeMonteCarlo   Mode = "monte_carlo"  // parametric uncertainty sampling
 	ModeStochastic   Mode = "stochastic"   // scenario-weighted stochastic program
+	ModePowerFlow    Mode = "power_flow"   // fixed dispatch, AC power flow; no optimization
 )
 
 // Valid reports whether m is a defined run mode or unset (= plan).
 func (m Mode) Valid() bool {
 	switch m {
-	case "", ModePlan, ModeOperate, ModeAlternatives, ModePareto, ModeMonteCarlo, ModeStochastic:
+	case "", ModePlan, ModeOperate, ModeAlternatives, ModePareto, ModeMonteCarlo, ModeStochastic, ModePowerFlow:
 		return true
 	}
 	return false
@@ -175,6 +178,7 @@ type Experiment struct {
 	Alternatives       *AlternativesOptions `json:"alternatives,omitempty"`
 	Pareto             *ParetoOptions       `json:"pareto,omitempty"`
 	MonteCarlo         *MonteCarloOptions   `json:"monte_carlo,omitempty"`
+	PowerFlow          *PowerFlowOptions    `json:"power_flow,omitempty"`
 	AllowUnmetDemand   *AllowUnmetDemand    `json:"allow_unmet_demand,omitempty"`
 	// Copperplate drops all inter-node transport constraints (AdOpT
 	// energybalance.copperplate; rejected elsewhere).
@@ -241,6 +245,16 @@ func (e *Experiment) Validate() error {
 	}
 	if p := e.Pareto; p != nil && p.Points < 0 {
 		add("experiment.pareto.points must not be negative")
+	}
+	if pf := e.PowerFlow; pf != nil {
+		switch pf.Method {
+		case "", PowerFlowNewtonRaphson, PowerFlowLinear:
+		default:
+			add("experiment.power_flow.method %q is invalid (newton_raphson or linear)", pf.Method)
+		}
+		if pf.Tolerance != nil && *pf.Tolerance <= 0 {
+			add("experiment.power_flow.tolerance must be positive")
+		}
 	}
 	if mc := e.MonteCarlo; mc != nil {
 		if mc.Samples < 0 {
@@ -331,6 +345,7 @@ func (e *Experiment) OptionWarnings() []string {
 		{e.Alternatives != nil, "alternatives", ModeAlternatives},
 		{e.Pareto != nil, "pareto", ModePareto},
 		{e.MonteCarlo != nil, "monte_carlo", ModeMonteCarlo},
+		{e.PowerFlow != nil, "power_flow", ModePowerFlow},
 	}
 	for _, b := range blocks {
 		if b.set && mode != b.mode {

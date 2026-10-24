@@ -160,7 +160,10 @@ func (m *Model) Validate() error {
 		if t.Role == RoleDemand && t.DemandProfile == nil {
 			add("tech %q: role is demand but no demand_profile given", id)
 		}
-		for _, v := range []*Value{t.Efficiency, t.DemandProfile} {
+		if t.Role == RoleDemand && t.Dispatch != nil {
+			add("tech %q: dispatch applies to supply, conversion and storage; demand uses demand_profile", id)
+		}
+		for _, v := range []*Value{t.Efficiency, t.DemandProfile, t.Dispatch} {
 			if v != nil && !hasSeries(v) {
 				add("tech %q: time-series %q not defined", id, v.SeriesID())
 			}
@@ -298,6 +301,9 @@ func (m *Model) Validate() error {
 		n := m.Nodes[nid]
 		if n.AvailableArea != nil && *n.AvailableArea < 0 {
 			add("node %q: available_area must not be negative", nid)
+		}
+		if n.Electrical != nil && n.Electrical.VNom <= 0 {
+			add("node %q: electrical.v_nom must be positive", nid)
 		}
 		for _, col := range keysOf(n.Climate) {
 			// Climate columns feed interned series ids, so they follow the
@@ -442,9 +448,53 @@ func (m *Model) Validate() error {
 		}
 		validateCapacity(add, "transmission "+id, l.Capacity)
 		validateCosts(add, "transmission "+id, l.Costs)
+		validateElectrical(add, m, id, l)
 	}
 
 	return errors.Join(errs...)
+}
+
+// validateElectrical checks an arc's AC-branch parameters: the branch kind,
+// the physical ranges, that a tap ratio belongs to a transformer, that the
+// arc is bidirectional (power flows both ways over a line), and that a line
+// joins nodes of one voltage level (a transformer joins two).
+func validateElectrical(add func(string, ...any), m *Model, id string, l Transmission) {
+	e := l.Electrical
+	if e == nil {
+		return
+	}
+	if !e.Kind.Valid() {
+		add("transmission %q: electrical.kind %q is invalid (line or transformer)", id, e.Kind)
+	}
+	if e.X <= 0 {
+		add("transmission %q: electrical.x must be positive", id)
+	}
+	if e.R < 0 {
+		add("transmission %q: electrical.r must not be negative", id)
+	}
+	if e.SNom != nil && *e.SNom <= 0 {
+		add("transmission %q: electrical.s_nom must be positive", id)
+	}
+	if e.NumParallel != nil && *e.NumParallel < 1 {
+		add("transmission %q: electrical.num_parallel must be at least 1", id)
+	}
+	if e.TapRatio != nil {
+		if e.Kind == ElectricalLine {
+			add("transmission %q: electrical.tap_ratio applies to a transformer only", id)
+		}
+		if *e.TapRatio <= 0 {
+			add("transmission %q: electrical.tap_ratio must be positive", id)
+		}
+	}
+	if !l.Bidirectional {
+		add("transmission %q: an electrical arc carries power both ways; set bidirectional: true", id)
+	}
+	if e.Kind == ElectricalLine {
+		from, to := m.Nodes[l.From].Electrical, m.Nodes[l.To].Electrical
+		if from != nil && to != nil && from.VNom != to.VNom {
+			add("transmission %q: a line connects nodes of equal nominal voltage (%s %g kV, %s %g kV); use kind \"transformer\"", id, l.From, from.VNom, l.To, to.VNom)
+		}
+	}
 }
 
 // parseDate parses s under one of the ISO 8601 layouts the emit layer accepts
@@ -682,7 +732,7 @@ func validateCosts(add func(string, ...any), where string, costs map[string]Cost
 // sync with Model.InternInlineSeries, which walks the same slots.
 
 func techValues(t Technology) []*Value {
-	vs := []*Value{t.Efficiency, t.DemandProfile}
+	vs := []*Value{t.Efficiency, t.DemandProfile, t.Dispatch}
 	if t.Operation != nil {
 		vs = append(vs, t.Operation.MaxPU, t.Operation.MinPU, t.Operation.EqualsPU)
 	}
@@ -699,7 +749,7 @@ func techValues(t Technology) []*Value {
 }
 
 func overrideValues(ov NodeOverride) []*Value {
-	vs := []*Value{ov.Efficiency, ov.DemandProfile}
+	vs := []*Value{ov.Efficiency, ov.DemandProfile, ov.Dispatch}
 	if ov.Operation != nil {
 		vs = append(vs, ov.Operation.MaxPU, ov.Operation.MinPU, ov.Operation.EqualsPU)
 	}

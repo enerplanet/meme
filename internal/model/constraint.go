@@ -38,6 +38,9 @@ func (t Technology) At(node string) Technology {
 	if ov.DemandProfile != nil {
 		e.DemandProfile = ov.DemandProfile
 	}
+	if ov.Dispatch != nil {
+		e.Dispatch = ov.Dispatch
+	}
 	if ov.Area != nil {
 		e.Area = ov.Area
 	}

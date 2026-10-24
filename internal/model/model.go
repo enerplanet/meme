@@ -92,7 +92,10 @@ type Node struct {
 	AllowedTechs  []string         `json:"allowed_techs,omitempty"`
 	AvailableArea *float64         `json:"available_area,omitempty"` // Calliope area budget at this node
 	Climate       map[string]Value `json:"climate,omitempty"`        // AdOpT weather series (ghi, dni, dhi, temp_air, rh, ws10, hydro_inflow); scalar or timeseries ref
-	Native        *Native          `json:"native,omitempty"`
+	// Electrical is the node's AC bus for a power flow (nominal voltage);
+	// unused by optimization runs.
+	Electrical *NodeElectrical `json:"electrical,omitempty"`
+	Native     *Native         `json:"native,omitempty"`
 }
 
 // Coords is a WGS84 position; Alt is metres above sea level (consumed by
@@ -155,9 +158,17 @@ type Technology struct {
 	Active *bool `json:"active,omitempty"`
 	// DemandCurtailable turns the demand profile into an upper bound instead
 	// of an equality (Calliope sink_use_max; rejected elsewhere).
-	DemandCurtailable bool                    `json:"demand_curtailable,omitempty"`
-	NodeOverrides     map[string]NodeOverride `json:"node_overrides,omitempty"` // per-node parameter overrides
-	Native            *Native                 `json:"native,omitempty"`
+	DemandCurtailable bool `json:"demand_curtailable,omitempty"`
+	// Dispatch is the fixed active-power output per timestep (MW) a power
+	// flow injects for this technology (PyPSA p_set): output for supply and
+	// conversion (at the reference input), discharge (negative = charging)
+	// for storage; demand keeps demand_profile. It is a power-flow input: in
+	// an optimization the solver decides dispatch (pin it with
+	// operation.equals_pu there), so ValidateFor rejects it outside mode
+	// power_flow.
+	Dispatch      *Value                  `json:"dispatch,omitempty"`
+	NodeOverrides map[string]NodeOverride `json:"node_overrides,omitempty"` // per-node parameter overrides
+	Native        *Native                 `json:"native,omitempty"`
 }
 
 // IsActive reports whether the technology takes part in the model (Active nil
@@ -176,6 +187,7 @@ type NodeOverride struct {
 	Operation     *Operation           `json:"operation,omitempty"`
 	Storage       *Storage             `json:"storage,omitempty"`
 	DemandProfile *Value               `json:"demand_profile,omitempty"`
+	Dispatch      *Value               `json:"dispatch,omitempty"`
 	Area          *AreaSpec            `json:"area,omitempty"`
 	Source        *SourceSpec          `json:"source,omitempty"`
 	Costs         map[string]CostClass `json:"costs,omitempty"`
@@ -398,6 +410,10 @@ type Transmission struct {
 	// multi-port link withdrawing from the aux bus; rejected elsewhere).
 	EnergyConsumption *TransportEnergy     `json:"energy_consumption,omitempty"`
 	Costs             map[string]CostClass `json:"costs,omitempty"`
+	// Electrical makes the arc an AC branch for a power flow (a line with its
+	// impedance, or a transformer with its rating); unused by optimization
+	// runs, which emit the arc as a transport link.
+	Electrical *TransmissionElectrical `json:"electrical,omitempty"`
 	// Active deactivates the arc without deleting it (nil = active).
 	Active *bool   `json:"active,omitempty"`
 	Native *Native `json:"native,omitempty"`

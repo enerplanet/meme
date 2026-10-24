@@ -52,6 +52,7 @@ func (m *Model) InternInlineSeries() error {
 		t := m.Technologies[tid]
 		intern(key("tech", tid, "efficiency"), t.Efficiency)
 		intern(key("tech", tid, "demand_profile"), t.DemandProfile)
+		intern(key("tech", tid, "dispatch"), t.Dispatch)
 		if t.Operation != nil {
 			intern(key("tech", tid, "max_pu"), t.Operation.MaxPU)
 			intern(key("tech", tid, "min_pu"), t.Operation.MinPU)
@@ -75,6 +76,7 @@ func (m *Model) InternInlineSeries() error {
 			ov := t.NodeOverrides[nid]
 			intern(key("tech", tid, nid, "efficiency"), ov.Efficiency)
 			intern(key("tech", tid, nid, "demand_profile"), ov.DemandProfile)
+			intern(key("tech", tid, nid, "dispatch"), ov.Dispatch)
 			if ov.Operation != nil {
 				intern(key("tech", tid, nid, "max_pu"), ov.Operation.MaxPU)
 				intern(key("tech", tid, nid, "min_pu"), ov.Operation.MinPU)

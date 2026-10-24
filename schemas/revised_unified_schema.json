@@ -697,6 +697,28 @@
         "native": {
           "$ref": "#/$defs/NativeBlock",
           "x-go": "Node.Native"
+        },
+        "electrical": {
+          "type": "object",
+          "required": [
+            "v_nom"
+          ],
+          "additionalProperties": false,
+          "description": "The node's AC bus for a power flow (mode power_flow): its nominal voltage. Every node a power-flow arc touches needs one. Optimization runs do not read it (named as unused in a warning).",
+          "properties": {
+            "v_nom": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "description": "Nominal voltage of the node's AC bus, kV.",
+              "x-go": "NodeElectrical.VNom",
+              "x-map": {
+                "adopt-net0": null,
+                "pypsa": "buses.<node>::<carrier>.v_nom (bus carrier AC)",
+                "calliope": null
+              }
+            }
+          },
+          "x-go": "Node.Electrical (NodeElectrical)"
         }
       }
     },
@@ -1033,6 +1055,16 @@
         "native": {
           "$ref": "#/$defs/NativeBlock",
           "x-go": "Technology.Native"
+        },
+        "dispatch": {
+          "$ref": "#/$defs/Value",
+          "description": "Fixed active-power output per timestep (MW) a power flow injects (mode power_flow): output for supply and conversion (at the reference input), discharge (negative = charging) for storage; demand uses demand_profile. A power-flow input: rejected in every optimization mode, where the solver decides dispatch (pin it with operation.equals_pu there).",
+          "x-go": "Technology.Dispatch",
+          "x-map": {
+            "adopt-net0": null,
+            "pypsa": "generators / storage_units / links p_set (static, or <component>-p_set.csv for a series)",
+            "calliope": null
+          }
         }
       },
       "allOf": [
@@ -1154,6 +1186,16 @@
         "native": {
           "$ref": "#/$defs/NativeBlock",
           "x-go": "NodeOverride.Native"
+        },
+        "dispatch": {
+          "$ref": "#/$defs/Value",
+          "description": "Fixed active-power output per timestep (MW) a power flow injects (mode power_flow): output for supply and conversion (at the reference input), discharge (negative = charging) for storage; demand uses demand_profile. A power-flow input: rejected in every optimization mode, where the solver decides dispatch (pin it with operation.equals_pu there).",
+          "x-go": "NodeOverride.Dispatch",
+          "x-map": {
+            "adopt-net0": null,
+            "pypsa": "generators / storage_units / links p_set (static, or <component>-p_set.csv for a series)",
+            "calliope": null
+          }
         }
       }
     },
@@ -2058,6 +2100,89 @@
         "native": {
           "$ref": "#/$defs/NativeBlock",
           "x-go": "Transmission.Native"
+        },
+        "electrical": {
+          "type": "object",
+          "required": [
+            "kind",
+            "r",
+            "x"
+          ],
+          "additionalProperties": false,
+          "description": "Makes the arc an AC branch for a power flow (mode power_flow): a line with its series impedance in ohm over the arc, or a transformer with its impedance per unit of its rating. Electrical arcs are bidirectional and a line joins nodes of equal v_nom (a transformer joins two levels). Optimization runs emit the arc as a transport link and name the parameters as unused.",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "line",
+                "transformer"
+              ],
+              "x-go": "TransmissionElectrical.Kind",
+              "x-map": {
+                "adopt-net0": null,
+                "pypsa": "lines.csv row (line) / transformers.csv row (transformer)",
+                "calliope": null
+              }
+            },
+            "r": {
+              "type": "number",
+              "minimum": 0,
+              "description": "Series resistance: ohm over the arc (line) or per unit of s_nom (transformer).",
+              "x-go": "TransmissionElectrical.R",
+              "x-map": {
+                "adopt-net0": null,
+                "pypsa": "r",
+                "calliope": null
+              }
+            },
+            "x": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "description": "Series reactance: ohm over the arc (line) or per unit of s_nom (transformer).",
+              "x-go": "TransmissionElectrical.X",
+              "x-map": {
+                "adopt-net0": null,
+                "pypsa": "x",
+                "calliope": null
+              }
+            },
+            "s_nom": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "description": "Apparent-power rating, MVA; defaults to capacity.existing. The loading output divides the flow by it.",
+              "x-go": "TransmissionElectrical.SNom",
+              "x-map": {
+                "adopt-net0": null,
+                "pypsa": "s_nom",
+                "calliope": null
+              }
+            },
+            "num_parallel": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1,
+              "description": "Parallel circuits.",
+              "x-go": "TransmissionElectrical.NumParallel",
+              "x-map": {
+                "adopt-net0": null,
+                "pypsa": "num_parallel",
+                "calliope": null
+              }
+            },
+            "tap_ratio": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "default": 1,
+              "description": "Transformer tap ratio (transformer only).",
+              "x-go": "TransmissionElectrical.TapRatio",
+              "x-map": {
+                "adopt-net0": null,
+                "pypsa": "transformers.<id>.tap_ratio",
+                "calliope": null
+              }
+            }
+          },
+          "x-go": "Transmission.Electrical (TransmissionElectrical)"
         }
       }
     },
@@ -2297,14 +2422,15 @@
             "alternatives",
             "pareto",
             "monte_carlo",
-            "stochastic"
+            "stochastic",
+            "power_flow"
           ],
           "default": "plan",
-          "description": "plan: single cost-optimal capacity+dispatch. operate: fixed capacities, receding-horizon dispatch. alternatives: near-optimal alternatives (SPORES/MGA). pareto: multi-objective front. monte_carlo: parametric uncertainty sampling. stochastic: scenario-weighted stochastic program. Per-target support is declared in the capability matrix (operate/alternatives -> Calliope, pareto/monte_carlo -> AdOpT-NET0, stochastic -> PyPSA; a sweep is N plan runs orchestrated by the service).",
+          "description": "plan: single cost-optimal capacity+dispatch. operate: fixed capacities, receding-horizon dispatch. alternatives: near-optimal alternatives (SPORES/MGA). pareto: multi-objective front. monte_carlo: parametric uncertainty sampling. stochastic: scenario-weighted stochastic program. power_flow: fixed dispatch, AC power flow of the electrical network; the one mode that optimizes nothing (ADR-0008). Per-target support is declared in the capability matrix (operate/alternatives -> Calliope, pareto/monte_carlo -> AdOpT-NET0, stochastic and power_flow -> PyPSA; a sweep is N plan runs orchestrated by the service).",
           "x-go": "Experiment.Mode",
           "x-map": {
             "adopt-net0": "objective pareto / monte_carlo.N > 0",
-            "pypsa": "n.set_scenarios two-stage stochastic (_scenarios.json)",
+            "pypsa": "n.set_scenarios two-stage stochastic (_scenarios.json); n.lpf()/n.pf() for power_flow",
             "calliope": "config.init.mode base|operate|spores ('alternatives' is emitted as 'spores')"
           }
         },
@@ -2749,6 +2875,63 @@
           "$ref": "#/$defs/NativeBlock",
           "description": "Target-specific run configuration (solver heuristics, scaling, reporting details).",
           "x-go": "Experiment.Native"
+        },
+        "power_flow": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Settings for mode 'power_flow' (PyPSA lpf/pf over the electrical fields of nodes, transmission and technologies). slack is required in that mode.",
+          "properties": {
+            "method": {
+              "type": "string",
+              "enum": [
+                "newton_raphson",
+                "linear"
+              ],
+              "default": "newton_raphson",
+              "description": "Full AC solution (Newton-Raphson, seeded by a linear solve) or the linear (DC) approximation alone.",
+              "x-go": "PowerFlowOptions.Method",
+              "x-map": {
+                "adopt-net0": null,
+                "pypsa": "n.lpf() then n.pf(use_seed=True) / n.lpf() alone",
+                "calliope": null
+              }
+            },
+            "slack": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Supply technology that balances the AC network (id, or id@node for a technology placed at several nodes); its generator gets control Slack, every other generator PQ.",
+              "x-go": "PowerFlowOptions.Slack",
+              "x-map": {
+                "adopt-net0": null,
+                "pypsa": "generators.<name>.control = Slack",
+                "calliope": null
+              }
+            },
+            "distribute_slack": {
+              "type": "boolean",
+              "default": false,
+              "description": "Share the balance over all generators in proportion to their dispatch instead of loading it on the slack alone.",
+              "x-go": "PowerFlowOptions.DistributeSlack",
+              "x-map": {
+                "adopt-net0": null,
+                "pypsa": "n.pf(distribute_slack=...)",
+                "calliope": null
+              }
+            },
+            "tolerance": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "default": 1e-06,
+              "description": "Newton-Raphson convergence tolerance (pu).",
+              "x-go": "PowerFlowOptions.Tolerance",
+              "x-map": {
+                "adopt-net0": null,
+                "pypsa": "n.pf(x_tol=...)",
+                "calliope": null
+              }
+            }
+          },
+          "x-go": "Experiment.PowerFlow (PowerFlowOptions)"
         }
       }
     },

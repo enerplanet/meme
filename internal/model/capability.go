@@ -37,6 +37,7 @@ const (
 	FeatPhysicsPerformance     Feature = "physics_performance"
 	FeatPowerFlow              Feature = "power_flow"
 	FeatLinearPowerFlow        Feature = "linear_power_flow" // the voltage law inside an optimization (experiment.network.model)
+	FeatSOCProfile             Feature = "soc_profile"       // a fixed state-of-charge trajectory (storage.soc_profile); ignored where unclaimed
 	FeatCustomMath             Feature = "custom_math"
 
 	// FeatObjectiveEmissions marks support for objective "min_emissions"

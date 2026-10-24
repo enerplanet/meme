@@ -341,7 +341,16 @@ type Storage struct {
 	// same timestep (binary formulation; Calliope force_async_flow, AdOpT
 	// allow_only_one_direction).
 	NoSimultaneousChargeDischarge bool `json:"no_simultaneous_charge_discharge,omitempty"`
+	// SOCProfile pins the state of charge (MWh) per timestep, a scalar or a
+	// series (PyPSA StorageUnit state_of_charge_set; ignored with a warning
+	// where no target slot exists; ADR-0011).
+	SOCProfile *Value `json:"soc_profile,omitempty"`
 }
+
+// IsStore reports whether the storage is sized by its energy capacity, the
+// representation PyPSA renders as a Store with charger and discharger Links
+// (ADR-0011); a storage sized through max_hours stays a StorageUnit.
+func (s *Storage) IsStore() bool { return s != nil && s.EnergyCapacity != nil }
 
 // AreaSpec constrains land/area use (Calliope). No PyPSA/AdOpT analogue, so it is
 // capability-gated to Calliope.

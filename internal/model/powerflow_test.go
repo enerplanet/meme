@@ -580,3 +580,26 @@ func TestExperimentNetworkValidate(t *testing.T) {
 		t.Errorf("security outside plan: %v", err)
 	}
 }
+
+// --- ADR-0011: storage profile ----------------------------------------------
+
+// soc_profile is a Value like the other storage inputs: it interns and must
+// name a defined series.
+func TestStorageSOCProfile(t *testing.T) {
+	m := baseModel()
+	m.Technologies["pumped"] = model.Technology{Role: model.RoleStorage, Node: model.StringList{"n1"}, CarrierOut: model.StringList{"el"},
+		Capacity: &model.Capacity{Existing: 4}, Storage: &model.Storage{MaxHours: fp(6), SOCProfile: &model.Value{Inline: []float64{12, 12}}}}
+	if err := m.InternInlineSeries(); err != nil {
+		t.Fatal(err)
+	}
+	if got := m.Technologies["pumped"].Storage.SOCProfile.SeriesID(); got != "_inline:tech:pumped:soc_profile" {
+		t.Errorf("soc_profile not interned: %q", got)
+	}
+	if err := m.Validate(); err != nil {
+		t.Fatalf("storage with soc_profile should validate: %v", err)
+	}
+	p := m.Technologies["pumped"]
+	p.Storage.SOCProfile = model.Series("missing")
+	m.Technologies["pumped"] = p
+	wantValidateErr(t, &m, `tech "pumped": time-series "missing" not defined`)
+}

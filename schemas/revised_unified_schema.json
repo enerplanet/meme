@@ -1833,7 +1833,7 @@
       "properties": {
         "energy_capacity": {
           "$ref": "#/$defs/Capacity",
-          "description": "Stored-energy capacity bounds (MWh). Its investment cost is CostClass.investment_per_energy_capacity.",
+          "description": "Stored-energy capacity bounds (MWh). Its investment cost is CostClass.investment_per_energy_capacity. On PyPSA an energy-sized storage is a Store with charger and discharger Links (ADR-0011); without it a max_hours storage is a StorageUnit.",
           "x-go": "Storage.EnergyCapacity",
           "x-map": {
             "adopt-net0": "STOR size bounds (MWh)",
@@ -1973,6 +1973,16 @@
             "adopt-net0": "allow_only_one_direction = 1",
             "pypsa": null,
             "calliope": "force_async_flow"
+          }
+        },
+        "soc_profile": {
+          "$ref": "#/$defs/Value",
+          "description": "Pinned state of charge per timestep (MWh), a scalar or a series (PyPSA StorageUnit state_of_charge_set; a Store has no slot for it). Ignored with a warning by targets without a fixed state-of-charge slot (ADR-0011).",
+          "x-go": "Storage.SOCProfile",
+          "x-map": {
+            "adopt-net0": null,
+            "pypsa": "storage_units.<name>.state_of_charge_set (static or storage_units-state_of_charge_set.csv)",
+            "calliope": null
           }
         }
       },

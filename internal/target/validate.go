@@ -289,6 +289,25 @@ func validateGeneric(t Target, j *model.Job) ([]string, error) {
 			return nil, fmt.Errorf("%s is not supported by target %q", g.what, t.Name())
 		}
 	}
+	// Ignorable fields: an optimizer that has no slot for them solves the same
+	// problem without them, so a target that does not claim the feature keeps
+	// the payload and names what it ignored (ADR-0011).
+	var socTechs []string
+	for _, id := range sortedTechIDs(m) {
+		tech := m.Technologies[id]
+		has := tech.Storage != nil && tech.Storage.SOCProfile != nil
+		for _, ov := range tech.NodeOverrides {
+			if ov.Storage != nil && ov.Storage.SOCProfile != nil {
+				has = true
+			}
+		}
+		if has {
+			socTechs = append(socTechs, id)
+		}
+	}
+	if len(socTechs) > 0 && !caps[model.FeatSOCProfile] {
+		warns = append(warns, fmt.Sprintf("storage.soc_profile on technologies %v is ignored by target %q (no fixed state-of-charge slot; the storage dispatch stays free there)", socTechs, t.Name()))
+	}
 
 	// An indexed parameter with more than one entry cannot be projected onto a
 	// flat per-component table.

@@ -226,6 +226,9 @@ func (m *Model) Validate() error {
 		if t.Storage != nil && t.Storage.Inflow != nil && !hasSeries(t.Storage.Inflow) {
 			add("tech %q: inflow series %q not defined", id, t.Storage.Inflow.SeriesID())
 		}
+		if t.Storage != nil && t.Storage.SOCProfile != nil && !hasSeries(t.Storage.SOCProfile) {
+			add("tech %q: time-series %q not defined", id, t.Storage.SOCProfile.SeriesID())
+		}
 
 		// Numeric sanity of the capacity/dispatch/storage/cost envelopes. The
 		// zero value of a mistyped field must not silently reshape the model.
@@ -827,7 +830,7 @@ func techValues(t Technology) []*Value {
 		vs = append(vs, t.Operation.MaxPU, t.Operation.MinPU, t.Operation.EqualsPU)
 	}
 	if t.Storage != nil {
-		vs = append(vs, t.Storage.Inflow)
+		vs = append(vs, t.Storage.Inflow, t.Storage.SOCProfile)
 	}
 	if t.Source != nil {
 		vs = append(vs, t.Source.Max)
@@ -847,7 +850,7 @@ func overrideValues(ov NodeOverride) []*Value {
 		vs = append(vs, ov.Operation.MaxPU, ov.Operation.MinPU, ov.Operation.EqualsPU)
 	}
 	if ov.Storage != nil {
-		vs = append(vs, ov.Storage.Inflow)
+		vs = append(vs, ov.Storage.Inflow, ov.Storage.SOCProfile)
 	}
 	if ov.Source != nil {
 		vs = append(vs, ov.Source.Max)

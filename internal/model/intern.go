@@ -63,6 +63,7 @@ func (m *Model) InternInlineSeries() error {
 		}
 		if t.Storage != nil {
 			intern(key("tech", tid, "inflow"), t.Storage.Inflow)
+			intern(key("tech", tid, "soc_profile"), t.Storage.SOCProfile)
 		}
 		if t.Source != nil {
 			intern(key("tech", tid, "source_max"), t.Source.Max)
@@ -90,6 +91,7 @@ func (m *Model) InternInlineSeries() error {
 			}
 			if ov.Storage != nil {
 				intern(key("tech", tid, nid, "inflow"), ov.Storage.Inflow)
+				intern(key("tech", tid, nid, "soc_profile"), ov.Storage.SOCProfile)
 			}
 			if ov.Source != nil {
 				intern(key("tech", tid, nid, "source_max"), ov.Source.Max)

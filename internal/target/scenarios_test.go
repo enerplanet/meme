@@ -91,6 +91,8 @@ func TestScenarios(t *testing.T) {
 		{"calliope_committable.json", model.TargetCalliope, []string{"cap_method: integer", "flow_cap_per_unit: 100", "extra_math: [milp]"}},
 		{"calliope_resample.json", model.TargetCalliope, []string{"resample:", "timesteps: 3h"}},
 		{"calliope_piecewise.json", model.TargetCalliope, []string{"piecewise_x", "piecewise_constraints", "breakpoints"}},
+		// One demand tech at two nodes: the data table carries a column per node.
+		{"calliope_multi_node.json", model.TargetCalliope, []string{"load__sink_use_equals", "techs,load,load", "nodes,n1,n2"}},
 
 		// --- Calliope 0.6 (the 0.7 scenarios it accepts, plus its own) ---
 		{"calliope_plan.json", model.TargetCalliope06, []string{"calliope_version: 0.6.8", "mode: plan", "parent: supply", "solver: cbc", "file=load__resource.csv:n1", "timeseries_data_path"}},
@@ -106,6 +108,7 @@ func TestScenarios(t *testing.T) {
 		{"calliope_node_override.json", model.TargetCalliope06, []string{"energy_cap: 300000"}},
 		{"calliope_trade.json", model.TargetCalliope06, []string{"market_import", "market_export", "resource: -200", "om_con: -30", "om_prod: 60"}},
 		{"calliope_committable.json", model.TargetCalliope06, []string{"units_max: 3", "energy_cap_per_unit: 100", "energy_cap_min_use: 0.3", "purchase: 1000"}},
+		{"calliope_multi_node.json", model.TargetCalliope06, []string{",n1,n2", "file=load__resource.csv:n1", "file=load__resource.csv:n2"}},
 		{"calliope06_group_constraints.json", model.TargetCalliope06, []string{"group_constraints:", "energy_cap_max: 800", "carrier_prod_min:", "electricity: 100", "cost_max:", "emissions: 1.0e+06", "om_con: 0.2"}},
 		{"calliope06_min_emissions.json", model.TargetCalliope06, []string{"monetary: 0", "emissions: 1", "sense: minimize"}},
 

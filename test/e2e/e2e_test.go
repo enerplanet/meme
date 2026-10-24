@@ -855,3 +855,31 @@ func TestE2ECalliope06Corpus(t *testing.T) {
 		})
 	}
 }
+
+// TestE2EMultiNodeDemandConsistency pins the multi-node semantics across
+// frameworks (issue #7): a demand technology placed at two nodes is one copy
+// per node, so both nodes draw the full profile. With generation only at n1
+// (40/MWh) and a free line, every target must pay 2 x 40 x 2268 = 181440; a
+// translation that serves the first node only lands at half of that.
+func TestE2EMultiNodeDemandConsistency(t *testing.T) {
+	requireFull(t)
+	t.Parallel()
+	const want = 2 * 40 * 2268.0
+	payload := readScenario(t, "calliope_multi_node.json")
+	for _, tgt := range []model.Target{model.TargetPyPSA, model.TargetCalliope, model.TargetCalliope06} {
+		srv, _ := newE2EServer(t)
+		sub := submit(t, srv.URL, tgt, payload)
+		status := awaitJob(t, srv.URL, sub["id"].(string))
+		logText, _ := status["log"].(string)
+		if status["state"] != string(service.StateSucceeded) {
+			t.Fatalf("%s: job failed: %v\nlog:\n%s", tgt, status["error"], logText)
+		}
+		obj, ok := anyObjectiveFromLog(logText)
+		if !ok {
+			t.Fatalf("%s: no objective found in log:\n%s", tgt, logText)
+		}
+		if obj < want*0.99 || obj > want*1.01 {
+			t.Errorf("%s: objective = %v, want %v +-1%% (both nodes must be served)", tgt, obj, want)
+		}
+	}
+}

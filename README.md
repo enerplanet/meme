@@ -887,6 +887,7 @@ directly loadable by the pinned framework (see §7), so "emits cleanly" means
 | `calliope_committable` | MILP unit commitment (integer units, min stable load) | `cap_method: integer`, `flow_cap_per_unit`, `extra_math: [milp]` |
 | `calliope_resample` | `time_aggregation: resample` → `config.init.resample.timesteps` | `resample:`, `timesteps: 3h` |
 | `calliope_piecewise` | piecewise part-load curve → `piecewise_constraints` math on a fixed-capacity conversion | `piecewise_x`, `breakpoints` |
+| **`calliope_multi_node`** ✎ | one demand tech at two nodes → one data table with a column per node (#7); solves to the same objective on PyPSA and both Calliope releases (`TestE2EMultiNodeDemandConsistency`) | `techs,load,load`, `nodes,n1,n2` |
 
 ### 9.3 Calliope 0.6 (`calliope-0.6`)
 

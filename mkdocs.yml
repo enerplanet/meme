@@ -1,8 +1,10 @@
 # Project information
-site_name: Multi Energy Model Execution (MEME)
-site_author: Andreas Weber
+site_name: MEME
+site_author: enerplanet
 site_description: >-
-  Template documentation for MEME
+  Multi Energy Model Execution: one canonical energy-system model, translated
+  into PyPSA, Calliope (0.7 and 0.6) and AdOpT-NET0 inputs, solved, and
+  returned as a result bundle through a REST API.
 site_url: https://enerplanet.github.io/meme
 
 # Repository
@@ -13,8 +15,8 @@ edit_uri: edit/main/docs/
 # Theme configuration
 theme:
   name: material
-  favicon: assets/logos/favicon.svg
-  logo: assets/logos/spatialai-mark-blue-dark.svg
+  favicon: assets/logos/favicon.svg # the MEME mark on its plate
+  logo: assets/logos/meme-mark.svg # the mark alone; the header is the ink plate in both schemes
   features:
     - announce.dismiss
     - content.action.edit
@@ -41,20 +43,22 @@ theme:
   language: en
   palette:
     - media: "(prefers-color-scheme)"
+      primary: custom # the brand palette applies in "follow system" mode as well
+      accent: custom
       toggle:
         icon: material/link
         name: Switch to light mode
     - media: "(prefers-color-scheme: light)"
       scheme: default
-      primary: indigo
-      accent: indigo
+      primary: custom # MEME ink + signature blue, see assets/stylesheets/extra.css
+      accent: custom
       toggle:
         icon: material/toggle-switch
         name: Switch to dark mode
     - media: "(prefers-color-scheme: dark)"
       scheme: slate
-      primary: black
-      accent: indigo
+      primary: custom
+      accent: custom
       toggle:
         icon: material/toggle-switch-off
         name: Switch to system preference
@@ -62,10 +66,13 @@ theme:
     text: Roboto
     code: Roboto Mono
 
+extra_css:
+  - assets/stylesheets/extra.css
+
 # Plugins
 plugins:
   - search:
-      separator: '[\s\u200b\-_,:!=\[\]()"`/]+|\.(?!\d)|&[lg]t;|(?!\b)(?=[A-Z][a-z])'
+      separator: '[\s​\-_,:!=\[\]()"`/]+|\.(?!\d)|&[lg]t;|(?!\b)(?=[A-Z][a-z])'
   - git-revision-date-localized:
       enable_creation_date: true
 
@@ -97,7 +104,12 @@ markdown_extensions:
   - pymdownx.keys
   - pymdownx.mark
   - pymdownx.smartsymbols
-  - pymdownx.snippets
+  # Snippets pull CHANGELOG.md and CONTRIBUTING.md from the repository root
+  # into the site, so they have one source. Paths resolve against the
+  # repository root: build with `make docs` or run mkdocs from the root.
+  - pymdownx.snippets:
+      base_path: ["."]
+      check_paths: true
   - pymdownx.superfences:
       custom_fences:
         - name: mermaid
@@ -116,14 +128,39 @@ markdown_extensions:
 # Page tree
 nav:
   - Home: index.md
+  - Getting started:
+      - Quickstart: getting-started/quickstart.md
+      - Configuration: getting-started/configuration.md
+      - Examples: getting-started/examples.md
+  - Service:
+      - Architecture: architecture.md
+      - API reference: api.md
+      - Canonical model: model.md
+      - Targets and versions: targets.md
+      - Capability matrix: capabilities.md
+      - Scenario catalog: scenarios.md
+  - Reference:
+      - Capability reference: reference/capability-reference.md
+      - Changelog: changelog.md
+  - Operations:
+      - Environment: operations/environment.md
+      - Testing: operations/testing.md
+  - Decisions:
+      - Overview: decisions/README.md
+      - ADR-0001 Go single binary: decisions/0001-go-single-binary.md
+      - ADR-0002 Capability-gated validation: decisions/0002-capability-gated-validation.md
+      - ADR-0003 Native passthrough: decisions/0003-native-passthrough.md
+      - ADR-0004 Golden files: decisions/0004-golden-files-freeze-the-emitter-contract.md
+      - ADR-0005 Async job API: decisions/0005-async-job-api-and-result-bundle.md
+      - ADR-0006 Framework versions as targets: decisions/0006-framework-versions-as-targets.md
+      - ADR-0007 Free solvers: decisions/0007-free-solvers.md
+      - Template: decisions/0000-template.md
   - Contributing:
-      - Open Source Checklist: getting-started/open-source-checklist.md
-      - Repository Naming: getting-started/repository-naming.md
-      - Documentation Setup: getting-started/documentation-setup.md
-      - Legal Sync: getting-started/legal-sync.md
-      - Branch Naming: getting-started/branch-naming.md
-      - Branch Rules: getting-started/branch-rules.md
-      - Commit Conventions: getting-started/commit-conventions.md
+      - Overview: contributing/index.md
+      - Branch naming: getting-started/branch-naming.md
+      - Branch rules: getting-started/branch-rules.md
+      - Commit conventions: getting-started/commit-conventions.md
+      - Legal sync: getting-started/legal-sync.md
 
 # Copyright
 copyright: |

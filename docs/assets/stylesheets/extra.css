@@ -1,0 +1,64 @@
+/* MEME brand palette, taken from the project's own assets:
+   favicon plate #16191c, mark grey #6b7077, signature blue #1C9BD6, and the
+   banner's blue-to-teal gradient (#1090b0 .. #30d0c0) on deep navy #001020.
+   Material's "custom" primary/accent read these variables. */
+
+:root {
+  --meme-ink: #16191c;
+  --meme-ink-light: #2a2f35;
+  --meme-ink-dark: #0b0d10;
+  --meme-blue: #1c9bd6;
+  --meme-blue-dark: #1584b8;
+  --meme-teal: #10b0a0;
+  --meme-grey: #6b7077;
+}
+
+[data-md-color-primary="custom"] {
+  --md-primary-fg-color: var(--meme-ink);
+  --md-primary-fg-color--light: var(--meme-ink-light);
+  --md-primary-fg-color--dark: var(--meme-ink-dark);
+  --md-primary-bg-color: #ffffff;
+  --md-primary-bg-color--light: #ffffffb3;
+}
+
+[data-md-color-accent="custom"] {
+  --md-accent-fg-color: var(--meme-blue);
+  --md-accent-fg-color--transparent: #1c9bd61a;
+  --md-accent-bg-color: #ffffff;
+  --md-accent-bg-color--light: #ffffffb3;
+}
+
+/* Links and the active navigation item carry the signature blue in both schemes. */
+[data-md-color-scheme="default"] {
+  --md-typeset-a-color: var(--meme-blue-dark);
+}
+
+[data-md-color-scheme="slate"] {
+  --md-typeset-a-color: var(--meme-blue);
+  /* The dark scheme leans on the banner's navy instead of Material's grey-blue. */
+  --md-default-bg-color: #0f1a24;
+  --md-default-bg-color--light: #0f1a24b3;
+  --md-default-bg-color--lighter: #0f1a2466;
+  --md-default-bg-color--lightest: #0f1a241f;
+  --md-code-bg-color: #16222e;
+  --md-footer-bg-color: #0b0d10;
+  --md-footer-bg-color--dark: #06080a;
+}
+
+/* Header and tabs are the ink plate in both schemes; the blue mark reads on it. */
+.md-header, .md-tabs {
+  background-color: var(--meme-ink);
+}
+
+/* A thin gradient rule under the header echoes the banner. */
+.md-header::after {
+  content: "";
+  display: block;
+  height: 2px;
+  background: linear-gradient(90deg, var(--meme-blue), var(--meme-teal));
+}
+
+/* Table header rows in the capability matrices. */
+.md-typeset table:not([class]) th {
+  background-color: #1c9bd61a;
+}

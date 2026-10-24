@@ -7,6 +7,7 @@
 #
 #   make            # build the server binary
 #   make run        # build and run the API (dry-run mode)
+#   make docs       # build the documentation site (strict)
 #   make help       # list all targets (including the delegated ones)
 
 # --- Config -----------------------------------------------------------------
@@ -66,6 +67,14 @@ TEST_TARGETS := test test-race golden-update schema-check e2e-smoke e2e
 .PHONY: $(TEST_TARGETS)
 $(TEST_TARGETS): ## Test targets — defined in test/Makefile
 	$(MAKE) -C test $@
+
+# --- Delegated: documentation (docs/Makefile) --------------------------------
+.PHONY: docs docs-serve
+docs: ## Build the documentation site strictly (docs/Makefile)
+	$(MAKE) -C docs build
+
+docs-serve: ## Serve the documentation site locally (docs/Makefile)
+	$(MAKE) -C docs serve
 
 # --- Housekeeping -----------------------------------------------------------
 clean: ## Remove build artifacts and emitted work files

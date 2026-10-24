@@ -6,7 +6,7 @@ honors. This document mirrors the enforced behavior:
 
 - **✓ emitted** — the property lands in the target's native input and affects
   the solve. Every ✓ is backed by a runnable scenario
-  ([`internal/scenarios/testdata/scenarios/`](../internal/scenarios/testdata/scenarios/)); the
+  ([`internal/scenarios/testdata/scenarios/`](https://github.com/enerplanet/meme/tree/main/internal/scenarios/testdata/scenarios/)); the
   build fails if a claimed capability loses its scenario (`TestCapabilityCoverage`).
 - **✗ rejected** — `ValidateFor` returns 422 with a pointed message. A payload
   is never accepted and then partially ignored.
@@ -16,7 +16,7 @@ honors. This document mirrors the enforced behavior:
 
 Targets: **P** = PyPSA 1.2.4 · **C** = Calliope 0.7.0 (target `calliope`, alias
 `calliope-0.7`) · **A** = AdOpT-NET0 0.1.10 (pinned in
-[`environment/requirements*.txt`](../environment/)). Calliope 0.6.8 is a fourth,
+[`environment/requirements*.txt`](https://github.com/enerplanet/meme/tree/main/environment/)). Calliope 0.6.8 is a fourth,
 explicitly selected target (`calliope-0.6`); it honors the **C** column except
 where [§3.7](#37-calliope-06-calliope-06) says otherwise.
 
@@ -148,7 +148,7 @@ indexed parameters are Calliope-only).
 Every `native` block is scoped to one target (`"native": {"pypsa": …}` is
 invisible to the others; a warning lists blocks the selected target ignores).
 Because selection is by key, blocks for every target can ride in one payload
-side by side — [`examples/payload_full.json`](../examples/payload_full.json)
+side by side — [`examples/payload_full.json`](https://github.com/enerplanet/meme/blob/main/examples/payload_full.json)
 demonstrates this at every scope. Framework versions with different input
 dialects have separate keys: `native.calliope` is Calliope 0.7 syntax and is
 never applied by the `calliope-0.6` target, which reads
@@ -370,7 +370,7 @@ storage (`Storage_Battery`) map canonically. Any other non-demand tech is
 | Objective / status in log | `status ok optimal`, `objective <v>` (non-optimal ⇒ non-zero exit ⇒ job `failed`) | `Optimal - objective value <v>`, `Calliope run complete` | Pyomo block (`Termination condition: optimal`, bounds) |
 | Job artifacts (all targets) | `GET /jobs/{id}` zip: `metadata.json`, `log.txt`, `results.json` (target-labeled per-run exit/stdout/plan), `config.json` (byte-identical initial config), `files/` (everything above; multi-target jobs nest as `files/<target>/run_i/…`) | — | — |
 | Status endpoint | `GET /jobs/{id}/status`: `state` (queued/running/succeeded/failed), live `log`, per-run results, timings | — | — |
-| Multi-target submit | `?target=pypsa,calliope,adopt-net0` or `target=all` on validate/convert/simulate: per-target verdicts/entrypoints, one job running every framework (422 up front if ANY requested target rejects the payload; see [`examples/shared_full.json`](../examples/shared_full.json)) | — | — |
+| Multi-target submit | `?target=pypsa,calliope,adopt-net0` or `target=all` on validate/convert/simulate: per-target verdicts/entrypoints, one job running every framework (422 up front if ANY requested target rejects the payload; see [`examples/shared_full.json`](https://github.com/enerplanet/meme/blob/main/examples/shared_full.json)) | — | — |
 
 ---
 
@@ -406,7 +406,7 @@ in the validation-matrix golden, and exercised by the `calliope06_*` scenarios):
   request (`?target=all`) this holds per requested target — one rejection
   fails the whole submit up front.
 - The **portable maximum** is a real, runnable artifact:
-  [`examples/payload_full.json`](../examples/payload_full.json) uses the largest
+  [`examples/payload_full.json`](https://github.com/enerplanet/meme/blob/main/examples/payload_full.json) uses the largest
   property set all three frameworks accept simultaneously (with each
   framework's extras in its own `native` namespace) and solves to optimal on
   all of them from a single `?target=all` submit.

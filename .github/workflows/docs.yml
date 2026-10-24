@@ -2,31 +2,58 @@ name: MkDocs
 
 on:
   push:
-    branches:
-      - master
-      - main
+    branches: [main]
+    paths:
+      - "docs/**"
+      - "mkdocs.yml"
+      # pulled into the site through snippets
+      - "CHANGELOG.md"
+      - "CONTRIBUTING.md"
+  workflow_dispatch:
+
 permissions:
-  contents: write
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: true
+
 jobs:
-  deploy:
+  build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
         with:
-          fetch-depth: 0
-      - name: Configure Git Credentials
+          fetch-depth: 0 # git-revision-date-localized reads the history
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
         run: |
-          git config user.name github-actions[bot]
-          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-      - uses: actions/setup-python@v5
+          python -m pip install --upgrade pip
+          pip install -r docs/requirements.txt
+
+      - name: Build site
+        run: mkdocs build --strict
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
         with:
-          python-version: 3.x
-      - run: echo "cache_id=$(date --utc '+%V')" >> $GITHUB_ENV
-      - uses: actions/cache@v4
-        with:
-          key: mkdocs-material-${{ env.cache_id }}
-          path: ~/.cache
-          restore-keys: |
-            mkdocs-material-
-      - run: pip install -r docs/requirements.txt
-      - run: mkdocs gh-deploy --force
+          path: site
+
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

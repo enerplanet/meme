@@ -26,9 +26,17 @@ Go modules require (`v0.1.0-alpha`).
   on every target with a pointer to `operation.equals_pu`; electrical
   parameters outside a power flow are named as unused while the arcs stay
   transport links; in mode `power_flow` expandable capacities, trade,
-  constraints, emission limits and scenarios are rejected.
-- Scenario `pypsa_power_flow`, example payload `examples/pypsa_power_flow.json`
-  and E2E checks for convergence, the linear method and a diverging load.
+  constraints, emission limits and scenarios are rejected, and
+  `distribute_slack` requires a dispatch on the slack technology (PyPSA
+  shares the balance in proportion to each generator's set-point, so a slack
+  without one would receive none of it).
+- Scenario `pypsa_power_flow`, the example payloads
+  `examples/pypsa_power_flow*.json` (the reference network, the smallest
+  valid power flow, a meshed ring with per-node dispatch, and the options:
+  linear method, distributed slack, storage sign, a second carrier) and E2E
+  checks for convergence, the linear method and a diverging load. The
+  examples walkthrough documents the options, the result files and the
+  rejected requests.
 
 ### Changed
 

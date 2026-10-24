@@ -1,0 +1,73 @@
+{
+  "api_key": "s3cret",
+  "model": {
+    "metadata": {
+      "name": "pypsa_power_flow_minimal",
+      "description": "The smallest power flow: a 20 kV line from a slack generator to a load over two snapshots. The line rating defaults to its installed capacity."
+    },
+    "time": {
+      "start": "2025-01-01T00:00:00",
+      "end": "2025-01-01T01:00:00",
+      "resolution": "1H"
+    },
+    "carriers": {
+      "electricity": {
+        "unit": "MWh"
+      }
+    },
+    "nodes": {
+      "a": {
+        "electrical": {
+          "v_nom": 20
+        }
+      },
+      "b": {
+        "electrical": {
+          "v_nom": 20
+        }
+      }
+    },
+    "technologies": {
+      "grid": {
+        "role": "supply",
+        "node": "a",
+        "carrier_out": "electricity",
+        "capacity": {
+          "existing": 50
+        }
+      },
+      "load": {
+        "role": "demand",
+        "node": "b",
+        "carrier_in": "electricity",
+        "demand_profile": [
+          8,
+          12
+        ]
+      }
+    },
+    "transmission": {
+      "ab": {
+        "carrier": "electricity",
+        "from": "a",
+        "to": "b",
+        "bidirectional": true,
+        "capacity": {
+          "existing": 15
+        },
+        "distance": 5,
+        "electrical": {
+          "kind": "line",
+          "r": 0.6,
+          "x": 1.75
+        }
+      }
+    }
+  },
+  "experiment": {
+    "mode": "power_flow",
+    "power_flow": {
+      "slack": "grid"
+    }
+  }
+}

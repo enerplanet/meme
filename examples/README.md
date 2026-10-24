@@ -9,6 +9,9 @@ against the real API with real solvers.
 |---|---|
 | [`pypsa_full.json`](pypsa_full.json) | `pypsa` |
 | [`pypsa_power_flow.json`](pypsa_power_flow.json) | `pypsa`, mode `power_flow` (AC power flow of a fixed dispatch; no optimization) |
+| [`pypsa_power_flow_minimal.json`](pypsa_power_flow_minimal.json) | `pypsa`, mode `power_flow`: the smallest valid power flow (one line, slack and load) |
+| [`pypsa_power_flow_meshed.json`](pypsa_power_flow_meshed.json) | `pypsa`, mode `power_flow`: meshed 20 kV ring, per-node dispatch and demand, parallel transformers, slack as `tech@node` |
+| [`pypsa_power_flow_options.json`](pypsa_power_flow_options.json) | `pypsa`, mode `power_flow`: linear method, distributed slack, storage sign convention, an unbalanced second carrier |
 | [`calliope_full.json`](calliope_full.json) | `calliope` |
 | [`adopt_full.json`](adopt_full.json) | `adopt-net0` |
 | [`shared_full.json`](shared_full.json) | `all` (also valid for `calliope-0.6`) |

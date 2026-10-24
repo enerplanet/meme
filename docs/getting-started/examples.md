@@ -12,6 +12,9 @@ tier re-runs them on every change.
 |---|---|---|
 | [`pypsa_full.json`](https://github.com/enerplanet/meme/blob/main/examples/pypsa_full.json) | `pypsa` | 3 carriers, 2 nodes (coords + native bus columns), physics PV with precomputed CF + per-node overrides, committable CCGT (full UC set + ramps + min/max_pu), time-varying marginal cost, multi-output CHP (rigid ratios), battery (cyclic, self-discharge, initial SOC), hydro (inflow series + spill cost, non-cyclic), bidirectional line with native `x`/`r`, trade with **series** import price + emission factor + export revenue, CO₂ cap (GlobalConstraint), one unscoped + two scoped/multi-term constraints (run.py sidecar), a **series import limit** (fixed-p_nom generator + time-varying `p_max_pu`), per-distance line losses folded into the link efficiency, snapshot **weights**, `build_year`/`annual_output_max`/`systemwide_max`, typed solver `time_limit`/`threads`, tech/carrier/system native blocks, and a 2-point **sweep** → 2 independent runs |
 | [`pypsa_power_flow.json`](https://github.com/enerplanet/meme/blob/main/examples/pypsa_power_flow.json) | `pypsa` | **Mode `power_flow`**: no optimization — an HV slack feeding two 20 kV nodes through a transformer and a line (`node.electrical.v_nom`, `transmission.electrical`), PV and a battery following their `dispatch` series, two loads; Newton-Raphson seeded by a linear solve, results under `output/power_flow/` (per-bus voltages, line and transformer loading, `summary.json`). The second call of a plan-then-check workflow; see below |
+| [`pypsa_power_flow_minimal.json`](https://github.com/enerplanet/meme/blob/main/examples/pypsa_power_flow_minimal.json) | `pypsa` | The **smallest valid power flow**: two 20 kV nodes, one line whose rating defaults to its installed capacity, a slack generator, a load with an inline two-snapshot profile, and nothing else — the shape to start from |
+| [`pypsa_power_flow_meshed.json`](https://github.com/enerplanet/meme/blob/main/examples/pypsa_power_flow_meshed.json) | `pypsa` | A **meshed** 20 kV ring under an HV transformer: one PV technology placed at two nodes with a `dispatch` series per node (`node_overrides`), one load technology at three nodes with a per-node profile, two parallel transformers (`num_parallel`, `tap_ratio`), the slack spelled `grid@hv`, a tight `tolerance`; real loop flows and a visible voltage sag |
+| [`pypsa_power_flow_options.json`](https://github.com/enerplanet/meme/blob/main/examples/pypsa_power_flow_options.json) | `pypsa` | The **options**: `method: linear` (DC, never diverges, voltages stay nominal), `distribute_slack` with the slack carrying its own expected dispatch, a battery whose dispatch changes sign (positive = discharge), and an electric boiler feeding a `heat` carrier the power flow carries as a fixed injection without balancing it (warned) |
 | [`calliope_full.json`](https://github.com/enerplanet/meme/blob/main/examples/calliope_full.json) | `calliope` | availability data table from a CF series, first-class `source` + `area` (per-area resource on a bounded area), **MILP committable** (integer 50-MW units + purchase cost + min stable load), multi-output CHP via **ratio-pinning math**, **piecewise** part-load conversion (fixed 300 MW), battery with energy-capacity costs (`cost_storage_cap`) + `cost_om_annual` + **depth of discharge**, transmission (bidirectional, distance, **per-distance investment cost**), `reporting.save_logs`, typed solver `time_limit`, trade (import price + co2 factor, paid export), CO₂ cap + scoped constraint (custom math), native `flow_out_parasitic_eff`, and **resample 1H → 3H** |
 | [`adopt_full.json`](https://github.com/enerplanet/meme/blob/main/examples/adopt_full.json) | `adopt-net0` | full climate block (ghi/dni/dhi/temp_air/rh/ws10; series and scalars mixed), three physics techs (`pv` → Photovoltaic, `wind` → WindTurbine, `heat_pump` → HeatPump_AirSourced serving a heat demand), battery on two nodes with a **per-node override** (`size_max` 100 vs 40), tech-level native patch, trade at both nodes with a **series** import price + import/**export** emission factors, `reporting.case_name`, typed solver `time_limit`/`mip_gap`, and a CO₂ emission cap (`costs_emissionlimit` objective) |
 | [`shared_full.json`](https://github.com/enerplanet/meme/blob/main/examples/shared_full.json) | **`all`** | The maximal **intersection**: one config valid for all three frameworks *simultaneously* — physics PV + wind carrying both a climate block (AdOpT computes output itself) and precomputed CF profiles (PyPSA/Calliope), a two-node battery with a per-node override, scalar-priced trade at both nodes (+ import co2 factor), an emission cap, a battery-capacity **sweep**, a global **`discount_rate`** and typed solver `time_limit` (both honored by all three), and a per-target `native` block on the same tech (each framework picks only its own). Submitted once with `?target=all` → **6 solves** (3 frameworks × 2 sweep points) in one job, one zip |
@@ -199,3 +202,94 @@ voltages nominal. Calliope and AdOpT reject the mode outright; a `dispatch`
 in any optimization mode is rejected on every target with a pointer to
 `operation.equals_pu`, so a planning payload and a power-flow payload cannot
 be confused.
+
+### The power-flow payloads
+
+Four payloads cover the mode; start from the minimal one and grow it:
+
+```bash
+for f in pypsa_power_flow_minimal pypsa_power_flow pypsa_power_flow_meshed pypsa_power_flow_options; do
+  ID=$(curl -s -X POST 'localhost:8080/simulate?target=pypsa' -d @examples/$f.json | jq -r .id)
+  until curl -s "localhost:8080/jobs/$ID/status" | jq -e '.state | test("succeeded|failed")' >/dev/null; do sleep 1; done
+  curl -s -o $f.zip "localhost:8080/jobs/$ID" && unzip -p $f.zip files/run_0/output/power_flow/summary.json | jq -c '{method, converged_snapshots, min_v_mag_pu, max_line_loading}'
+done
+```
+
+| Payload | Shows |
+|---|---|
+| `pypsa_power_flow_minimal.json` | the three ingredients and nothing else: `electrical.v_nom` on both nodes, `electrical` on the one line (rating defaulting to `capacity.existing`), a `slack`; the load profile is an inline array |
+| `pypsa_power_flow.json` | an HV/MV network with a transformer and a line, a PV `dispatch` series, a battery following its own series |
+| `pypsa_power_flow_meshed.json` | loop flows in a meshed ring, per-node `dispatch` and `demand_profile` through `node_overrides`, `num_parallel` and `tap_ratio` on the transformer, the slack as `tech@node`, a tight `tolerance` |
+| `pypsa_power_flow_options.json` | `method: linear`, `distribute_slack`, a storage dispatch that changes sign, a conversion into a second carrier |
+
+### The options
+
+- **`method`** — `newton_raphson` (default) runs a linear solve first and the
+  full AC solution from that seed, so voltage magnitudes, angles and reactive
+  flows come out; `linear` stops after the DC solve: active flows and angles
+  only, every voltage stays at 1.0 pu, and it cannot diverge.
+- **`slack`** — required; the supply technology whose generator takes up the
+  balance (losses included). Spell it `tech`, or `tech@node` when the
+  technology is placed at several nodes. Every other supply, storage and
+  conversion technology needs a `dispatch`.
+- **`distribute_slack`** — PyPSA then shares the balance over all generators
+  in proportion to their dispatch. The slack therefore needs a `dispatch` too
+  (its expected output); without one the request is rejected, because PyPSA
+  would move the whole balance onto the other generators.
+- **`tolerance`** — the Newton-Raphson convergence tolerance in pu (default
+  `1e-6`); irrelevant for `linear`.
+- **Sign conventions of `dispatch`** — supply: output; conversion: input-side
+  flow (`p_set` on the Link's `bus0`); storage: discharge, so a negative value
+  charges. Demand keeps `demand_profile`.
+- **Ratings** — `electrical.s_nom` (MVA) defaults to the arc's
+  `capacity.existing`; the loading tables divide by it. `num_parallel`
+  scales the impedance of parallel circuits; `tap_ratio` applies to
+  transformers only.
+- **Other carriers** — a power flow balances the electricity network only.
+  Components on other carriers (a heat demand, an electric boiler's output)
+  are carried as fixed injections and reported in a warning.
+
+### What comes back
+
+`files/run_0/output/power_flow/` in the bundle, next to `network.nc`:
+
+| File | Content |
+|---|---|
+| `summary.json` | `method`, `slack`, `slack_bus`, `snapshots`, `converged_snapshots`, `min_v_mag_pu`, `max_v_mag_pu`, `max_line_loading`, `max_transformer_loading` (figures over converged snapshots; `null` when none converged), `failure` |
+| `convergence.csv` | per snapshot: `converged`, `iterations` (Newton-Raphson only) |
+| `buses-v_mag_pu.csv`, `buses-v_ang.csv`, `buses-p.csv`, `buses-q.csv` | per bus (`node::carrier`) and snapshot; `q` only for Newton-Raphson |
+| `lines-p0.csv`, `lines-p1.csv`, `lines-q0.csv`, `lines-q1.csv`, `lines-loading.csv` | per line: flow at each end, apparent loading over `s_nom` |
+| `transformers-…` | the same per transformer |
+| `generators-p.csv`, `generators-q.csv`, `storage_units-p.csv`, `links-p0.csv` | the injections as solved (the slack absorbs the losses) |
+
+The job log carries `power flow converged k/n snapshots` and
+`status ok power flow converged`; a snapshot that does not converge makes the
+run exit 3 and the job `failed`, with `convergence.csv` and the tables still
+written for diagnosis.
+
+### What is rejected
+
+The gates answer with `422` and name the fix:
+
+```bash
+curl -s -X POST 'localhost:8080/validate?target=calliope' -d @examples/pypsa_power_flow.json
+# {"error":"mode \"power_flow\" is not supported by target \"calliope\"","valid":false}
+
+jq '.experiment = {"mode":"plan","solver":{"name":"highs"}}' examples/pypsa_power_flow.json \
+  | curl -s -X POST 'localhost:8080/validate?target=pypsa' -d @-
+# {"error":"tech \"battery\": dispatch is a power-flow input (mode power_flow); in mode \"plan\"
+#   the solver decides dispatch, pin it with operation.equals_pu instead","valid":false}
+
+jq 'del(.experiment.power_flow.slack)' examples/pypsa_power_flow.json \
+  | curl -s -X POST 'localhost:8080/validate?target=pypsa' -d @-
+# {"error":"experiment.power_flow.slack is required: the supply technology that balances the AC network (id, or id@node)"}
+
+jq '.experiment.power_flow.distribute_slack = true' examples/pypsa_power_flow.json \
+  | curl -s -X POST 'localhost:8080/validate?target=pypsa' -d @-
+# {"error":"experiment.power_flow.distribute_slack shares the balance in proportion to each generator's dispatch,
+#   so the slack \"grid\" needs a dispatch too (its expected output); ..."}
+```
+
+Electrical parameters in a planning payload are not an error: the response
+is `valid: true` with a warning naming the arcs and nodes whose parameters the
+optimization ignores, so the same model can be planned and then checked.

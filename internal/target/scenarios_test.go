@@ -84,6 +84,9 @@ func TestScenarios(t *testing.T) {
 		// The voltage law inside an optimization: lines with expansion bounds,
 		// an annualized investment and a loading limit, no fixed injections.
 		{"pypsa_lopf.json", model.TargetPyPSA, []string{"s_nom_extendable", "s_max_pu", "110", "capital_cost"}},
+		// An energy-sized storage as a Store with charger and discharger, the
+		// structural constraints in the sidecar, a fixed state-of-charge profile.
+		{"pypsa_store.json", model.TargetPyPSA, []string{"e_nom_extendable", "battery_charge", "battery_discharge", "equal_power", "state_of_charge_set"}},
 
 		// --- Calliope ---
 		{"calliope_plan.json", model.TargetCalliope, []string{"mode: base", "base_tech: supply", "solver: cbc"}},

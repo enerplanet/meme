@@ -483,7 +483,7 @@
     "pypsa": {
       "verdict": "ok",
       "warnings": [
-        "tech \"batt\": investment_per_energy_capacity is only emitted for calliope (cost_storage_cap); pypsa has no per-MWh storage cost slot"
+        "tech \"batt\": storage.initial_soc is a fraction of the installed energy, which an expandable storage decides; pypsa starts it from the existing capacity (0 MWh of a Store is not set at all)"
       ]
     }
   },
@@ -812,6 +812,33 @@
       ]
     },
     "pypsa": {
+      "verdict": "ok",
+      "warnings": [
+        "tech \"batt\": storage.initial_soc is a fraction of the installed energy, which an expandable storage decides; pypsa starts it from the existing capacity (0 MWh of a Store is not set at all)"
+      ]
+    }
+  },
+  "pypsa_store.json": {
+    "adopt-net0": {
+      "verdict": "error: tech \"battery\": storage.depth_of_discharge is only supported for target calliope (storage_discharge_depth); adopt-net0 has no minimum-SOC slot"
+    },
+    "calliope": {
+      "verdict": "ok",
+      "warnings": [
+        "storage.soc_profile on technologies [pumped] is ignored by target \"calliope\" (no fixed state-of-charge slot; the storage dispatch stays free there)",
+        "solver \"highs\" is not usable with Calliope; emitting cbc instead"
+      ]
+    },
+    "calliope-0.6": {
+      "verdict": "ok",
+      "warnings": [
+        "storage.soc_profile on technologies [pumped] is ignored by target \"calliope-0.6\" (no fixed state-of-charge slot; the storage dispatch stays free there)",
+        "tech \"pumped\": calliope-0.6 applies one energy_eff to charging and discharging; emitting sqrt(charge_eff * discharge_eff) = 0.8485281374238571 so the round-trip efficiency is preserved",
+        "storage.cyclic is a model-wide switch on calliope-0.6 (run.cyclic_storage); techs disagree, so cyclic storage is disabled for all of them",
+        "solver \"highs\" is not usable with Calliope; emitting cbc instead"
+      ]
+    },
+    "pypsa": {
       "verdict": "ok"
     }
   },
@@ -893,6 +920,7 @@
     "pypsa": {
       "verdict": "ok",
       "warnings": [
+        "tech \"battery\": storage.initial_soc is a fraction of the installed energy, which an expandable storage decides; pypsa starts it from the existing capacity (0 MWh of a Store is not set at all)",
         "trade \"grid_n1\": import emission_factor is not emitted for pypsa (set the carrier's co2_intensity instead); calliope/adopt-net0 honor it",
         "payload uses native.pypsa overrides — the emitted model is specific to \"pypsa\" and not portable to other targets"
       ]

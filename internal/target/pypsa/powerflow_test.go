@@ -576,3 +576,117 @@ func cfgOf(t *testing.T, script string) string {
 	t.Fatalf("run.py has no CFG line:\n%.300s", script)
 	return ""
 }
+
+// --- ADR-0011: storage as a Store -------------------------------------------
+
+func emitStore(t *testing.T, mut func(j *model.Job)) (string, model.Job) {
+	t.Helper()
+	j, err := scenarios.Load("pypsa_store.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mut != nil {
+		mut(&j)
+	}
+	if _, err := target.ValidateFor(&j, model.TargetPyPSA); err != nil {
+		t.Fatalf("validate: %v", err)
+	}
+	dir := t.TempDir()
+	if _, err := (pypsa.PyPSA{}).Emit(&j, dir); err != nil {
+		t.Fatalf("emit: %v", err)
+	}
+	return dir, j
+}
+
+// An energy-sized storage becomes a Store on its own bus with a charger and
+// a discharger Link; energy sizing and its cost sit on the Store, power
+// sizing and its costs on the Links, and the structural constraints travel
+// in the _storage.json sidecar.
+func TestStoreTopology(t *testing.T) {
+	dir, _ := emitStore(t, nil)
+	stores := table(t, dir, "stores.csv")
+	b := stores["battery"]
+	want := map[string]string{"bus": "n1::electricity::battery", "carrier": "electricity", "e_nom": "0", "e_nom_extendable": "True", "e_nom_max": "40", "e_cyclic": "True", "e_min_pu": "0.1", "standing_loss": "0.001"}
+	for k, v := range want {
+		if b[k] != v {
+			t.Errorf("stores.csv battery %s: got %q want %q (row %v)", k, b[k], v, b)
+		}
+	}
+	// An annualized 2 €/MWh/a is taken as given.
+	if b["capital_cost"] != "2" {
+		t.Errorf("store capital_cost: %q", b["capital_cost"])
+	}
+	buses := table(t, dir, "buses.csv")
+	if buses["n1::electricity::battery"]["carrier"] != "electricity" {
+		t.Errorf("the store bus is declared: %v", buses)
+	}
+	links := table(t, dir, "links.csv")
+	ch, dis := links["battery_charge"], links["battery_discharge"]
+	if ch["bus0"] != "n1::electricity" || ch["bus1"] != "n1::electricity::battery" || ch["efficiency"] != "0.95" || ch["p_nom_extendable"] != "True" || ch["p_nom_max"] != "10" || ch["capital_cost"] != "0" {
+		t.Errorf("charger link: %v", ch)
+	}
+	if dis["bus0"] != "n1::electricity::battery" || dis["bus1"] != "n1::electricity" || dis["efficiency"] != "0.95" || dis["marginal_cost"] != "1" {
+		t.Errorf("discharger link: %v", dis)
+	}
+	if dis["capital_cost"] != "10" {
+		t.Errorf("the power investment sits on the discharger: %q", dis["capital_cost"])
+	}
+	sus := table(t, dir, "storage_units.csv")
+	if _, ok := sus["battery"]; ok {
+		t.Error("a Store-based storage must not also be a StorageUnit")
+	}
+	if sus["pumped"]["max_hours"] != "6" || sus["pumped"]["state_of_charge_set"] != "0" {
+		t.Errorf("the StorageUnit keeps its representation (series set-point in its file): %v", sus["pumped"])
+	}
+	if got := table(t, dir, "storage_units-state_of_charge_set.csv")["2025-01-01 00:00:00"]["pumped"]; got != "12" {
+		t.Errorf("soc profile series: %q", got)
+	}
+	raw := readFile(t, dir, "_storage.json")
+	for _, want := range []string{`"store": "battery"`, `"charge": "battery_charge"`, `"discharge": "battery_discharge"`, `"equal_power": true`, `"charge_rate": 0.5`, `"discharge_rate": 0.5`} {
+		if !strings.Contains(raw, want) {
+			t.Errorf("_storage.json lacks %s:\n%s", want, raw)
+		}
+	}
+}
+
+// A fixed energy capacity fixes e_initial from initial_soc; an extendable one
+// cannot and says so; a scalar soc_profile lands as a column.
+func TestStoreFixedEnergy(t *testing.T) {
+	dir, _ := emitStore(t, func(j *model.Job) {
+		b := j.Model.Technologies["battery"]
+		b.Capacity = &model.Capacity{Existing: 5}
+		b.Storage.EnergyCapacity = &model.Capacity{Existing: 20}
+		b.Storage.InitialSOC = fp(0.5)
+		b.Storage.MaxChargeRate, b.Storage.MaxDischargeRate = nil, nil
+		j.Model.Technologies["battery"] = b
+		p := j.Model.Technologies["pumped"]
+		p.Storage.SOCProfile = model.Num(10)
+		j.Model.Technologies["pumped"] = p
+	})
+	b := table(t, dir, "stores.csv")["battery"]
+	if b["e_nom"] != "20" || b["e_nom_extendable"] != "False" || b["e_initial"] != "10" {
+		t.Errorf("fixed store: %v", b)
+	}
+	if links := table(t, dir, "links.csv"); links["battery_charge"]["p_nom"] != "5" || links["battery_charge"]["p_nom_extendable"] != "False" {
+		t.Errorf("fixed links: %v", links["battery_charge"])
+	}
+	if !strings.Contains(readFile(t, dir, "_storage.json"), `"equal_power": false`) {
+		t.Error("no equal-power constraint when the power is fixed")
+	}
+	if table(t, dir, "storage_units.csv")["pumped"]["state_of_charge_set"] != "10" {
+		t.Error("scalar soc profile as a column")
+	}
+	if exists(dir, "storage_units-state_of_charge_set.csv") {
+		t.Error("no series file for a scalar profile")
+	}
+}
+
+// state_of_charge_initial is absolute in PyPSA: the canonical fraction over
+// the installed energy (p_nom x max_hours). The pumped storage of the Store
+// scenario starts half full of 4 MW x 6 h.
+func TestInitialStateOfChargeIsAbsolute(t *testing.T) {
+	dir, _ := emitStore(t, nil)
+	if got := table(t, dir, "storage_units.csv")["pumped"]["state_of_charge_initial"]; got != "12" {
+		t.Errorf("state_of_charge_initial: got %q, want 12 MWh (0.5 x 4 MW x 6 h)", got)
+	}
+}

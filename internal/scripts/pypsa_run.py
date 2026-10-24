@@ -96,6 +96,43 @@ def apply_constraints(m):
         print("applied sidecar constraint", c.get("name"))
 
 
+def apply_storage(m):
+    """Store topologies (_storage.json): a charger and a discharger sized alike
+    when their power is a decision, and each bounded by its rate times the
+    store's energy capacity (a variable when extendable, else its value)."""
+    path = os.path.join(INPUT, "_storage.json")
+    if not os.path.exists(path):
+        return
+    p_nom = m.variables["Link-p_nom"] if "Link-p_nom" in m.variables else None
+    e_nom = m.variables["Store-e_nom"] if "Store-e_nom" in m.variables else None
+
+    def link_power(name):
+        if p_nom is not None and name in p_nom.indexes["name"]:
+            return p_nom.loc[name], True
+        return float(n.links.p_nom[name]), False
+
+    def store_energy(name):
+        if e_nom is not None and name in e_nom.indexes["name"]:
+            return e_nom.loc[name], True
+        return float(n.stores.e_nom[name]), False
+
+    for s in json.load(open(path))["stores"]:
+        ch, ch_var = link_power(s["charge"])
+        dis, dis_var = link_power(s["discharge"])
+        if s.get("equal_power") and ch_var and dis_var:
+            m.add_constraints(ch - dis == 0, name="meme-store-%s-equal-power" % s["name"])
+        e, e_var = store_energy(s["store"])
+        for key, link, is_var in (("charge_rate", ch, ch_var), ("discharge_rate", dis, dis_var)):
+            rate = s.get(key)
+            if rate is None:
+                continue
+            if is_var or e_var:
+                m.add_constraints(link - rate * e <= 0, name="meme-store-%s-%s" % (s["name"], key))
+            elif link > rate * e + 1e-9:
+                raise SystemExit("store %s: fixed %s power %g exceeds %g x energy %g" % (s["name"], key, link, rate, e))
+        print("applied store topology", s["name"])
+
+
 def solve_plan():
     if "security" in CFG:
         # The security-constrained solve builds its own model (no sidecar
@@ -106,6 +143,7 @@ def solve_plan():
         return n.optimize.optimize_security_constrained(branch_outages=outages, solver_name=CFG["solver"], **SOLVER_OPTS)
     m = n.optimize.create_model()
     apply_constraints(m)
+    apply_storage(m)
     return n.optimize.solve_model(solver_name=CFG["solver"], **SOLVER_OPTS)
 
 

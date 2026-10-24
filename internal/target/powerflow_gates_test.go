@@ -473,3 +473,93 @@ func TestLinearPowerFlowPyPSAGates(t *testing.T) {
 		t.Errorf("want the annualization warning, got %v", warns)
 	}
 }
+
+// --- ADR-0011: storage as a Store -------------------------------------------
+
+func storeJob(t *testing.T, mut func(j *model.Job)) model.Job {
+	t.Helper()
+	j, err := scenarios.Load("pypsa_store.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mut != nil {
+		mut(&j)
+	}
+	return j
+}
+
+// With storage.energy_capacity a storage becomes a Store with charger and
+// discharger on PyPSA, which lifts the earlier rejections of independent
+// rates, depth of discharge and the energy-capacity cost; without it those
+// fields still have no StorageUnit slot, and a Store has no inflow or fixed
+// state-of-charge profile.
+func TestStoreRepresentationGates(t *testing.T) {
+	j := storeJob(t, nil)
+	warns, err := target.ValidateFor(&j, model.TargetPyPSA)
+	if err != nil {
+		t.Fatalf("store scenario should validate on pypsa: %v", err)
+	}
+	if hasWarning(warns, "investment_per_energy_capacity") {
+		t.Errorf("the energy-capacity cost is priced on the Store, not dropped: %v", warns)
+	}
+	cases := []struct {
+		name string
+		mut  func(j *model.Job)
+		want string
+	}{
+		{"rates without energy capacity", func(j *model.Job) {
+			b := j.Model.Technologies["battery"]
+			b.Storage.EnergyCapacity = nil
+			j.Model.Technologies["battery"] = b
+		}, `tech "battery": storage.max_charge_rate/max_discharge_rate need storage.energy_capacity on pypsa (the Store representation sizes energy and power independently)`},
+		{"depth of discharge without energy capacity", func(j *model.Job) {
+			b := j.Model.Technologies["battery"]
+			b.Storage.EnergyCapacity, b.Storage.MaxChargeRate, b.Storage.MaxDischargeRate = nil, nil, nil
+			j.Model.Technologies["battery"] = b
+		}, `tech "battery": storage.depth_of_discharge needs storage.energy_capacity on pypsa`},
+		{"inflow on a store", func(j *model.Job) {
+			b := j.Model.Technologies["battery"]
+			b.Storage.Inflow = model.Num(1)
+			j.Model.Technologies["battery"] = b
+		}, `tech "battery": storage.inflow has no slot on a Store; drop storage.energy_capacity to keep the StorageUnit representation`},
+		{"soc profile on a store", func(j *model.Job) {
+			b := j.Model.Technologies["battery"]
+			b.Storage.SOCProfile = model.Num(10)
+			j.Model.Technologies["battery"] = b
+		}, `tech "battery": storage.soc_profile has no slot on a Store`},
+		{"binary flow exclusion still rejected", func(j *model.Job) {
+			b := j.Model.Technologies["battery"]
+			b.Storage.NoSimultaneousChargeDischarge = true
+			j.Model.Technologies["battery"] = b
+		}, `no_simultaneous_charge_discharge is not representable for pypsa`},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			j := storeJob(t, c.mut)
+			wantGateErr(t, &j, model.TargetPyPSA, c.want)
+		})
+	}
+
+	// Calliope and AdOpT keep their storage mappings; the fixed state-of-charge
+	// profile they have no slot for is ignored with a warning.
+	for _, tgt := range []model.Target{model.TargetCalliope, model.TargetAdOpt} {
+		j := storeJob(t, func(j *model.Job) {
+			if tgt == model.TargetAdOpt {
+				// AdOpT maps only database technologies and has no minimum
+				// state of charge: keep the storages, drop what it rejects.
+				delete(j.Model.Technologies, "pv")
+				delete(j.Model.Technologies, "grid")
+				b := j.Model.Technologies["battery"]
+				b.Storage.DepthOfDischarge = nil
+				j.Model.Technologies["battery"] = b
+			}
+		})
+		warns, err := target.ValidateFor(&j, tgt)
+		if err != nil {
+			t.Fatalf("%s: the store scenario must stay valid: %v", tgt, err)
+		}
+		if !hasWarning(warns, "soc_profile", "ignored", `target "`+string(tgt)+`"`) {
+			t.Errorf("%s: want the soc_profile warning, got %v", tgt, warns)
+		}
+	}
+}

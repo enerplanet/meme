@@ -1,0 +1,79 @@
+model:
+  name: pypsa_store
+  calliope_version: 0.6.8
+  timeseries_data_path: timeseries_data
+run:
+  mode: plan
+  solver: cbc
+  objective_options:
+    cost_class:
+      monetary: 1
+    sense: minimize
+  cyclic_storage: false
+techs:
+  battery:
+    essentials:
+      name: battery
+      parent: storage
+      carrier: electricity
+    constraints:
+      energy_eff: 0.95
+      storage_loss: 0.001
+      storage_cap_max: 40
+      storage_discharge_depth: 0.1
+      energy_cap_per_storage_cap_max: 0.5
+      energy_cap_max: 10
+      lifetime: 1
+    costs:
+      monetary:
+        energy_cap: 10
+        storage_cap: 2
+        om_prod: 1
+        interest_rate: 0
+  grid:
+    essentials:
+      name: grid
+      parent: supply
+      carrier_out: electricity
+    constraints:
+      energy_cap_equals: 100
+    costs:
+      monetary:
+        om_prod: 120
+  load:
+    essentials:
+      name: load
+      parent: demand
+      carrier_in: electricity
+  pumped:
+    essentials:
+      name: pumped
+      parent: storage
+      carrier: electricity
+    constraints:
+      energy_eff: 0.8485281374238571
+      storage_initial: 0.5
+      energy_cap_equals: 4
+  pv:
+    essentials:
+      name: pv
+      parent: supply
+      carrier_out: electricity
+    constraints:
+      resource_unit: energy_per_cap
+      energy_cap_equals: 20
+    costs:
+      monetary:
+        om_prod: 1
+locations:
+  n1:
+    techs:
+      battery:
+      grid:
+      load:
+        constraints:
+          resource: "file=load__resource.csv:n1"
+      pumped:
+      pv:
+        constraints:
+          resource: "file=pv__resource.csv:n1"

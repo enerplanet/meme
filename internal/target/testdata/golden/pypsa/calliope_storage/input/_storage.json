@@ -1,0 +1,11 @@
+{
+  "stores": [
+    {
+      "name": "batt",
+      "store": "batt",
+      "charge": "batt_charge",
+      "discharge": "batt_discharge",
+      "equal_power": false
+    }
+  ]
+}

@@ -1,0 +1,2 @@
+name,bus,carrier,e_nom,e_nom_extendable,e_nom_max,e_cyclic,standing_loss,capital_cost,marginal_cost,e_min_pu
+battery,n1::electricity::battery,electricity,0,True,40,True,0.001,2,0,0.1

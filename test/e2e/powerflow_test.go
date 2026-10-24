@@ -370,3 +370,44 @@ func powerFlowPayloadFrom(t *testing.T, file string, mut func(j *model.Job)) []b
 	}
 	return out
 }
+
+// TestE2EPyPSAStore: the Store topology solves on the real framework; the
+// sidecar constraints hold in the optimum (charger and discharger sized
+// alike, each within the rate times the energy built), the Store results
+// are reported, and the pinned state-of-charge profile is honored.
+func TestE2EPyPSAStore(t *testing.T) {
+	requireE2E(t)
+	t.Parallel()
+	srv, _ := newE2EServer(t)
+	sub := submit(t, srv.URL, model.TargetPyPSA, readScenario(t, "pypsa_store.json"))
+	status := awaitJob(t, srv.URL, sub["id"].(string))
+	if status["state"] != string(service.StateSucceeded) {
+		t.Fatalf("store scenario failed: %v\nlog:\n%v", status["error"], status["log"])
+	}
+	files := fetchZip(t, srv.URL, sub["id"].(string))
+	caps := map[string]float64{}
+	recs, err := csv.NewReader(bytes.NewReader(files["files/run_0/output/results/capacities.csv"])).ReadAll()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range recs[1:] {
+		v, _ := strconv.ParseFloat(r[3], 64)
+		caps[r[0]+":"+r[1]] = v
+	}
+	e, ch, dis := caps["Store:battery"], caps["Link:battery_charge"], caps["Link:battery_discharge"]
+	if e <= 0 {
+		t.Fatalf("the battery should be built: %v", caps)
+	}
+	if math.Abs(ch-dis) > 1e-6 {
+		t.Errorf("charger and discharger must be sized alike: %g vs %g", ch, dis)
+	}
+	if ch > 0.5*e+1e-6 {
+		t.Errorf("charger power %g exceeds half the energy %g", ch, e)
+	}
+	if soc := resultCol(t, files, "storage_units-state_of_charge.csv", "pumped"); len(soc) == 0 || math.Abs(soc[2]-12) > 1e-6 {
+		t.Errorf("the pinned state of charge should hold at 12 MWh, got %v", soc)
+	}
+	if _, ok := files["files/run_0/output/results/stores-e.csv"]; !ok {
+		t.Errorf("results lack stores-e.csv (have %v)", zipNames(files))
+	}
+}

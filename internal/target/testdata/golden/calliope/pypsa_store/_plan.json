@@ -1,0 +1,14 @@
+{
+  "target": "calliope",
+  "entrypoint": "${BASE}/input/model.yaml",
+  "command": [
+    "calliope",
+    "run",
+    "${BASE}/input/model.yaml",
+    "--save_netcdf",
+    "${BASE}/output/results.nc",
+    "--save_csv",
+    "${BASE}/output/csv"
+  ],
+  "work_dir": "${BASE}"
+}

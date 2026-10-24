@@ -95,6 +95,15 @@ func materializeTimeSeries(m *model.Model, dir string, pfMode bool) error {
 				if eff.Storage != nil && eff.Storage.Inflow.IsSeries() {
 					add("storage_units-inflow.csv", name, eff.Storage.Inflow.SeriesID())
 				}
+				if eff.Storage != nil && eff.Storage.SOCProfile.IsSeries() {
+					add("storage_units-state_of_charge_set.csv", name, eff.Storage.SOCProfile.SeriesID())
+				}
+				// A Store's variable cost sits on its discharger link.
+				if eff.Storage.IsStore() {
+					if c, ok := eff.Costs[model.PrimaryCostClass]; ok && c.VariableOM.IsSeries() {
+						add("links-marginal_cost.csv", name+"_discharge", c.VariableOM.SeriesID())
+					}
+				}
 			}
 		}
 	}

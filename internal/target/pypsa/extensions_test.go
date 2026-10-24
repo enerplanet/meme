@@ -145,19 +145,25 @@ func TestTransmissionExtensionGates(t *testing.T) {
 	}
 }
 
+// On a max_hours StorageUnit the independent rates and the depth of discharge
+// have no slot and point at the Store representation (storage.energy_capacity,
+// ADR-0011); the binary flow exclusion has no slot in either representation.
 func TestStorageExtensionsRejected(t *testing.T) {
-	for _, mut := range []func(*model.Storage){
-		func(s *model.Storage) { s.MaxHours = nil; s.MaxChargeRate = fp(0.25) },
-		func(s *model.Storage) { s.DepthOfDischarge = fp(0.1) },
-		func(s *model.Storage) { s.NoSimultaneousChargeDischarge = true },
+	for _, c := range []struct {
+		mut  func(*model.Storage)
+		want string
+	}{
+		{func(s *model.Storage) { s.MaxHours = nil; s.MaxChargeRate = fp(0.25) }, "storage.energy_capacity"},
+		{func(s *model.Storage) { s.DepthOfDischarge = fp(0.1) }, "storage.energy_capacity"},
+		{func(s *model.Storage) { s.NoSimultaneousChargeDischarge = true }, "not representable"},
 	} {
 		j := loadSample(t)
 		b := j.Model.Technologies["battery"]
-		mut(b.Storage)
+		c.mut(b.Storage)
 		j.Model.Technologies["battery"] = b
 		if _, err := validateFor(&j, model.TargetPyPSA); err == nil ||
-			!strings.Contains(err.Error(), "not representable") {
-			t.Fatalf("want storage-extension rejection, got: %v", err)
+			!strings.Contains(err.Error(), c.want) {
+			t.Fatalf("want storage-extension rejection containing %q, got: %v", c.want, err)
 		}
 	}
 }

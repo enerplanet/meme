@@ -76,6 +76,17 @@ func (Emitter) Emit(j *model.Job, outDir string) (string, error) {
 		}
 		return pairs[i][1] < pairs[j][1]
 	})
+	// Energy-sized storages (ADR-0011) sit on a bus of their own between
+	// their charger and discharger; declare those buses with the grid's.
+	var storeBuses [][]string
+	for _, id := range emit.Keys(m.Technologies) {
+		t := m.Technologies[id]
+		for _, node := range t.Node {
+			if eff := t.At(node); eff.Role == model.RoleStorage && eff.Storage.IsStore() {
+				storeBuses = append(storeBuses, []string{storeBusID(node, storageCarrier(eff), componentName(id, t, node)), storageCarrier(eff)})
+			}
+		}
+	}
 	for _, pair := range pairs {
 		node, carrier := pair[0], pair[1]
 		row := map[string]string{"name": BusID(node, carrier), "carrier": carrier}
@@ -96,6 +107,9 @@ func (Emitter) Emit(j *model.Job, outDir string) (string, error) {
 			}
 		}
 		buses.add(row)
+	}
+	for _, sb := range storeBuses {
+		buses.add(map[string]string{"name": sb[0], "carrier": sb[1]})
 	}
 	if err := buses.write(outDir, "buses.csv"); err != nil {
 		return "", err
@@ -133,6 +147,8 @@ func (Emitter) Emit(j *model.Job, outDir string) (string, error) {
 			shunts.add(r[0])
 		}
 	}
+	stores := &pcsv{base: []string{"name", "bus", "carrier", "e_nom", "e_nom_extendable", "e_nom_max", "e_cyclic", "standing_loss", "capital_cost", "marginal_cost"}}
+	var storeSpecs []storeSpec
 
 	var perfSpecs []model.PerfEntry
 	for _, id := range emit.Keys(m.Technologies) {
@@ -182,6 +198,19 @@ func (Emitter) Emit(j *model.Job, outDir string) (string, error) {
 				}
 				applyOperation(row, eff.Operation)
 			case model.RoleStorage:
+				if eff.Storage.IsStore() {
+					// A Store with its charger and discharger (ADR-0011); the
+					// technology's native block decorates the Store row.
+					st, ch, dis, spec := storeTopology(m, name, node, eff)
+					if err := mergeNativeInto(st, eff.Native.For(model.TargetPyPSA)); err != nil {
+						return "", fmt.Errorf("tech %q: %w", id, err)
+					}
+					stores.add(st)
+					links.add(ch)
+					links.add(dis)
+					storeSpecs = append(storeSpecs, spec)
+					continue
+				}
 				tbl = sus
 				carrier := eff.CarrierOut.First()
 				if carrier == "" {
@@ -193,7 +222,7 @@ func (Emitter) Emit(j *model.Job, outDir string) (string, error) {
 					"efficiency_store": effp(eff.Storage, chargeEff), "efficiency_dispatch": effp(eff.Storage, dischargeEff),
 					"capital_cost": emit.Ftoa(pypsaCapitalCost(m, eff)),
 				}
-				applyStorageDetail(row, eff.Storage)
+				applyStorageDetail(row, eff)
 			default:
 				continue
 			}
@@ -330,9 +359,23 @@ func (Emitter) Emit(j *model.Job, outDir string) (string, error) {
 
 	for file, tbl := range map[string]*pcsv{
 		"generators.csv": gens, "loads.csv": loads, "links.csv": links, "storage_units.csv": sus,
-		"lines.csv": lines, "transformers.csv": trafos, "shunt_impedances.csv": shunts,
+		"lines.csv": lines, "transformers.csv": trafos, "shunt_impedances.csv": shunts, "stores.csv": stores,
 	} {
 		if err := tbl.write(outDir, file); err != nil {
+			return "", err
+		}
+	}
+	// Store topologies: the structural constraints run.py applies (equal
+	// charger/discharger power, rate bounds against the energy capacity).
+	if len(storeSpecs) > 0 {
+		var buf bytes.Buffer
+		enc := json.NewEncoder(&buf)
+		enc.SetEscapeHTML(false)
+		enc.SetIndent("", "  ")
+		if err := enc.Encode(map[string]any{"stores": storeSpecs}); err != nil {
+			return "", err
+		}
+		if err := os.WriteFile(filepath.Join(outDir, "_storage.json"), buf.Bytes(), 0o644); err != nil {
 			return "", err
 		}
 	}
@@ -547,15 +590,31 @@ func applyOperation(row map[string]string, op *model.Operation) {
 }
 
 // applyStorageDetail writes standing loss, initial/cyclic SoC, spill, inflow.
-func applyStorageDetail(row map[string]string, s *model.Storage) {
+func applyStorageDetail(row map[string]string, t model.Technology) {
+	s := t.Storage
 	if s == nil {
 		return
+	}
+	// A pinned state of charge: a scalar as the column, a series through its
+	// file (MaterializeTimeSeries) with 0 as the static placeholder.
+	if s.SOCProfile != nil {
+		row["state_of_charge_set"] = "0"
+		if f, ok := s.SOCProfile.Reduce(); ok {
+			row["state_of_charge_set"] = emit.Ftoa(f)
+		}
 	}
 	if s.SelfDischarge != nil {
 		row["standing_loss"] = emit.Ftoa(*s.SelfDischarge)
 	}
 	if s.InitialSOC != nil {
-		row["state_of_charge_initial"] = emit.Ftoa(*s.InitialSOC)
+		// PyPSA's state_of_charge_initial is absolute (MWh): the fraction over
+		// the installed energy, p_nom times max_hours. An expandable unit
+		// starts from its existing capacity (ValidateJob warns).
+		hours := 1.0
+		if s.MaxHours != nil {
+			hours = *s.MaxHours
+		}
+		row["state_of_charge_initial"] = emit.Ftoa(*s.InitialSOC * capExisting(t) * hours)
 	}
 	if s.Cyclic {
 		row["cyclic_state_of_charge"] = "True"
@@ -624,6 +683,15 @@ func capNom(c *model.Capacity) string {
 	}
 	return emit.Ftoa(c.Existing)
 }
+
+// capExisting is the installed capacity, 0 without a capacity block.
+func capExisting(t model.Technology) float64 {
+	if t.Capacity == nil {
+		return 0
+	}
+	return t.Capacity.Existing
+}
+
 func capExt(c *model.Capacity) string {
 	if c == nil {
 		return "False"

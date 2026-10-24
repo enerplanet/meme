@@ -1,0 +1,131 @@
+{
+  "model": {
+    "metadata": {
+      "name": "pypsa_store"
+    },
+    "time": {
+      "start": "2025-01-01T00:00:00",
+      "end": "2025-01-01T05:00:00",
+      "resolution": "1H"
+    },
+    "carriers": {
+      "electricity": {
+        "unit": "MWh"
+      }
+    },
+    "nodes": {
+      "n1": {}
+    },
+    "technologies": {
+      "pv": {
+        "role": "supply",
+        "node": "n1",
+        "carrier_out": "electricity",
+        "capacity": {
+          "existing": 20
+        },
+        "operation": {
+          "max_pu": [
+            0.2,
+            0.9,
+            1.0,
+            0.8,
+            0.1,
+            0.0
+          ]
+        },
+        "costs": {
+          "monetary": {
+            "variable_om": 1
+          }
+        }
+      },
+      "grid": {
+        "role": "supply",
+        "node": "n1",
+        "carrier_out": "electricity",
+        "capacity": {
+          "existing": 100
+        },
+        "costs": {
+          "monetary": {
+            "variable_om": 120
+          }
+        }
+      },
+      "load": {
+        "role": "demand",
+        "node": "n1",
+        "carrier_in": "electricity",
+        "demand_profile": [
+          6,
+          6,
+          6,
+          8,
+          12,
+          12
+        ]
+      },
+      "battery": {
+        "role": "storage",
+        "node": "n1",
+        "carrier_out": "electricity",
+        "capacity": {
+          "existing": 0,
+          "expandable": true,
+          "max": 10
+        },
+        "storage": {
+          "energy_capacity": {
+            "existing": 0,
+            "expandable": true,
+            "max": 40
+          },
+          "charge_eff": 0.95,
+          "discharge_eff": 0.95,
+          "depth_of_discharge": 0.1,
+          "cyclic": true,
+          "self_discharge": 0.001,
+          "max_charge_rate": 0.5,
+          "max_discharge_rate": 0.5
+        },
+        "costs": {
+          "monetary": {
+            "investment_per_capacity": 10,
+            "investment_per_energy_capacity": 2,
+            "variable_om": 1
+          }
+        },
+        "cost_basis": "annualized"
+      },
+      "pumped": {
+        "role": "storage",
+        "node": "n1",
+        "carrier_out": "electricity",
+        "capacity": {
+          "existing": 4
+        },
+        "storage": {
+          "max_hours": 6,
+          "charge_eff": 0.8,
+          "discharge_eff": 0.9,
+          "initial_soc": 0.5,
+          "soc_profile": [
+            12,
+            12,
+            12,
+            12,
+            12,
+            12
+          ]
+        }
+      }
+    }
+  },
+  "experiment": {
+    "mode": "plan",
+    "solver": {
+      "name": "highs"
+    }
+  }
+}

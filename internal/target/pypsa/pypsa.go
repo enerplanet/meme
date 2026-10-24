@@ -44,6 +44,7 @@ func (PyPSA) Capabilities() map[model.Feature]bool {
 		// v_nom, fixed p_set) with lpf()/pf(); see powerflow.go and ADR-0008.
 		model.FeatPowerFlow:              true,
 		model.FeatLinearPowerFlow:        true, // the voltage law inside optimize (Lines/Transformers; ADR-0010)
+		model.FeatSOCProfile:             true, // StorageUnit state_of_charge_set (ADR-0011)
 		model.FeatMultiCarrierConversion: true, // multi-output Links
 		model.FeatEmissionLimit:          true, // GlobalConstraint
 		model.FeatImportExport:           true, // via generators/loads + marginal_cost
@@ -191,18 +192,33 @@ func (PyPSA) ValidateJob(j *model.Job) ([]string, error) {
 		}
 	}
 
-	// Storage fields with no StorageUnit representation are rejected rather
-	// than silently reshaping the plant.
+	// Storage: an energy-sized storage is a Store with charger and discharger
+	// (ADR-0011), which carries independent rates, a depth of discharge and an
+	// energy-capacity cost but has no inflow or state-of-charge set-point; a
+	// max_hours storage stays a StorageUnit, where those first fields have no
+	// slot. The binary flow exclusion has no slot in either.
 	for _, id := range emit.Keys(m.Technologies) {
 		s := m.Technologies[id].Storage
 		if s == nil {
 			continue
 		}
-		if s.MaxChargeRate != nil || s.MaxDischargeRate != nil {
-			return nil, fmt.Errorf("tech %q: storage.max_charge_rate/max_discharge_rate are not representable on a pypsa StorageUnit (p_nom bounds both directions); use max_hours or native.pypsa stores+links", id)
-		}
-		if s.DepthOfDischarge != nil {
-			return nil, fmt.Errorf("tech %q: storage.depth_of_discharge is not representable on a pypsa StorageUnit; use native.pypsa (a Store with e_min_pu)", id)
+		if s.IsStore() {
+			if s.Inflow != nil {
+				return nil, fmt.Errorf("tech %q: storage.inflow has no slot on a Store; drop storage.energy_capacity to keep the StorageUnit representation (max_hours) or the inflow", id)
+			}
+			if s.SOCProfile != nil {
+				return nil, fmt.Errorf("tech %q: storage.soc_profile has no slot on a Store (PyPSA pins the state of charge of a StorageUnit only); drop storage.energy_capacity or the profile", id)
+			}
+			if mode := e.EffectiveMode(); mode == model.ModeStochastic && (s.MaxChargeRate != nil || s.MaxDischargeRate != nil || (m.Technologies[id].Capacity != nil && m.Technologies[id].Capacity.Expandable)) {
+				return nil, fmt.Errorf("tech %q: the Store representation needs the sidecar constraints (equal charger/discharger power, rate bounds), which mode %q cannot apply", id, mode)
+			}
+		} else {
+			if s.MaxChargeRate != nil || s.MaxDischargeRate != nil {
+				return nil, fmt.Errorf("tech %q: storage.max_charge_rate/max_discharge_rate need storage.energy_capacity on pypsa (the Store representation sizes energy and power independently); a StorageUnit's p_nom bounds both directions", id)
+			}
+			if s.DepthOfDischarge != nil {
+				return nil, fmt.Errorf("tech %q: storage.depth_of_discharge needs storage.energy_capacity on pypsa (a Store's e_min_pu); a StorageUnit has no minimum state of charge", id)
+			}
 		}
 		if s.NoSimultaneousChargeDischarge {
 			return nil, fmt.Errorf("tech %q: storage.no_simultaneous_charge_discharge is not representable for pypsa (StorageUnit dispatch is a single signed variable)", id)
@@ -228,8 +244,14 @@ func (PyPSA) ValidateJob(j *model.Job) ([]string, error) {
 
 	// Known-dropped fields warn.
 	for _, id := range emit.Keys(m.Technologies) {
-		if c, ok := m.Technologies[id].Costs[model.PrimaryCostClass]; ok && c.InvestmentPerEnergyCapacity != nil {
-			warns = append(warns, fmt.Sprintf("tech %q: investment_per_energy_capacity is only emitted for calliope (cost_storage_cap); pypsa has no per-MWh storage cost slot", id))
+		t := m.Technologies[id]
+		if s := t.Storage; s != nil && s.InitialSOC != nil {
+			if (s.IsStore() && s.EnergyCapacity.Expandable) || (!s.IsStore() && t.Capacity != nil && t.Capacity.Expandable) {
+				warns = append(warns, fmt.Sprintf("tech %q: storage.initial_soc is a fraction of the installed energy, which an expandable storage decides; pypsa starts it from the existing capacity (%g MWh of a Store is not set at all)", id, 0.0))
+			}
+		}
+		if c, ok := t.Costs[model.PrimaryCostClass]; ok && c.InvestmentPerEnergyCapacity != nil && !t.Storage.IsStore() {
+			warns = append(warns, fmt.Sprintf("tech %q: investment_per_energy_capacity is priced on pypsa only with storage.energy_capacity (a Store's capital_cost per MWh); a max_hours StorageUnit has no per-MWh slot, so it is dropped here (calliope: cost_storage_cap)", id))
 		}
 	}
 	for _, id := range emit.Keys(m.Trade) {

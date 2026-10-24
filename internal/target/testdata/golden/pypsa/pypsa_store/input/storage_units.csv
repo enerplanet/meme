@@ -1,0 +1,2 @@
+name,bus,carrier,p_nom,p_nom_extendable,max_hours,efficiency_store,efficiency_dispatch,capital_cost,state_of_charge_initial,state_of_charge_set
+pumped,n1::electricity,electricity,4,False,6,0.8,0.9,0,12,0

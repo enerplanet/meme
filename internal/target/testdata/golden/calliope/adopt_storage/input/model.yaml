@@ -47,7 +47,7 @@ nodes:
       grid_import:
 data_tables:
   load__sink_use_equals:
-    table: dem.csv
+    table: load__sink_use_equals.csv
     rows: timesteps
     columns: [techs, nodes]
     add_dims:

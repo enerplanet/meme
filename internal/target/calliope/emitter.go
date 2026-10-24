@@ -143,22 +143,31 @@ func (Emitter) Emit(j *model.Job, outDir string) (string, error) {
 	root.set("config", cfg)
 
 	// techs -------------------------------------------------------------------
-	var csvs []calliopeCSV // series-backed data tables to materialize
-	anyCO2 := false        // whether any tech carries a co2 emission cost
+	// The techs block describes each technology once, as seen from its first
+	// node (Calliope defines a tech once and places it at nodes). Its
+	// timesteps-indexed inputs are node data instead: one table per (tech,
+	// parameter) with a column per placed node, each read through that node's
+	// overrides — a tech listed at several nodes is one copy per node.
+	anyCO2 := false // whether any tech carries a co2 emission cost
 	ms := &calliopeMathState{}
-	dataTables := newYAML()
+	tables := newCalliopeTables()
 	techs := newYAML()
 	for _, id := range emit.Keys(m.Technologies) {
 		t := m.Technologies[id]
-		node := t.Node.First()
-		tn, err := calliopeTech(t.At(node), m, id, dataTables, &csvs, &anyCO2, ms)
+		first := t.Node.First()
+		tn, err := calliopeTech(t.At(first), m, id, &anyCO2, ms)
 		if err != nil {
 			return "", err
 		}
 		if mode == model.ModeOperate {
-			applyOperateCaps(tn, t.At(node))
+			applyOperateCaps(tn, t.At(first))
 		}
 		techs.set(id, tn)
+		for _, node := range t.Node {
+			if err := calliopeNodeSeries(t.At(node), node, id, m, tables); err != nil {
+				return "", fmt.Errorf("tech %q at node %q: %w", id, node, err)
+			}
+		}
 	}
 	for _, id := range emit.Keys(m.Transmission) {
 		techs.set(id, calliopeTransmission(m.Transmission[id], &anyCO2))
@@ -305,8 +314,8 @@ func (Emitter) Emit(j *model.Job, outDir string) (string, error) {
 		root.set("data_definitions", dd)
 	}
 
-	if dataTables.len() > 0 {
-		root.set("data_tables", dataTables)
+	if dt := tables.yaml(); dt.len() > 0 {
+		root.set("data_tables", dt)
 	}
 
 	// Extra math assembly. Portable constraints + emission limits render into
@@ -339,12 +348,10 @@ func (Emitter) Emit(j *model.Job, outDir string) (string, error) {
 		return "", err
 	}
 
-	// Materialize the series-backed data tables referenced above, so the model
-	// is directly runnable (Calliope reads these CSVs at load time).
-	for _, c := range csvs {
-		if err := writeCalliopeCSV(outDir, c, m); err != nil {
-			return "", err
-		}
+	// Materialize the data tables referenced above, so the model is directly
+	// runnable (Calliope reads these CSVs at load time).
+	if err := tables.write(outDir, m); err != nil {
+		return "", err
 	}
 
 	if needMathFile {
@@ -526,7 +533,7 @@ type calliopeFlowTech struct {
 	ref string // reference input carrier
 }
 
-func calliopeTech(t model.Technology, m *model.Model, id string, dataTables *yamlNode, csvs *[]calliopeCSV, anyCO2 *bool, ms *calliopeMathState) (*yamlNode, error) {
+func calliopeTech(t model.Technology, m *model.Model, id string, anyCO2 *bool, ms *calliopeMathState) (*yamlNode, error) {
 	n := newYAML()
 	n.set("base_tech", calliopeBaseTech(t.Role))
 
@@ -538,22 +545,21 @@ func calliopeTech(t model.Technology, m *model.Model, id string, dataTables *yam
 		}
 		// Availability (operation.equals_pu/max_pu, or a physics precomputed
 		// profile) becomes the source model per unit of flow_cap: a fixed
-		// dispatch pins source_use_equals, a ceiling pins source_use_max. An
-		// explicit technology.source block wins over the availability route.
+		// dispatch pins source_use_equals, a ceiling pins source_use_max. A
+		// scalar is a tech-level parameter; a series is node data and lands in
+		// a per-node data table (calliopeNodeSeries). An explicit
+		// technology.source block wins over the availability route.
 		if av, param := calliopeAvailability(t); av != nil {
-			if av.IsSeries() {
-				addDataTable(dataTables, csvs, id, t.Node.First(), param, av.SeriesID())
-				n.set("source_unit", "per_cap")
-			} else if f, ok := av.Reduce(); ok {
+			if f, ok := av.Reduce(); ok {
 				n.set(param, f)
+				n.set("source_unit", "per_cap")
+			} else if av.IsSeries() {
 				n.set("source_unit", "per_cap")
 			}
 		}
 		if s := t.Source; s != nil {
 			if s.Max != nil {
-				if s.Max.IsSeries() {
-					addDataTable(dataTables, csvs, id, t.Node.First(), "source_use_max", s.Max.SeriesID())
-				} else if f, ok := s.Max.Reduce(); ok {
+				if f, ok := s.Max.Reduce(); ok {
 					n.set("source_use_max", f)
 				}
 			}
@@ -566,21 +572,8 @@ func calliopeTech(t model.Technology, m *model.Model, id string, dataTables *yam
 		}
 	case model.RoleDemand:
 		n.set("carrier_in", t.CarrierIn.First())
-		// A curtailable demand serves at most the profile (sink_use_max)
-		// instead of exactly (sink_use_equals).
-		sinkParam := "sink_use_equals"
-		if t.DemandCurtailable {
-			sinkParam = "sink_use_max"
-		}
-		if v, ok := t.DemandProfile.Reduce(); ok {
-			// A scalar demand still becomes a timesteps-indexed data table:
-			// Calliope 0.7 requires at least one timeseries data input to build
-			// its time index, and an all-scalar model would otherwise abort with
-			// "Must define at least one timeseries data input".
-			addScalarDataTable(dataTables, csvs, id, t.Node.First(), sinkParam, v, m)
-		} else if t.DemandProfile.IsSeries() {
-			addDataTable(dataTables, csvs, id, t.Node.First(), sinkParam, t.DemandProfile.SeriesID())
-		}
+		// The demand profile is node data: it lands in a per-node data table
+		// (calliopeNodeSeries), never on the tech itself.
 	case model.RoleConversion:
 		if len(t.Flows) > 0 {
 			if ref, needsMath := calliopeFlows(n, t.Flows); needsMath {
@@ -1013,7 +1006,9 @@ func storageRate(s *model.Storage) *float64 {
 }
 
 // calliopeNodeOverride returns a per-node override mapping (or nil for "enabled,
-// no override"). Only capacity and cost overrides are projected.
+// no override"). Only capacity and cost overrides are projected here; profile
+// overrides are node data and reach their node's data-table column through
+// calliopeNodeSeries.
 func calliopeNodeOverride(t model.Technology, node string) *yamlNode {
 	ov, ok := t.NodeOverrides[node]
 	if !ok {
@@ -1032,70 +1027,163 @@ func calliopeNodeOverride(t model.Technology, node string) *yamlNode {
 	return n
 }
 
-// calliopeCSV is a series-backed data table the emitter must materialize: a
-// timesteps-indexed CSV with the tech/node named in its two header rows. values
-// (set for scalar expansion) takes precedence over the series reference.
-type calliopeCSV struct {
-	file, tech, node, series string
-	values                   []float64
+// calliopeTables collects the timesteps-indexed inputs of the model: one data
+// table per (tech, parameter) with one CSV column per node the tech is placed
+// at. A technology listed at several nodes is one copy per node, so its
+// profile must reach every node — and a node override may give a node its own
+// profile — hence tables are filled node by node (calliopeNodeSeries) rather
+// than from the tech's first-node view. Files are named after tech and
+// parameter, never after a series id two techs may share.
+type calliopeTables struct {
+	order  []string
+	tables map[string]*calliopeTable
 }
 
-// addDataTable registers a CSV-backed parameter (e.g. a demand profile) in the
-// data_tables block and records the CSV to materialize. The file is a
-// timesteps-indexed table with `columns: [techs, nodes]` — a shape Calliope
-// reads directly (the tech and node are named in the first two header rows).
-// Calliope 0.7.0 spells the file key `table` and the parameter dimension
-// `inputs` (dev7: `data` / `parameters`).
-func addDataTable(dt *yamlNode, csvs *[]calliopeCSV, tech, node, param, seriesID string) {
-	entry := newYAML()
-	entry.set("table", seriesID+".csv")
-	entry.set("rows", "timesteps")
-	entry.set("columns", []any{"techs", "nodes"})
-	add := newYAML()
-	add.set("inputs", param)
-	entry.set("add_dims", add)
-	dt.set(tech+"__"+param, entry)
-	*csvs = append(*csvs, calliopeCSV{file: seriesID + ".csv", tech: tech, node: node, series: seriesID})
+// calliopeTable is one data table: `columns: [techs, nodes]` over timesteps,
+// a shape Calliope reads directly (the tech and node of every column are named
+// in the two header rows). Calliope 0.7.0 spells the file key `table` and the
+// parameter dimension `inputs` (dev7: `data` / `parameters`).
+type calliopeTable struct {
+	tech, param string
+	nodes       []string             // column order
+	columns     map[string][]float64 // node -> values
 }
 
-// addScalarDataTable registers a data table for a scalar-valued timeseries
-// parameter by expanding the scalar over the model's snapshot index.
-func addScalarDataTable(dt *yamlNode, csvs *[]calliopeCSV, tech, node, param string, v float64, m *model.Model) {
-	file := tech + "_" + param + ".csv"
-	entry := newYAML()
-	entry.set("table", file)
-	entry.set("rows", "timesteps")
-	entry.set("columns", []any{"techs", "nodes"})
-	add := newYAML()
-	add.set("inputs", param)
-	entry.set("add_dims", add)
-	dt.set(tech+"__"+param, entry)
+func newCalliopeTables() *calliopeTables {
+	return &calliopeTables{tables: map[string]*calliopeTable{}}
+}
 
-	vals := make([]float64, emit.SnapshotCount(m))
-	for i := range vals {
-		vals[i] = v
+// tableKey names a table (and its CSV) after tech and parameter.
+func tableKey(tech, param string) string { return tech + "__" + param }
+
+// add sets node's column of the (tech, param) table; a later add for the same
+// node replaces its column.
+func (ts *calliopeTables) add(tech, param, node string, vals []float64) {
+	key := tableKey(tech, param)
+	tb, ok := ts.tables[key]
+	if !ok {
+		tb = &calliopeTable{tech: tech, param: param, columns: map[string][]float64{}}
+		ts.tables[key] = tb
+		ts.order = append(ts.order, key)
 	}
-	*csvs = append(*csvs, calliopeCSV{file: file, tech: tech, node: node, values: vals})
+	if _, dup := tb.columns[node]; !dup {
+		tb.nodes = append(tb.nodes, node)
+	}
+	tb.columns[node] = vals
 }
 
-// writeCalliopeCSV materializes one series-backed data table. The two leading
-// rows name the techs/nodes column dimensions (single column each); the
-// remaining rows are `timestep,value` pairs indexed by the snapshot calendar.
-func writeCalliopeCSV(dir string, c calliopeCSV, m *model.Model) error {
-	vals := c.values
-	if vals == nil {
-		var ok bool
-		vals, ok = emit.SeriesValues(m, c.series)
-		if !ok {
-			return fmt.Errorf("calliope data table %s: %q is not an inline time series", c.file, c.series)
+// yaml renders the data_tables block in registration order.
+func (ts *calliopeTables) yaml() *yamlNode {
+	dt := newYAML()
+	for _, key := range ts.order {
+		entry := newYAML()
+		entry.set("table", key+".csv")
+		entry.set("rows", "timesteps")
+		entry.set("columns", []any{"techs", "nodes"})
+		add := newYAML()
+		add.set("inputs", ts.tables[key].param)
+		entry.set("add_dims", add)
+		dt.set(key, entry)
+	}
+	return dt
+}
+
+// write materializes every table under dir over the model's snapshot
+// calendar: two header rows naming each column's tech and node, then one
+// `timestep,value,...` row per snapshot (a series shorter than the calendar
+// repeats its last value, as in every other emitter).
+func (ts *calliopeTables) write(dir string, m *model.Model) error {
+	n := emit.SnapshotCount(m)
+	labels := emit.SnapshotLabels(m.Time, n)
+	for _, key := range ts.order {
+		tb := ts.tables[key]
+		techs, nodes := []string{"techs"}, []string{"nodes"}
+		for _, node := range tb.nodes {
+			techs = append(techs, tb.tech)
+			nodes = append(nodes, node)
+		}
+		rows := make([][]string, 0, n+2)
+		rows = append(rows, techs, nodes)
+		for i := 0; i < n; i++ {
+			row := make([]string, 0, len(tb.nodes)+1)
+			row = append(row, labels[i])
+			for _, node := range tb.nodes {
+				row = append(row, emit.Ftoa(emit.SeriesAt(tb.columns[node], i)))
+			}
+			rows = append(rows, row)
+		}
+		if err := emit.WriteCSV(dir, key+".csv", rows); err != nil {
+			return err
 		}
 	}
-	labels := emit.SnapshotLabels(m.Time, len(vals))
-	rows := [][]string{{"techs", c.tech}, {"nodes", c.node}}
-	for i, label := range labels {
-		rows = append(rows, []string{label, emit.Ftoa(emit.SeriesAt(vals, i))})
+	return nil
+}
+
+// calliopeNodeSeries registers the timesteps-indexed inputs of a technology at
+// one of its nodes, as seen through that node's overrides (t is Technology.At
+// of the node): the demand profile — always a table, even for a scalar,
+// because Calliope 0.7 needs at least one timeseries input to build its time
+// index and would otherwise abort with "Must define at least one timeseries
+// data input" — and, for supply, a series-valued availability or source.max
+// (a scalar availability is a tech-level parameter, see calliopeTech).
+func calliopeNodeSeries(t model.Technology, node, id string, m *model.Model, tables *calliopeTables) error {
+	switch t.Role {
+	case model.RoleDemand:
+		vals, err := seriesColumn(t.DemandProfile, m)
+		if err != nil {
+			return fmt.Errorf("demand_profile: %w", err)
+		}
+		if vals != nil {
+			tables.add(id, sinkParam(t), node, vals)
+		}
+	case model.RoleSupply:
+		if av, param := calliopeAvailability(t); av.IsSeries() {
+			vals, err := seriesColumn(av, m)
+			if err != nil {
+				return fmt.Errorf("availability: %w", err)
+			}
+			tables.add(id, param, node, vals)
+		}
+		// An explicit source block wins over the availability route.
+		if s := t.Source; s != nil && s.Max.IsSeries() {
+			vals, err := seriesColumn(s.Max, m)
+			if err != nil {
+				return fmt.Errorf("source.max: %w", err)
+			}
+			tables.add(id, "source_use_max", node, vals)
+		}
 	}
-	return emit.WriteCSV(dir, c.file, rows)
+	return nil
+}
+
+// sinkParam is the demand parameter: sink_use_equals serves the profile
+// exactly, sink_use_max (a curtailable demand) at most.
+func sinkParam(t model.Technology) string {
+	if t.DemandCurtailable {
+		return "sink_use_max"
+	}
+	return "sink_use_equals"
+}
+
+// seriesColumn resolves a Value into a data-table column: a scalar is expanded
+// over the snapshot calendar, a series reference yields its inline values, and
+// an absent value yields nil.
+func seriesColumn(v *model.Value, m *model.Model) ([]float64, error) {
+	if f, ok := v.Reduce(); ok {
+		vals := make([]float64, emit.SnapshotCount(m))
+		for i := range vals {
+			vals[i] = f
+		}
+		return vals, nil
+	}
+	if v.IsSeries() {
+		vals, ok := emit.SeriesValues(m, v.SeriesID())
+		if !ok {
+			return nil, fmt.Errorf("%q is not an inline time series", v.SeriesID())
+		}
+		return vals, nil
+	}
+	return nil, nil
 }
 
 func writeJSONSidecar(dir, name string, v any) error {

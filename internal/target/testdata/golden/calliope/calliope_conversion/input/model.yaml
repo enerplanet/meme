@@ -47,13 +47,13 @@ nodes:
       hload:
 data_tables:
   eload__sink_use_equals:
-    table: eload_sink_use_equals.csv
+    table: eload__sink_use_equals.csv
     rows: timesteps
     columns: [techs, nodes]
     add_dims:
       inputs: sink_use_equals
   hload__sink_use_equals:
-    table: hload_sink_use_equals.csv
+    table: hload__sink_use_equals.csv
     rows: timesteps
     columns: [techs, nodes]
     add_dims:

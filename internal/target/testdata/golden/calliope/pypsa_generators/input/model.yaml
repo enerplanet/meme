@@ -55,7 +55,7 @@ nodes:
       pv:
 data_tables:
   load__sink_use_equals:
-    table: load_sink_use_equals.csv
+    table: load__sink_use_equals.csv
     rows: timesteps
     columns: [techs, nodes]
     add_dims:

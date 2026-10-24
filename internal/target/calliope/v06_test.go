@@ -32,7 +32,7 @@ func emit06(t *testing.T, j model.Job) string {
 	return readFile(t, emit06Dir(t, j), "model.yaml")
 }
 
-func load06(t *testing.T, file string) model.Job {
+func loadScenario(t *testing.T, file string) model.Job {
 	t.Helper()
 	j, err := scenarios.Load(file)
 	if err != nil {
@@ -82,7 +82,7 @@ func TestCalliope06EmitSample(t *testing.T) {
 // Demand profiles become negative file= resources with a datetime index, one
 // column per node, under timeseries_data/.
 func TestCalliope06MaterializesNegativeDemand(t *testing.T) {
-	dir := emit06Dir(t, load06(t, "calliope_plan.json"))
+	dir := emit06Dir(t, loadScenario(t, "calliope_plan.json"))
 	doc := readFile(t, dir, "model.yaml")
 	wantAll(t, doc, `resource: "file=load__resource.csv:n1"`)
 	csv := readFile(t, dir, "timeseries_data/load__resource.csv")
@@ -101,7 +101,7 @@ func TestCalliope06MaterializesNegativeDemand(t *testing.T) {
 // Multi-output conversion: the primary output sets energy_eff, every further
 // output tier gets a carrier_ratio relative to the primary output.
 func TestCalliope06ConversionPlus(t *testing.T) {
-	doc := emit06(t, load06(t, "calliope_conversion.json"))
+	doc := emit06(t, loadScenario(t, "calliope_conversion.json"))
 	wantAll(t, doc,
 		"carrier_in: gas",
 		"carrier_out: electricity",
@@ -115,14 +115,14 @@ func TestCalliope06ConversionPlus(t *testing.T) {
 // Trade: import is a priced supply capped at the limit; export is a flexible
 // demand (negative, unforced resource) paid the export price.
 func TestCalliope06Trade(t *testing.T) {
-	doc := emit06(t, load06(t, "calliope_trade.json"))
+	doc := emit06(t, loadScenario(t, "calliope_trade.json"))
 	imp := doc[strings.Index(doc, "market_import:"):]
 	wantAll(t, imp, "parent: supply", "energy_cap_max: 500", "om_prod: 60", "emissions:", "om_prod: 0.35")
 	exp := doc[strings.Index(doc, "market_export:"):]
 	wantAll(t, exp, "parent: demand", "resource: -200", "force_resource: false", "om_con: -30")
 
 	// An export without a limit has no resource bound to emit.
-	j := load06(t, "calliope_trade.json")
+	j := loadScenario(t, "calliope_trade.json")
 	tr := j.Model.Trade["market"]
 	tr.Export.Limit = nil
 	j.Model.Trade["market"] = tr
@@ -135,7 +135,7 @@ func TestCalliope06Trade(t *testing.T) {
 // group with an infinite monetary cap, and spores_score costs on every
 // capacity-bearing tech.
 func TestCalliope06Spores(t *testing.T) {
-	doc := emit06(t, load06(t, "calliope06_spores.json"))
+	doc := emit06(t, loadScenario(t, "calliope06_spores.json"))
 	wantAll(t, doc,
 		"mode: spores",
 		"spores_number: 2",
@@ -154,7 +154,7 @@ func TestCalliope06Spores(t *testing.T) {
 // Portable constraints map onto group_constraints with the coefficient folded
 // into the bound; multi-term constraints are rejected up front.
 func TestCalliope06GroupConstraints(t *testing.T) {
-	doc := emit06(t, load06(t, "calliope06_group_constraints.json"))
+	doc := emit06(t, loadScenario(t, "calliope06_group_constraints.json"))
 	wantAll(t, doc,
 		"group_constraints:",
 		"max_pv:",
@@ -168,7 +168,7 @@ func TestCalliope06GroupConstraints(t *testing.T) {
 		"emissions: 1.0e+06",
 	)
 
-	j := load06(t, "calliope06_group_constraints.json")
+	j := loadScenario(t, "calliope06_group_constraints.json")
 	// Negative coefficient flips the sense: -2 * cap(pv) <= -400  <=>  cap(pv) >= 200.
 	j.Model.Constraints = []model.Constraint{{Name: "neg", Sense: "<=", Bound: -400,
 		Terms: []model.Term{{Coefficient: -2, Variable: model.VarCapacity, Techs: []string{"pv"}}}}}
@@ -191,12 +191,12 @@ func TestCalliope06GroupConstraints(t *testing.T) {
 
 // min_emissions swaps the objective weights onto the emissions class.
 func TestCalliope06MinEmissionsObjective(t *testing.T) {
-	doc := emit06(t, load06(t, "calliope06_min_emissions.json"))
+	doc := emit06(t, loadScenario(t, "calliope06_min_emissions.json"))
 	run := doc[strings.Index(doc, "run:"):strings.Index(doc, "techs:")]
 	wantAll(t, run, "monetary: 0", "emissions: 1", "sense: minimize")
 
 	// Without any emission source there is nothing to minimize.
-	j := load06(t, "calliope06_min_emissions.json")
+	j := loadScenario(t, "calliope06_min_emissions.json")
 	gas := j.Model.Carriers["gas"]
 	gas.CO2Intensity = nil
 	j.Model.Carriers["gas"] = gas
@@ -207,20 +207,20 @@ func TestCalliope06MinEmissionsObjective(t *testing.T) {
 
 // Typical days: k-means clustering with k = periods and a fixed random seed.
 func TestCalliope06TypicalDays(t *testing.T) {
-	doc := emit06(t, load06(t, "calliope06_typical_days.json"))
+	doc := emit06(t, loadScenario(t, "calliope06_typical_days.json"))
 	wantAll(t, doc, "function: apply_clustering", "clustering_func: kmeans", "k: 2", "random_seed: 23")
 }
 
 // 0.6-specific gates: time weights, asymmetric storage efficiency (warning),
 // mixed cyclic storage (warning), differing storage carriers.
 func TestCalliope06Gates(t *testing.T) {
-	j := load06(t, "calliope_storage.json")
+	j := loadScenario(t, "calliope_storage.json")
 	j.Model.Time.Weights = model.Num(2)
 	if _, err := validateFor(&j, model.TargetCalliope06); err == nil || !strings.Contains(err.Error(), "time.weights") {
 		t.Errorf("time.weights should be rejected for 0.6, got %v", err)
 	}
 
-	j = load06(t, "calliope_storage.json")
+	j = loadScenario(t, "calliope_storage.json")
 	b := j.Model.Technologies["batt"]
 	ce, de := 0.9, 0.8
 	b.Storage.ChargeEff, b.Storage.DischargeEff = &ce, &de
@@ -234,7 +234,7 @@ func TestCalliope06Gates(t *testing.T) {
 	}
 	wantAll(t, readFile(t, emit06Dir(t, j), "model.yaml"), "energy_eff: 0.848528137423857")
 
-	j = load06(t, "calliope_storage.json")
+	j = loadScenario(t, "calliope_storage.json")
 	j.Model.Carriers["heat"] = model.Carrier{Unit: "MWh"}
 	b = j.Model.Technologies["batt"]
 	b.CarrierIn = model.StringList{"heat"}
@@ -248,7 +248,7 @@ func TestCalliope06Gates(t *testing.T) {
 // it extends constraints instead of replacing the emitted block, and a
 // native.calliope (0.7 syntax) block is ignored by the 0.6 target.
 func TestCalliope06NativeDeepMerge(t *testing.T) {
-	j := load06(t, "calliope_plan.json")
+	j := loadScenario(t, "calliope_plan.json")
 	pv := j.Model.Technologies["pv"]
 	pv.Native = &model.Native{
 		Calliope06: json.RawMessage(`{"constraints": {"parasitic_eff": 0.98}, "essentials": {"color": "#ffcc00"}}`),
@@ -272,7 +272,7 @@ func TestCalliope06NativeDeepMerge(t *testing.T) {
 
 // The run plan drives the version-specific CLI.
 func TestCalliope06Plan(t *testing.T) {
-	j := load06(t, "calliope_plan.json")
+	j := loadScenario(t, "calliope_plan.json")
 	plan, err := (calliope.Calliope06{}).Plan(&j, "/x/input/model.yaml", planDirs("/x"))
 	if err != nil {
 		t.Fatal(err)

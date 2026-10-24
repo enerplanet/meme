@@ -89,7 +89,7 @@ def main():
         print()
 
     print("Fix the commit messages and push again.")
-    print("See docs for the full convention: https://THD-Spatial-AI.github.io/GitHub-Template/getting-started/commit-conventions/")
+    print("See docs for the full convention: https://enerplanet.github.io/meme/getting-started/commit-conventions/")
     sys.exit(1)
 
 

@@ -164,9 +164,7 @@ nav:
   - Contributing:
       - Overview: contributing/index.md
       - Branch naming: getting-started/branch-naming.md
-      - Branch rules: getting-started/branch-rules.md
       - Commit conventions: getting-started/commit-conventions.md
-      - Legal sync: getting-started/legal-sync.md
 
 # Copyright
 copyright: |

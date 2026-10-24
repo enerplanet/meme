@@ -93,7 +93,7 @@ def main():
     for error in errors:
         print(f"  {error}")
     print()
-    print("See docs for the full convention: https://THD-Spatial-AI.github.io/GitHub-Template/getting-started/branch-naming/")
+    print("See docs for the full convention: https://enerplanet.github.io/meme/getting-started/branch-naming/")
     sys.exit(1)
 
 

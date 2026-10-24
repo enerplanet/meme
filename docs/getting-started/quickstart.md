@@ -11,6 +11,10 @@ curl -s -X POST 'localhost:8080/convert?target=calliope' \
      -d @examples/calliope_full.json | jq . # emit the native model to disk
 ```
 
+Without a checkout, `go install github.com/enerplanet/meme/cmd/meme@latest`
+puts the same dry-run binary into your Go bin directory (`meme -version`
+tells you which release).
+
 **Real solvers in Docker** (PyPSA/HiGHS, Calliope/CBC, AdOpT/GLPK — nothing to
 install on the host beyond Docker):
 

@@ -1,194 +1,105 @@
-# Contributing
+# Contributing to MEME
 
-Thank you for taking the time to contribute to MEME.
+Thank you for taking the time to contribute. MEME is a Go service that
+translates one canonical energy-system model into the native inputs of PyPSA,
+Calliope and AdOpT-NET0 and runs them; most contributions touch an emitter, a
+validation gate, the scenario corpus or the documentation. This guide covers
+the workflow and the project's conventions. By participating you agree to the
+[Code of Conduct](https://github.com/enerplanet/meme/blob/main/CODE_OF_CONDUCT.md).
 
-This project welcomes contributions such as bug reports, feature requests, documentation improvements, code changes, and general feedback.
+## Ways to contribute
 
-Please read this guide before opening an issue or submitting a pull request.
+- Report a translation defect: a payload that validates but produces a
+  different problem on one framework than on another. Include the payload
+  and what each target emitted or solved; the issue tracker is at
+  <https://github.com/enerplanet/meme/issues>.
+- Add a capability: a canonical field a second framework can honor.
+- Add or update a framework release (see "Framework versions" below).
+- Improve the documentation at <https://enerplanet.github.io/meme>.
 
-## Code of Conduct
+## Development setup
 
-By participating in this project, you agree to follow the rules and expectations described in the [Code of Conduct](CODE_OF_CONDUCT.md).
-
-## Ways to Contribute
-
-You can contribute in different ways, including:
-
-- Reporting bugs
-- Requesting features or improvements
-- Improving documentation
-- Fixing issues
-- Reviewing pull requests
-- Asking and answering questions
-
-## Before You Start
-
-Before creating a new issue or pull request, please:
-
-- Read the `README.md` to understand the project purpose and setup
-- Check existing issues and pull requests to avoid duplicates
-- Make sure your idea/request is relevant to the project scope
-- Use the issue templates (if available)
-
-## Reporting Bugs and Requesting Changes
-
-Use the project issue tracker for bug reports, feature requests, and documentation issues.
-
-- **Issue tracker:** [ISSUES](https://github.com/enerplanet/meme/issues)
-- **Discussions / Questions (optional):** [Discord of Enerplanet]
-
-When reporting an issue, please include:
-
-- What you expected to happen
-- What actually happened
-- Steps to reproduce the issue
-- Screenshots/logs/error messages (if applicable)
-- Environment details (OS, browser, version, etc., if relevant)
-
-## Development Workflow
-
-The exact setup steps may differ by project. Please check the `README.md` and project documentation for installation and development instructions.
-
-### 1) Fork and clone the repository (if applicable)
-
-If you do not have direct write access, fork the repository first, then clone your fork:
+- Host work needs Go (the version in `go.mod`) and `make`; no Python. The
+  default runner is a dry-runner, so the API validates and translates
+  without any framework installed.
+- Real solvers run in the container: `make -C environment build ENV=dev`
+  once, then `make e2e` (see the
+  [environment guide](https://enerplanet.github.io/meme/operations/environment/)).
+- The payload-contract check needs `python3` with `jsonschema >= 4.18`.
 
 ```bash
-git clone [REPOSITORY_URL]
-cd [REPOSITORY_DIRECTORY]
+make test           # vet + unit tests + golden files + validation matrix
+make test-race      # race detector over the concurrent packages
+make schema-check   # examples and corpus against schemas/revised_unified_schema.json
+make e2e-smoke      # container: one real-solver lifecycle per target (~1 min)
+make e2e            # container: the whole corpus on real solvers (~2 min)
+make docs           # build the documentation site strictly
 ```
 
-If you have direct write access, clone the main repository instead.
+## Workflow
 
-### 2) Create a branch for your change
+1. Branch from `main` with a typed prefix — `feat/`, `fix/`, `docs/`,
+   `test/`, `chore/`, `refactor/` — and a short kebab-case description
+   (`fix/calliope-operate-limits`). `main` is protected: changes land
+   through a pull request with a passing CI run.
+2. Commit in [Conventional Commits](https://www.conventionalcommits.org)
+   form: `type(scope): subject`, lowercase subject, no trailing period,
+   at most 100 characters (`fix(calliope): write node-indexed inputs for
+   every node a tech is placed at`). A body explains why; `Closes #N`
+   links the issue. The commit-lint workflow enforces the format.
+3. Keep each commit buildable and green: the golden and matrix changes a
+   commit causes belong in that commit.
+4. Open the pull request against `main` with what changed, why, how it was
+   verified, and the related issue.
 
-Create a dedicated branch for your bugfix, feature, or documentation update:
+## What a change must carry
 
-```bash
-git checkout -b type/short-description
-```
+- **Tests first, where the change fixes a defect.** Write the test that
+  fails on `main`, then the fix. For emitter work the unit test asserts on
+  the emitted file; for a semantic fix, add the payload to the scenario
+  corpus so the real-solver suite pins it.
+- **Nothing silently dropped.** A property the selected target cannot honor
+  is rejected in `ValidateJob` with an error naming the property and the
+  target, or named in a warning. Validation verdicts are frozen in
+  `internal/target/testdata/golden/validation_matrix.json`.
+- **Goldens reviewed, not just regenerated.** `make golden-update` accepts an
+  intended emitter change; read the diff — it *is* the contract change —
+  and check that renames are byte-identical and content changes are the
+  intended ones.
+- **Capability claims backed by scenarios.** A new `true` in a target's
+  `Capabilities()` needs a runnable scenario in
+  `internal/scenarios/testdata/scenarios/` (prefix = target: `pypsa_`,
+  `calliope_`, `calliope06_`, `adopt_`) and a `featureScenarios` entry;
+  the coverage test fails the build otherwise.
+- **Cross-framework claims checked on real solvers.** When a payload must
+  mean the same thing on every target, pin the objective in
+  `test/e2e` the way the multi-node and operate-mode checks do.
+- **Documentation in the same change.** The site under `docs/` is the
+  single source: the capability reference for property-level behaviour,
+  the targets page for framework caveats, the changelog for user-visible
+  changes. Folder READMEs only point to the site.
 
-Examples:
+## Framework versions
 
-- `fix/login-validation`
-- `feat/export-yaml`
-- `docs/readme-setup`
+A framework release is a target of its own (see
+[ADR-0006](https://enerplanet.github.io/meme/decisions/0006-framework-versions-as-targets/)).
+Adding one means: a package implementing `target.Target` (plus
+`target.Variant` if it must not join `all`), its own native key in
+`model.Native`, a pinned venv and CLI name in `environment/`, scenarios for
+its capability claims, goldens, and the E2E lifecycle. Updating a pinned
+release is an emitter change, not a pin change: regenerate the goldens and
+run the container suite.
 
-### 3) Make your changes
+## Documentation
 
-Keep changes focused and small where possible. If your change is large, consider splitting it into multiple pull requests.
+The site is MkDocs with the Material theme; `make docs-serve` previews it,
+`make docs` builds it strictly (a broken link fails the build). Pages live in
+`docs/`; `CHANGELOG.md` and this file are included into the site, so write
+links in them as absolute URLs. Keep the capability reference and the
+validation gates in step: a changed verdict needs a changed row.
 
-### 4) Test your changes (if applicable)
+## Licensing of contributions
 
-Before submitting a pull request:
-
-- Run relevant tests
-- Check linting/formatting tools (if used)
-- Verify the project still builds/runs locally
-- Update documentation if your change affects usage or behaviour
-
-### 5) Commit your changes
-
-Use clear commit messages that explain what changed.
-
-```bash
-git add .
-git commit -m "Short summary of the change"
-```
-
-For larger changes, include a more descriptive commit message when needed.
-
-### 6) Push your branch
-
-```bash
-git push -u origin <your-branch-name>
-```
-
-### 7) Open a pull request
-
-Create a pull request against the appropriate branch (usually `main` unless the project uses a different workflow).
-
-In your pull request description, include:
-
-- What changed
-- Why it changed
-- Any screenshots (for UI changes)
-- Testing notes
-- Related issue(s), if applicable (e.g. `Closes #123`)
-
-## Pull Request Checklist
-
-Before submitting a pull request, check:
-
-- [ ] The change is relevant and scoped appropriately
-- [ ] I tested my changes (if applicable)
-- [ ] I updated documentation (if applicable)
-- [ ] I followed the project coding/style conventions (if applicable)
-- [ ] I checked for sensitive information (keys, credentials, private data)
-- [ ] I linked related issues (if applicable)
-
-## Commit Message Guidance (Recommended)
-
-Keep commit messages clear and specific.
-
-Good examples:
-
-- `Fix CSV upload validation for empty headers`
-- `Add YAML export button to model builder`
-- `Update installation steps in README`
-
-Avoid vague messages such as:
-
-- `fix`
-- `changes`
-- `update stuff`
-
-## Documentation Contributions
-
-Documentation improvements are welcome and valuable.
-
-If you are updating docs:
-
-- Keep wording clear and practical
-- Prefer short examples where useful
-- Check links and commands
-- Match the style used in existing documentation
-
-## Project-Specific Notes (Template Placeholder)
-
-Replace or remove this section in project repositories.
-
-Examples of what may go here:
-
-- Setup links (Windows/Linux/Docker)
-- Testing commands (`npm test`, `pytest`, `go test ./...`)
-- Branching strategy
-- Review/approval rules
-- CI requirements
-- Changelog policy
-
-## Licensing of Contributions
-
-By contributing to this project, you confirm that:
-
-- your contribution is your own work (or you have the right to submit it), and
-- you agree that your contribution will be licensed under the same license as this repository.
-
-## Need Help?
-
-If you are unsure where to start, open an issue or discussion and ask. Maintainers can help point you in the right direction.
-
----
-
-## Maintainer Note (Template)
-
-> [!CAUTION]
-> This file is a template. Replace placeholders such as:
-
-- `[PROJECT_NAME]`
-- `[INSERT_ISSUE_TRACKER_URL]`
-- `[INSERT_DISCUSSION_URL_OR_REMOVE]`
-- `[REPOSITORY_URL]`
-- `[REPOSITORY_DIRECTORY]`
-
-Remove sections that do not apply to your project.
+By contributing you confirm that the contribution is your own work (or that
+you have the right to submit it) and that it is licensed under the
+repository's MIT license.

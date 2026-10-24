@@ -1,10 +1,12 @@
-# CITATION.cff — Update this file with your project's citation information.
-# See https://citation-file-format.github.io/ for the full specification.
-
 cff-version: 1.2.0
-title: "Multi-Energy Model Execution (MEME)"
+title: "Multi Energy Model Execution (MEME)"
 message: "If you use this software, please cite it as below."
 type: software
+abstract: >-
+  A dependency-free Go service that translates one canonical energy-system
+  model into the native inputs of PyPSA, Calliope (0.7 and 0.6) and
+  AdOpT-NET0, runs the solvers, and returns the results as one bundle through
+  a REST API.
 authors:
   - family-names: "Weber"
     given-names: "Andreas"
@@ -13,5 +15,11 @@ authors:
 repository-code: "https://github.com/enerplanet/meme"
 url: "https://enerplanet.github.io/meme"
 license: MIT
+keywords:
+  - energy system modelling
+  - PyPSA
+  - Calliope
+  - AdOpT-NET0
+  - model translation
 version: "0.1.0-alpha"
 date-released: "2026-07-16"

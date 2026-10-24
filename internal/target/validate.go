@@ -308,6 +308,41 @@ func validateGeneric(t Target, j *model.Job) ([]string, error) {
 	if len(socTechs) > 0 && !caps[model.FeatSOCProfile] {
 		warns = append(warns, fmt.Sprintf("storage.soc_profile on technologies %v is ignored by target %q (no fixed state-of-charge slot; the storage dispatch stays free there)", socTechs, t.Name()))
 	}
+	var ucTechs, quadTechs []string
+	for _, id := range sortedTechIDs(m) {
+		tech := m.Technologies[id]
+		uc, quad := tech.Operation.HasUCExtras(), false
+		for _, c := range tech.Costs {
+			if c.VariableOMQuadratic != nil {
+				quad = true
+			}
+		}
+		for _, ov := range tech.NodeOverrides {
+			if ov.Operation.HasUCExtras() {
+				uc = true
+			}
+			for _, c := range ov.Costs {
+				if c.VariableOMQuadratic != nil {
+					quad = true
+				}
+			}
+		}
+		if uc {
+			ucTechs = append(ucTechs, id)
+		}
+		if quad {
+			quadTechs = append(quadTechs, id)
+		}
+	}
+	if len(ucTechs) > 0 && !caps[model.FeatUnitCommitmentExtras] {
+		warns = append(warns, fmt.Sprintf("unit-commitment extras (ramp_start_up, ramp_shut_down, standby_cost, initial_uptime, initial_downtime) on technologies %v are ignored by target %q", ucTechs, t.Name()))
+	}
+	if len(quadTechs) > 0 && !caps[model.FeatQuadraticCost] {
+		warns = append(warns, fmt.Sprintf("costs.variable_om_quadratic on technologies %v is ignored by target %q (its variable cost stays linear there)", quadTechs, t.Name()))
+	}
+	if m.InvestmentPeriods() != nil && !caps[model.FeatMultiPeriod] {
+		warns = append(warns, fmt.Sprintf("model.periods are ignored by target %q (single horizon); only a target with the multi_period capability plans over investment periods", t.Name()))
+	}
 
 	// An indexed parameter with more than one entry cannot be projected onto a
 	// flat per-component table.

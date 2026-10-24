@@ -568,7 +568,8 @@
           "description": "Multiplier on this period's cost coefficients in the objective.",
           "x-go": "Period.ObjectiveWeight"
         }
-      }
+      },
+      "description": "Periods with a year are investment periods on PyPSA (ADR-0011): snapshots become (period, timestep), build_year and lifetime are emitted, expandable technologies are built per period; every period needs a year once any has one, in ascending order. Other targets keep a single horizon and say so."
     },
     "Carrier": {
       "title": "Carrier",
@@ -1604,7 +1605,7 @@
         "per_unit": {
           "type": "number",
           "exclusiveMinimum": 0,
-          "description": "Modular sizing: capacity of one integer module. Introduces integer variables.",
+          "description": "Modular sizing: capacity of one integer module. Introduces integer variables. On PyPSA an expandable component with a per-unit size is built in integer modules (p_nom_mod / e_nom_mod / s_nom_mod).",
           "x-go": "Capacity.PerUnit",
           "x-map": {
             "adopt-net0": "size_is_int = 1",
@@ -1667,10 +1668,10 @@
                 "only_complete"
               ],
               "default": "impossible",
-              "x-go": "Decommission.Mode (adopt-net0 native; calliope impossible/continuous; pypsa impossible only)",
+              "x-go": "Decommission.Mode (adopt-net0 native; calliope impossible/continuous; pypsa impossible/continuous, the existing part retirable at its fixed O&M)",
               "x-map": {
                 "adopt-net0": "TechnologyDataFile/NetworkDataFile decommission",
-                "pypsa": "emulated via p_nom bounds; only_complete needs native",
+                "pypsa": "continuous: existing part extendable in [0, existing] at fixed O&M, new-build part above it; only_complete rejected",
                 "calliope": "emulated via flow_cap_min; only_complete needs custom math"
               }
             },
@@ -1820,6 +1821,63 @@
           "x-map": {
             "adopt-net0": "standby_power",
             "pypsa": "stand_by_cost prices the idle state (energy standby needs native)",
+            "calliope": null
+          }
+        },
+        "ramp_start_up": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 1,
+          "description": "Ramp a committable unit may take in the hour it starts, fraction of capacity (PyPSA ramp_limit_start_up). Ignored with a warning by targets without the capability (ADR-0011).",
+          "x-go": "Operation.RampStartUp",
+          "x-map": {
+            "adopt-net0": null,
+            "pypsa": "ramp_limit_start_up",
+            "calliope": null
+          }
+        },
+        "ramp_shut_down": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 1,
+          "description": "Ramp a committable unit may take in the hour it stops, fraction of capacity (PyPSA ramp_limit_shut_down). Ignored with a warning by targets without the capability (ADR-0011).",
+          "x-go": "Operation.RampShutDown",
+          "x-map": {
+            "adopt-net0": null,
+            "pypsa": "ramp_limit_shut_down",
+            "calliope": null
+          }
+        },
+        "standby_cost": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Cost per hour of being committed (PyPSA stand_by_cost). Ignored with a warning by targets without the capability (ADR-0011).",
+          "x-go": "Operation.StandbyCost",
+          "x-map": {
+            "adopt-net0": null,
+            "pypsa": "stand_by_cost",
+            "calliope": null
+          }
+        },
+        "initial_uptime": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Hours the unit was online before the horizon (PyPSA up_time_before); exclusive with initial_downtime. Ignored with a warning by targets without the capability (ADR-0011).",
+          "x-go": "Operation.InitialUptime",
+          "x-map": {
+            "adopt-net0": null,
+            "pypsa": "up_time_before",
+            "calliope": null
+          }
+        },
+        "initial_downtime": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Hours the unit was offline before the horizon (PyPSA down_time_before); exclusive with initial_uptime. Ignored with a warning by targets without the capability (ADR-0011).",
+          "x-go": "Operation.InitialDowntime",
+          "x-map": {
+            "adopt-net0": null,
+            "pypsa": "down_time_before",
             "calliope": null
           }
         }
@@ -2097,6 +2155,17 @@
             "adopt-net0": "Economics.fix_CAPEX (CAPEX_model 2)",
             "pypsa": null,
             "calliope": "cost_purchase with cap_method = integer"
+          }
+        },
+        "variable_om_quadratic": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Quadratic term of the variable cost, cost per MWh² (PyPSA marginal_cost_quadratic). With integer variables (committable units, modular capacity) it is a MIQP the free solvers cannot solve. Ignored with a warning by targets without the capability (ADR-0011).",
+          "x-go": "CostClass.VariableOMQuadratic",
+          "x-map": {
+            "adopt-net0": null,
+            "pypsa": "marginal_cost_quadratic",
+            "calliope": null
           }
         }
       },
@@ -3069,7 +3138,7 @@
         },
         "allow_unmet_demand": {
           "type": "object",
-          "description": "allow the energy balance to be violated at a penalty price instead of making the model infeasible.",
+          "description": "allow the energy balance to be violated at a penalty price instead of making the model infeasible. PyPSA: a slack generator per load bus priced at penalty_price (required there).",
           "additionalProperties": false,
           "properties": {
             "enabled": {
@@ -3094,7 +3163,7 @@
         "copperplate": {
           "type": "boolean",
           "default": false,
-          "description": "ignore all inter-node transport constraints (single-bus equivalent; the AdOpT emitter currently hardcodes 0).",
+          "description": "ignore all inter-node transport constraints (single-bus equivalent; the AdOpT emitter currently hardcodes 0). PyPSA: one free hub per carrier joins every node's bus, the arcs are dropped; not with a power flow or the voltage law.",
           "x-go": "Experiment.Copperplate (adopt-net0 energybalance.copperplate; rejected elsewhere)",
           "x-map": {
             "adopt-net0": "energybalance.copperplate",

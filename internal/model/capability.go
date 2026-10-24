@@ -36,8 +36,11 @@ const (
 	FeatPiecewisePerformance   Feature = "piecewise_performance"
 	FeatPhysicsPerformance     Feature = "physics_performance"
 	FeatPowerFlow              Feature = "power_flow"
-	FeatLinearPowerFlow        Feature = "linear_power_flow" // the voltage law inside an optimization (experiment.network.model)
-	FeatSOCProfile             Feature = "soc_profile"       // a fixed state-of-charge trajectory (storage.soc_profile); ignored where unclaimed
+	FeatLinearPowerFlow        Feature = "linear_power_flow"      // the voltage law inside an optimization (experiment.network.model)
+	FeatSOCProfile             Feature = "soc_profile"            // a fixed state-of-charge trajectory (storage.soc_profile); ignored where unclaimed
+	FeatUnitCommitmentExtras   Feature = "unit_commitment_extras" // start/stop ramps, standby cost, prior up/down time; ignored where unclaimed
+	FeatQuadraticCost          Feature = "quadratic_cost"         // costs.<class>.variable_om_quadratic; ignored where unclaimed
+	FeatMultiPeriod            Feature = "multi_period"           // model.periods as investment periods; single horizon where unclaimed
 	FeatCustomMath             Feature = "custom_math"
 
 	// FeatObjectiveEmissions marks support for objective "min_emissions"

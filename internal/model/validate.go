@@ -61,6 +61,14 @@ func (m *Model) Validate() error {
 	if m.DiscountRate != nil && *m.DiscountRate < 0 {
 		add("discount_rate must not be negative")
 	}
+	// Periods with years are investment periods (ADR-0011): every period
+	// needs one once any has one, in ascending order.
+	withYear := 0
+	for _, p := range m.Periods {
+		if p.Year != nil {
+			withYear++
+		}
+	}
 	for i, p := range m.Periods {
 		if p.Name == "" {
 			add("periods[%d] has no name", i)
@@ -70,6 +78,12 @@ func (m *Model) Validate() error {
 		}
 		if p.ObjectiveWeight != nil && *p.ObjectiveWeight < 0 {
 			add("periods[%d] (%s): objective_weight must not be negative", i, p.Name)
+		}
+		if withYear > 0 && p.Year == nil {
+			add("periods[%d] (%s): every period needs a year once any period has one", i, p.Name)
+		}
+		if i > 0 && p.Year != nil && m.Periods[i-1].Year != nil && *p.Year <= *m.Periods[i-1].Year {
+			add("periods must be in ascending year order (%d after %d)", *p.Year, *m.Periods[i-1].Year)
 		}
 	}
 	if len(m.Nodes) == 0 {
@@ -713,6 +727,24 @@ func validateOperation(add func(string, ...any), where string, op *Operation) {
 	if op.StandbyPower != nil && (*op.StandbyPower < 0 || *op.StandbyPower > 1) {
 		add("%s: operation.standby_power must be within [0,1] (fraction of capacity)", where)
 	}
+	if op.RampStartUp != nil && (*op.RampStartUp <= 0 || *op.RampStartUp > 1) {
+		add("%s: operation.ramp_start_up must be within (0,1] (fraction of capacity)", where)
+	}
+	if op.RampShutDown != nil && (*op.RampShutDown <= 0 || *op.RampShutDown > 1) {
+		add("%s: operation.ramp_shut_down must be within (0,1] (fraction of capacity)", where)
+	}
+	if op.StandbyCost != nil && *op.StandbyCost < 0 {
+		add("%s: operation.standby_cost must not be negative", where)
+	}
+	if op.InitialUptime != nil && *op.InitialUptime < 0 {
+		add("%s: operation.initial_uptime must not be negative", where)
+	}
+	if op.InitialDowntime != nil && *op.InitialDowntime < 0 {
+		add("%s: operation.initial_downtime must not be negative", where)
+	}
+	if op.InitialUptime != nil && op.InitialDowntime != nil && *op.InitialUptime > 0 && *op.InitialDowntime > 0 {
+		add("%s: operation.initial_uptime and operation.initial_downtime are mutually exclusive (a unit was either on or off before the horizon)", where)
+	}
 }
 
 func validateStorage(add func(string, ...any), where string, s *Storage) {
@@ -772,6 +804,7 @@ func validateCosts(add func(string, ...any), where string, costs map[string]Cost
 		nonNeg("fixed_om", c.FixedOM)
 		nonNeg("fixed_om_fraction", c.FixedOMFraction)
 		nonNeg("purchase", c.Purchase)
+		nonNeg("variable_om_quadratic", c.VariableOMQuadratic)
 		if c.FixedOM != nil && c.FixedOMFraction != nil {
 			add("%s: costs.%s: fixed_om (absolute) and fixed_om_fraction (fraction of investment) are mutually exclusive", where, class)
 		}

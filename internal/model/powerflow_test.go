@@ -603,3 +603,61 @@ func TestStorageSOCProfile(t *testing.T) {
 	m.Technologies["pumped"] = p
 	wantValidateErr(t, &m, `tech "pumped": time-series "missing" not defined`)
 }
+
+// --- ADR-0011: unit-commitment extras and the quadratic cost -----------------
+
+func TestUnitCommitmentExtrasValidate(t *testing.T) {
+	mk := func(op model.Operation, cc model.CostClass) model.Model {
+		m := baseModel()
+		m.Technologies["g"] = model.Technology{Role: model.RoleSupply, Node: model.StringList{"n1"}, CarrierOut: model.StringList{"el"},
+			Capacity: &model.Capacity{Existing: 10}, Operation: &op, Costs: map[string]model.CostClass{"monetary": cc}}
+		return m
+	}
+	ok := mk(model.Operation{Committable: true, RampStartUp: fp(0.6), RampShutDown: fp(0.6), StandbyCost: fp(5), InitialUptime: fp(2)}, model.CostClass{VariableOMQuadratic: fp(0.5)})
+	if err := ok.Validate(); err != nil {
+		t.Fatalf("extras should validate: %v", err)
+	}
+	cases := []struct {
+		name string
+		op   model.Operation
+		cc   model.CostClass
+		want string
+	}{
+		{"ramp start above one", model.Operation{RampStartUp: fp(1.5)}, model.CostClass{}, `tech g: operation.ramp_start_up must be within (0,1]`},
+		{"ramp stop zero", model.Operation{RampShutDown: fp(0)}, model.CostClass{}, `tech g: operation.ramp_shut_down must be within (0,1]`},
+		{"negative standby cost", model.Operation{StandbyCost: fp(-1)}, model.CostClass{}, `tech g: operation.standby_cost must not be negative`},
+		{"negative initial uptime", model.Operation{InitialUptime: fp(-1)}, model.CostClass{}, `tech g: operation.initial_uptime must not be negative`},
+		{"both initial times", model.Operation{InitialUptime: fp(2), InitialDowntime: fp(1)}, model.CostClass{}, `tech g: operation.initial_uptime and operation.initial_downtime are mutually exclusive`},
+		{"negative quadratic cost", model.Operation{}, model.CostClass{VariableOMQuadratic: fp(-0.1)}, `tech g: costs.monetary.variable_om_quadratic must not be negative`},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			m := mk(c.op, c.cc)
+			wantValidateErr(t, &m, c.want)
+		})
+	}
+	var op model.Operation
+	if err := json.Unmarshal([]byte(`{"ramp_start_up":0.6,"ramp_shut_down":0.5,"standby_cost":5,"initial_uptime":2,"initial_downtime":0}`), &op); err != nil {
+		t.Fatal(err)
+	}
+	if *op.RampStartUp != 0.6 || *op.RampShutDown != 0.5 || *op.StandbyCost != 5 || *op.InitialUptime != 2 || *op.InitialDowntime != 0 {
+		t.Errorf("operation extras not decoded: %+v", op)
+	}
+}
+
+// --- ADR-0011: investment periods ---------------------------------------------
+
+func TestPeriodsValidate(t *testing.T) {
+	m := baseModel()
+	m.Technologies["g"] = model.Technology{Role: model.RoleSupply, Node: model.StringList{"n1"}, CarrierOut: model.StringList{"el"}, Capacity: &model.Capacity{Existing: 10}}
+	m.Periods = []model.Period{{Name: "2030", Year: ip(2030)}, {Name: "2040", Year: ip(2040)}}
+	if err := m.Validate(); err != nil {
+		t.Fatalf("periods with years should validate: %v", err)
+	}
+	m.Periods = []model.Period{{Name: "2040", Year: ip(2040)}, {Name: "2030", Year: ip(2030)}}
+	wantValidateErr(t, &m, "periods must be in ascending year order")
+	m.Periods = []model.Period{{Name: "a", Year: ip(2030)}, {Name: "b"}}
+	wantValidateErr(t, &m, `periods[1] (b): every period needs a year once any period has one`)
+	m.Periods = []model.Period{{Name: "a", Year: ip(2030), LengthYears: fp(0)}}
+	wantValidateErr(t, &m, `periods[0] (a): length_years must be positive`)
+}

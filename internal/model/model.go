@@ -312,6 +312,20 @@ type Operation struct {
 	// StandbyPower is the consumption while committed but idle, as a fraction
 	// of capacity (AdOpT Performance.standby_power; rejected elsewhere).
 	StandbyPower *float64 `json:"standby_power,omitempty"`
+	// Unit-commitment extras (ADR-0011; PyPSA, ignored elsewhere): the ramp a
+	// unit may take in the hour it starts or stops, as a fraction of capacity;
+	// the cost per hour of being committed; and how many hours the unit was
+	// online or offline before the horizon (one of the two).
+	RampStartUp     *float64 `json:"ramp_start_up,omitempty"`
+	RampShutDown    *float64 `json:"ramp_shut_down,omitempty"`
+	StandbyCost     *float64 `json:"standby_cost,omitempty"`
+	InitialUptime   *float64 `json:"initial_uptime,omitempty"`
+	InitialDowntime *float64 `json:"initial_downtime,omitempty"`
+}
+
+// HasUCExtras reports whether any unit-commitment extra is set.
+func (op *Operation) HasUCExtras() bool {
+	return op != nil && (op.RampStartUp != nil || op.RampShutDown != nil || op.StandbyCost != nil || op.InitialUptime != nil || op.InitialDowntime != nil)
 }
 
 // Storage is the state-of-charge model of a storage technology. The
@@ -389,6 +403,10 @@ type CostClass struct {
 	// overnight cost basis.
 	FixedOMFraction *float64 `json:"fixed_om_fraction,omitempty"`
 	VariableOM      *Value   `json:"variable_om,omitempty"`
+	// VariableOMQuadratic is the quadratic term of the variable cost (cost per
+	// MWh², PyPSA marginal_cost_quadratic; ADR-0011). With integer variables
+	// it makes a MIQP the free solvers cannot solve.
+	VariableOMQuadratic *float64 `json:"variable_om_quadratic,omitempty"`
 	// FuelCost prices the carrier INPUT per MWh, distinct from VariableOM on
 	// output (Calliope cost_flow_in; PyPSA folds fuel/efficiency into
 	// marginal_cost; rejected by AdOpT-NET0).

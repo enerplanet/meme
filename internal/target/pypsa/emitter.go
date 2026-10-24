@@ -85,6 +85,9 @@ func (Emitter) Emit(j *model.Job, outDir string) (string, error) {
 			if isPF && carrier == pf.carrier && n.Electrical != nil {
 				row["carrier"] = acCarrier
 				row["v_nom"] = emit.Ftoa(n.Electrical.VNom)
+				if v, ok := pf.setpoints[node]; ok {
+					row["v_mag_pu_set"] = emit.Ftoa(v)
+				}
 			}
 			if err := mergeNativeInto(row, n.Native.For(model.TargetPyPSA)); err != nil {
 				return "", fmt.Errorf("node %q: %w", node, err)
@@ -122,6 +125,12 @@ func (Emitter) Emit(j *model.Job, outDir string) (string, error) {
 	sus := &pcsv{base: []string{"name", "bus", "carrier", "p_nom", "p_nom_extendable", "max_hours", "efficiency_store", "efficiency_dispatch", "capital_cost"}}
 	lines := &pcsv{base: []string{"name", "bus0", "bus1", "r", "x", "s_nom", "num_parallel", "length"}}
 	trafos := &pcsv{base: []string{"name", "bus0", "bus1", "s_nom", "r", "x", "num_parallel", "tap_ratio"}}
+	shunts := &pcsv{base: []string{"name", "bus", "g", "b"}}
+	if isPF {
+		for _, r := range pf.shuntRows(m) {
+			shunts.add(r[0])
+		}
+	}
 
 	var perfSpecs []model.PerfEntry
 	for _, id := range emit.Keys(m.Technologies) {
@@ -236,6 +245,9 @@ func (Emitter) Emit(j *model.Job, outDir string) (string, error) {
 			"p_nom": capNom(l.Capacity), "p_nom_extendable": capExt(l.Capacity), "p_nom_max": capMax(l.Capacity),
 			"efficiency": emit.Ftoa(eff), "capital_cost": "0",
 		}
+		if isPF {
+			pf.transfer(row, l) // a controlled link carries its fixed transfer
+		}
 		// PyPSA links are one-directional by default (p >= 0); a bidirectional
 		// line may flow backwards down to -p_nom. A one-way link may instead
 		// carry a minimum-flow floor.
@@ -315,7 +327,7 @@ func (Emitter) Emit(j *model.Job, outDir string) (string, error) {
 
 	for file, tbl := range map[string]*pcsv{
 		"generators.csv": gens, "loads.csv": loads, "links.csv": links, "storage_units.csv": sus,
-		"lines.csv": lines, "transformers.csv": trafos,
+		"lines.csv": lines, "transformers.csv": trafos, "shunt_impedances.csv": shunts,
 	} {
 		if err := tbl.write(outDir, file); err != nil {
 			return "", err

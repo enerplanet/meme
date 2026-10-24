@@ -1,0 +1,5 @@
+name,carrier,x,y,v_mag_pu_set,v_nom
+hv::electricity,AC,,,1.02,110
+mv1::electricity,AC,,,,20
+mv2::electricity,AC,,,1,20
+mv3::electricity,AC,,,,20

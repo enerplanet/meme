@@ -1,0 +1,43 @@
+{
+  "model": {
+    "metadata": {"name": "pypsa_power_flow_reactive"},
+    "time": {"start": "2025-01-01T00:00:00", "end": "2025-01-01T03:00:00", "resolution": "1H"},
+    "carriers": {"electricity": {"unit": "MWh"}},
+    "nodes": {
+      "hv":  {"electrical": {"v_nom": 110}},
+      "mv1": {"electrical": {"v_nom": 20, "shunt": {"g": 0, "b": 0.001}}},
+      "mv2": {"electrical": {"v_nom": 20}},
+      "mv3": {"electrical": {"v_nom": 20}}
+    },
+    "technologies": {
+      "grid":  {"role": "supply", "node": "hv", "carrier_out": "electricity", "capacity": {"existing": 100},
+                "electrical": {"voltage_setpoint": 1.02}},
+      "pv":    {"role": "supply", "node": "mv2", "carrier_out": "electricity", "capacity": {"existing": 10}, "dispatch": "pv_out",
+                "electrical": {"control": "pv", "voltage_setpoint": 1.0}},
+      "dg":    {"role": "supply", "node": "mv3", "carrier_out": "electricity", "capacity": {"existing": 5}, "dispatch": 1,
+                "electrical": {"power_factor": 0.9}},
+      "load1": {"role": "demand", "node": "mv1", "carrier_in": "electricity", "demand_profile": "dem1",
+                "electrical": {"power_factor": 0.95}},
+      "load2": {"role": "demand", "node": "mv2", "carrier_in": "electricity", "demand_profile": "dem2",
+                "electrical": {"reactive_dispatch": "q2"}},
+      "load3": {"role": "demand", "node": "mv3", "carrier_in": "electricity", "demand_profile": 4,
+                "electrical": {"reactive_dispatch": 1.3}}
+    },
+    "timeseries": {
+      "pv_out": {"source": "inline", "values": [0, 2, 6, 8]},
+      "dem1":   {"source": "inline", "values": [10, 12, 14, 11]},
+      "dem2":   {"source": "inline", "values": [6, 7, 8, 6]},
+      "q2":     {"source": "inline", "values": [2, 2.3, 2.6, 2]}
+    },
+    "transmission": {
+      "trafo": {"carrier": "electricity", "from": "hv", "to": "mv1", "bidirectional": true, "capacity": {"existing": 40},
+                "electrical": {"kind": "transformer", "r": 0.01, "x": 0.1, "s_nom": 40, "phase_shift": 2.5}},
+      "l12":   {"carrier": "electricity", "from": "mv1", "to": "mv2", "bidirectional": true, "capacity": {"existing": 20},
+                "distance": 10,
+                "electrical": {"kind": "line", "r_per_length": 0.12, "x_per_length": 0.35, "s_nom": 20, "b": 0.0001}},
+      "hvdc":  {"carrier": "electricity", "from": "mv2", "to": "mv3", "bidirectional": true, "capacity": {"existing": 30},
+                "dispatch": 3}
+    }
+  },
+  "experiment": {"mode": "power_flow", "power_flow": {"slack": "grid"}}
+}

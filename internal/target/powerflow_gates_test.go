@@ -64,22 +64,51 @@ func TestPowerFlowModeGatedToPyPSA(t *testing.T) {
 	}
 }
 
-// A fixed dispatch is a power-flow input; in an optimization the solver decides
-// dispatch, so the field is rejected there with a pointer to the right knob —
-// on every target, before any target-specific gate runs.
-func TestDispatchRejectedOutsidePowerFlow(t *testing.T) {
+// Power-flow inputs — dispatch and the electrical blocks — are ignored with
+// one warning wherever no power flow runs (ADR-0009): on Calliope and AdOpT,
+// which have no such concept, and on PyPSA's optimization modes. The payload
+// stays valid, so one document serves the planning call and the power-flow
+// call; the warning names what was ignored and where to pin dispatch instead.
+func TestPowerFlowInputsIgnoredOutsidePowerFlow(t *testing.T) {
 	toPlan := func(j *model.Job) {
 		j.Experiment.Mode = model.ModePlan
 		j.Experiment.PowerFlow = nil
 	}
 	for _, tgt := range []model.Target{model.TargetPyPSA, model.TargetCalliope} {
-		j := powerFlowJob(t, toPlan)
-		_, err := target.ValidateFor(&j, tgt)
-		if err == nil || !strings.Contains(err.Error(), `tech "pv": dispatch is a power-flow input`) || !strings.Contains(err.Error(), "operation.equals_pu") {
-			t.Errorf("%s: want the dispatch gate with the equals_pu pointer, got: %v", tgt, err)
+		j, err := scenarios.Load("pypsa_power_flow_reactive.json")
+		if err != nil {
+			t.Fatal(err)
+		}
+		toPlan(&j)
+		warns, err := target.ValidateFor(&j, tgt)
+		if err != nil {
+			t.Fatalf("%s: power-flow inputs in mode plan must not reject: %v", tgt, err)
+		}
+		if !hasWarning(warns, "power-flow inputs", "ignored", `mode "plan"`, "technologies [dg grid load1 load2 load3 pv]", "transmission [hvdc l12 trafo]", "nodes [hv mv1 mv2 mv3]", "operation.equals_pu") {
+			t.Errorf("%s: want one warning naming the ignored inputs, got %v", tgt, warns)
 		}
 	}
-	// An override-only dispatch trips the same gate.
+	// AdOpT has no transmission and maps only database technologies, so its
+	// case starts from one of its own payloads with the inputs added.
+	ja, err := scenarios.Load("adopt_storage.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	batt := ja.Model.Technologies["batt"]
+	batt.Dispatch = model.Num(1)
+	batt.Electrical = &model.TechElectrical{PowerFactor: fp(0.95)}
+	ja.Model.Technologies["batt"] = batt
+	n1 := ja.Model.Nodes["n1"]
+	n1.Electrical = &model.NodeElectrical{VNom: 20}
+	ja.Model.Nodes["n1"] = n1
+	warns, err := target.ValidateFor(&ja, model.TargetAdOpt)
+	if err != nil {
+		t.Fatalf("adopt-net0: power-flow inputs must not reject: %v", err)
+	}
+	if !hasWarning(warns, "power-flow inputs", "ignored", `target "adopt-net0"`, "technologies [batt]", "nodes [n1]") {
+		t.Errorf("adopt-net0: want the ignored-inputs warning, got %v", warns)
+	}
+	// An override-only input is reported as well.
 	j := powerFlowJob(t, func(j *model.Job) {
 		toPlan(j)
 		pv := j.Model.Technologies["pv"]
@@ -87,7 +116,13 @@ func TestDispatchRejectedOutsidePowerFlow(t *testing.T) {
 		pv.NodeOverrides = map[string]model.NodeOverride{"mv2": {Dispatch: model.Num(1)}}
 		j.Model.Technologies["pv"] = pv
 	})
-	wantGateErr(t, &j, model.TargetPyPSA, `tech "pv": dispatch is a power-flow input`)
+	warns, err = target.ValidateFor(&j, model.TargetPyPSA)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !hasWarning(warns, "power-flow inputs", "technologies [pv]") {
+		t.Errorf("override-only dispatch should be named, got %v", warns)
+	}
 }
 
 // Electrical parameters outside a power flow are not an error — the same
@@ -107,7 +142,7 @@ func TestElectricalParametersWarnOutsidePowerFlow(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s: electrical parameters in mode plan must not reject: %v", tgt, err)
 		}
-		if !hasWarning(warns, "electrical parameters", "l12", "trafo", "hv", "only used by a power flow", "transport links") {
+		if !hasWarning(warns, "power-flow inputs", "ignored", "l12", "trafo", "hv", "transport links") {
 			t.Errorf("%s: want one warning naming the unused electrical parameters, got %v", tgt, warns)
 		}
 	}
@@ -167,11 +202,11 @@ func TestPowerFlowPyPSAGates(t *testing.T) {
 				j.Model.Transmission[id] = l
 			}
 		}, `mode "power_flow" needs at least one transmission with electrical parameters`},
-		{"electricity arc without impedance", func(j *model.Job) {
+		{"electricity arc without impedance or transfer", func(j *model.Job) {
 			l := j.Model.Transmission["l12"]
 			l.Electrical = nil
 			j.Model.Transmission["l12"] = l
-		}, `transmission "l12" carries electricity without electrical parameters; a power flow needs kind, r and x`},
+		}, `transmission "l12" carries electricity without electrical parameters or a dispatch; a power flow needs kind, r and x on a branch or a fixed transfer on a link`},
 		{"bus without voltage level", func(j *model.Job) {
 			j.Model.Nodes["mv2"] = model.Node{Coords: j.Model.Nodes["mv2"].Coords}
 		}, `node "mv2" hosts electricity components but has no electrical.v_nom`},
@@ -247,5 +282,79 @@ func TestPowerFlowPyPSAGates(t *testing.T) {
 	}
 	if !hasWarning(warns, "solver settings are not used by a power flow") {
 		t.Errorf("want the solver-settings warning, got %v", warns)
+	}
+}
+
+// reactiveJob loads the reactive power-flow scenario, optionally adapted.
+func reactiveJob(t *testing.T, mut func(j *model.Job)) model.Job {
+	t.Helper()
+	j, err := scenarios.Load("pypsa_power_flow_reactive.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mut != nil {
+		mut(&j)
+	}
+	return j
+}
+
+// The reactive network's own preconditions: every AC island needs a supply
+// technology (PyPSA balances an island without the named slack on its
+// largest generator and says so), a voltage set-point belongs to a pv
+// generator or the slack, set-points at one bus agree, and the linear method
+// is told what it ignores.
+func TestPowerFlowReactiveGates(t *testing.T) {
+	j := reactiveJob(t, nil)
+	warns, err := target.ValidateFor(&j, model.TargetPyPSA)
+	if err != nil {
+		t.Fatalf("reactive scenario should validate: %v", err)
+	}
+	if !hasWarning(warns, "AC island [mv3]", `largest generator ("dg")`, `slack "grid"`) {
+		t.Errorf("want the island warning, got %v", warns)
+	}
+
+	cases := []struct {
+		name string
+		mut  func(j *model.Job)
+		want string
+	}{
+		{"island without a generator", func(j *model.Job) { delete(j.Model.Technologies, "dg") },
+			`AC island [mv3] has no supply technology to balance it`},
+		{"voltage set-point without pv control or the slack role", func(j *model.Job) {
+			dg := j.Model.Technologies["dg"]
+			dg.Electrical = &model.TechElectrical{VoltageSetpoint: fp(1.0)}
+			j.Model.Technologies["dg"] = dg
+		}, `tech "dg": electrical.voltage_setpoint needs control "pv" or the slack role`},
+		{"disagreeing set-points at one bus", func(j *model.Job) {
+			j.Model.Technologies["pv2"] = model.Technology{Role: model.RoleSupply, Node: model.StringList{"mv2"}, CarrierOut: model.StringList{"electricity"},
+				Capacity: &model.Capacity{Existing: 2}, Dispatch: model.Num(1), Electrical: &model.TechElectrical{Control: model.ControlPV, VoltageSetpoint: fp(1.03)}}
+		}, `node "mv2": voltage set-points disagree (pv 1, pv2 1.03)`},
+		{"distributed slack still needs a slack dispatch", func(j *model.Job) { j.Experiment.PowerFlow.DistributeSlack = true },
+			`experiment.power_flow.distribute_slack`},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			j := reactiveJob(t, c.mut)
+			wantGateErr(t, &j, model.TargetPyPSA, c.want)
+		})
+	}
+
+	// Two pv generators at one bus with the same set-point are fine.
+	j = reactiveJob(t, func(j *model.Job) {
+		j.Model.Technologies["pv2"] = model.Technology{Role: model.RoleSupply, Node: model.StringList{"mv2"}, CarrierOut: model.StringList{"electricity"},
+			Capacity: &model.Capacity{Existing: 2}, Dispatch: model.Num(1), Electrical: &model.TechElectrical{Control: model.ControlPV, VoltageSetpoint: fp(1.0)}}
+	})
+	if _, err := target.ValidateFor(&j, model.TargetPyPSA); err != nil {
+		t.Errorf("agreeing set-points should be accepted: %v", err)
+	}
+
+	// The linear method solves active power only and says so.
+	j = reactiveJob(t, func(j *model.Job) { j.Experiment.PowerFlow.Method = model.PowerFlowLinear })
+	warns, err = target.ValidateFor(&j, model.TargetPyPSA)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !hasWarning(warns, `method "linear"`, "reactive power", "voltage control", "shunts") {
+		t.Errorf("want the linear-method warning, got %v", warns)
 	}
 }

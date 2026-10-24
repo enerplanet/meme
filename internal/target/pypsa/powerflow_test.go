@@ -5,8 +5,10 @@ package pypsa_test
 
 import (
 	"encoding/csv"
+	"math"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -286,11 +288,169 @@ func TestElectricalParametersIgnoredInPlanMode(t *testing.T) {
 	}
 	found := false
 	for _, w := range warns {
-		if strings.Contains(w, "electrical parameters") && strings.Contains(w, "only used by a power flow") {
+		if strings.Contains(w, "power-flow inputs") && strings.Contains(w, "ignored") {
 			found = true
 		}
 	}
 	if !found {
 		t.Errorf("want the unused-electrical warning, got %v", warns)
 	}
+}
+
+// emitReactive validates and emits the reactive power-flow scenario.
+func emitReactive(t *testing.T, mut func(j *model.Job)) (string, []string) {
+	t.Helper()
+	j, err := scenarios.Load("pypsa_power_flow_reactive.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mut != nil {
+		mut(&j)
+	}
+	warns, err := target.ValidateFor(&j, model.TargetPyPSA)
+	if err != nil {
+		t.Fatalf("validate: %v", err)
+	}
+	dir := t.TempDir()
+	if _, err := (pypsa.PyPSA{}).Emit(&j, dir); err != nil {
+		t.Fatalf("emit: %v", err)
+	}
+	return dir, warns
+}
+
+func near(got string, want float64) bool {
+	f, err := strconv.ParseFloat(got, 64)
+	return err == nil && math.Abs(f-want) < 1e-6
+}
+
+// Reactive power, voltage control, the shunt, the controlled link and the
+// branch refinements land on their PyPSA attributes.
+func TestPowerFlowEmitsReactiveNetwork(t *testing.T) {
+	dir, _ := emitReactive(t, nil)
+
+	buses := table(t, dir, "buses.csv")
+	if buses["hv::electricity"]["v_mag_pu_set"] != "1.02" || buses["mv2::electricity"]["v_mag_pu_set"] != "1" {
+		t.Errorf("voltage set-points on the slack and the pv bus: %v %v", buses["hv::electricity"], buses["mv2::electricity"])
+	}
+	if buses["mv1::electricity"]["v_mag_pu_set"] != "" {
+		t.Errorf("a bus without voltage control carries no set-point: %v", buses["mv1::electricity"])
+	}
+
+	gens := table(t, dir, "generators.csv")
+	if gens["pv"]["control"] != "PV" || gens["grid"]["control"] != "Slack" || gens["dg"]["control"] != "PQ" {
+		t.Errorf("generator control: pv %q grid %q dg %q", gens["pv"]["control"], gens["grid"]["control"], gens["dg"]["control"])
+	}
+	// dg: 1 MW at power factor 0.9 supplies 0.4843 MVAr.
+	if !near(gens["dg"]["q_set"], math.Tan(math.Acos(0.9))) {
+		t.Errorf("dg q_set derived from the power factor: got %q", gens["dg"]["q_set"])
+	}
+	if gens["pv"]["q_set"] != "0" {
+		t.Errorf("a pv generator has no fixed q_set (the solver sets it): %q", gens["pv"]["q_set"])
+	}
+
+	loads := table(t, dir, "loads.csv")
+	if loads["load3"]["q_set"] != "1.3" {
+		t.Errorf("static reactive set-point: %v", loads["load3"])
+	}
+	qset := table(t, dir, "loads-q_set.csv")
+	if len(qset) != 4 {
+		t.Fatalf("loads-q_set.csv: want 4 snapshots, got %d", len(qset))
+	}
+	// load1: 12 MW at 0.95 at the second snapshot -> 3.944 MVAr (derived from the demand series).
+	if !near(qset["2025-01-01 01:00:00"]["load1"], 12*math.Tan(math.Acos(0.95))) {
+		t.Errorf("derived q series for load1: %v", qset["2025-01-01 01:00:00"])
+	}
+	if qset["2025-01-01 01:00:00"]["load2"] != "2.3" {
+		t.Errorf("reactive set-point series for load2: %v", qset["2025-01-01 01:00:00"])
+	}
+
+	shunts := table(t, dir, "shunt_impedances.csv")
+	if s := shunts["mv1::shunt"]; s["bus"] != "mv1::electricity" || s["g"] != "0" || s["b"] != "0.001" {
+		t.Errorf("shunt row: %v", shunts)
+	}
+
+	links := table(t, dir, "links.csv")
+	if l := links["hvdc"]; l["bus0"] != "mv2::electricity" || l["bus1"] != "mv3::electricity" || l["p_set"] != "3" || l["p_nom"] != "30" {
+		t.Errorf("controlled link from the arc dispatch: %v", l)
+	}
+	lines := table(t, dir, "lines.csv")
+	if l := lines["l12"]; l["r"] != "1.2" || l["x"] != "3.5" || l["b"] != "0.0001" || l["length"] != "10" {
+		t.Errorf("per-length impedance and admittance: %v", l)
+	}
+	trafos := table(t, dir, "transformers.csv")
+	if trafos["trafo"]["phase_shift"] != "2.5" {
+		t.Errorf("phase shift: %v", trafos["trafo"])
+	}
+}
+
+// A series arc dispatch and a series reactive dispatch on a generator and a
+// storage unit materialize into their own p_set / q_set files; a leading
+// power factor flips the sign.
+func TestPowerFlowReactiveSeriesMaterialize(t *testing.T) {
+	dir, _ := emitReactive(t, func(j *model.Job) {
+		j.Model.Timeseries["flow"] = model.TimeSeries{Source: "inline", Values: []float64{3, 3, 2, 2}}
+		j.Model.Timeseries["qpv"] = model.TimeSeries{Source: "inline", Values: []float64{0, 0.5, 1, 1}}
+		j.Model.Timeseries["batt"] = model.TimeSeries{Source: "inline", Values: []float64{2, 1, -1, -2}}
+		h := j.Model.Transmission["hvdc"]
+		h.Dispatch = model.Series("flow")
+		j.Model.Transmission["hvdc"] = h
+		pv := j.Model.Technologies["pv"]
+		pv.Electrical = &model.TechElectrical{ReactiveDispatch: model.Series("qpv")}
+		j.Model.Technologies["pv"] = pv
+		j.Model.Technologies["battery"] = model.Technology{Role: model.RoleStorage, Node: model.StringList{"mv1"}, CarrierOut: model.StringList{"electricity"},
+			Capacity: &model.Capacity{Existing: 4}, Storage: &model.Storage{MaxHours: fp(2)}, Dispatch: model.Series("batt"),
+			Electrical: &model.TechElectrical{PowerFactor: fp(0.9), Leading: true}}
+	})
+	if got := table(t, dir, "links-p_set.csv")["2025-01-01 02:00:00"]["hvdc"]; got != "2" {
+		t.Errorf("arc dispatch series: %q", got)
+	}
+	if got := table(t, dir, "generators-q_set.csv")["2025-01-01 01:00:00"]["pv"]; got != "0.5" {
+		t.Errorf("generator reactive series: %q", got)
+	}
+	// 2 MW discharge at a leading 0.9 -> -0.9686 MVAr; -2 MW charge -> +0.9686.
+	sq := table(t, dir, "storage_units-q_set.csv")
+	if !near(sq["2025-01-01 00:00:00"]["battery"], -2*math.Tan(math.Acos(0.9))) || !near(sq["2025-01-01 03:00:00"]["battery"], 2*math.Tan(math.Acos(0.9))) {
+		t.Errorf("leading power factor on a storage series: %v", sq)
+	}
+	if exists(dir, "loads-p_set.csv") != true {
+		t.Error("demand series still materialize")
+	}
+}
+
+// Outside mode power_flow the reactive fields and the arc dispatch are ignored
+// like the rest of the electrical network: no q_set, no shunts, no p_set.
+func TestReactiveFieldsIgnoredInPlanMode(t *testing.T) {
+	dir, warns := emitReactive(t, func(j *model.Job) {
+		j.Experiment.Mode = model.ModePlan
+		j.Experiment.PowerFlow = nil
+	})
+	for _, absent := range []string{"shunt_impedances.csv", "loads-q_set.csv", "lines.csv", "transformers.csv"} {
+		if exists(dir, absent) {
+			t.Errorf("%s must not be emitted in plan mode", absent)
+		}
+	}
+	if got := table(t, dir, "links.csv")["hvdc"]; got["p_set"] != "" {
+		t.Errorf("arc dispatch must not fix the link in plan mode: %v", got)
+	}
+	if strings.Contains(readFile(t, dir, "loads.csv"), "q_set") || strings.Contains(readFile(t, dir, "buses.csv"), "v_mag_pu_set") {
+		t.Error("plan mode must not emit reactive set-points or voltage set-points")
+	}
+	if !hasWarn(warns, "power-flow inputs", "ignored") {
+		t.Errorf("want the ignored-inputs warning, got %v", warns)
+	}
+}
+
+func hasWarn(ws []string, parts ...string) bool {
+	for _, w := range ws {
+		ok := true
+		for _, p := range parts {
+			if !strings.Contains(w, p) {
+				ok = false
+			}
+		}
+		if ok {
+			return true
+		}
+	}
+	return false
 }

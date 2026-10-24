@@ -211,10 +211,17 @@ elif MODE == "power_flow":
     table("buses-q.csv", n.buses_t.q)
     table("generators-p.csv", n.generators_t.p)
     table("generators-q.csv", n.generators_t.q)
+    table("loads-p.csv", n.loads_t.p)
+    table("loads-q.csv", n.loads_t.q)
     if len(n.storage_units):
         table("storage_units-p.csv", n.storage_units_t.p)
+        table("storage_units-q.csv", n.storage_units_t.q)
     if len(n.links):
         table("links-p0.csv", n.links_t.p0)
+        table("links-p1.csv", n.links_t.p1)
+    if len(n.shunt_impedances):
+        table("shunt_impedances-p.csv", n.shunt_impedances_t.p)
+        table("shunt_impedances-q.csv", n.shunt_impedances_t.q)
 
     ac_buses = n.buses.index[n.buses.carrier == "AC"]
     vmag = n.buses_t.v_mag_pu.reindex(index=ok_snaps, columns=ac_buses) if not n.buses_t.v_mag_pu.empty else None

@@ -4,6 +4,8 @@
 package pypsa
 
 import (
+	"math"
+
 	"github.com/enerplanet/meme/internal/emit"
 	"github.com/enerplanet/meme/internal/model"
 )
@@ -25,6 +27,14 @@ type seriesRef struct {
 // writeTimeVarying hook — a series-valued parameter never silently collapses
 // to a scalar.
 func MaterializeTimeSeries(m *model.Model, dir string) error {
+	return materializeTimeSeries(m, dir, false)
+}
+
+// materializeTimeSeries is MaterializeTimeSeries with the power-flow switch:
+// in mode power_flow the fixed dispatch, transfer and reactive series become
+// the components' p_set / q_set files; an optimization run ignores those
+// inputs (ValidateFor says so) and gets none of the files.
+func materializeTimeSeries(m *model.Model, dir string, pfMode bool) error {
 	files := map[string]map[string]seriesRef{} // file -> component -> series
 	addScaled := func(file, component, seriesID string, scale float64) {
 		if files[file] == nil {
@@ -41,12 +51,22 @@ func MaterializeTimeSeries(m *model.Model, dir string) error {
 				name = id + "@" + node
 			}
 			eff := t.At(node)
-			// A fixed dispatch (power flow) is the component's p_set; validation
-			// admits it in mode power_flow only, so no optimization run sees
-			// these files.
-			if eff.Dispatch.IsSeries() {
+			// Power-flow inputs: a fixed dispatch is the component's p_set;
+			// reactive power is a q_set series as given, or derived from a
+			// series active set-point at the power factor (the scale is Q per
+			// unit of P; writeSeriesCSV applies it).
+			if eff.Dispatch.IsSeries() && pfMode {
 				if file, ok := dispatchFile[eff.Role]; ok {
 					add(file, name, eff.Dispatch.SeriesID())
+				}
+			}
+			if file, ok := qFile[eff.Role]; ok && pfMode {
+				if e := eff.Electrical; e != nil {
+					if e.ReactiveDispatch.IsSeries() {
+						add(file, name, e.ReactiveDispatch.SeriesID())
+					} else if p := activeSetpoint(eff); e.PowerFactor != nil && p.IsSeries() {
+						addScaled(file, name, p.SeriesID(), e.ReactiveFactor())
+					}
 				}
 			}
 			switch eff.Role {
@@ -76,6 +96,12 @@ func MaterializeTimeSeries(m *model.Model, dir string) error {
 					add("storage_units-inflow.csv", name, eff.Storage.Inflow.SeriesID())
 				}
 			}
+		}
+	}
+	// A controlled link's transfer series (power flow) is its p_set.
+	for id, l := range m.Transmission {
+		if pfMode && l.Dispatch.IsSeries() && l.Electrical == nil {
+			add("links-p_set.csv", id, l.Dispatch.SeriesID())
 		}
 	}
 	// Trade market generators: a series price becomes a time-varying marginal
@@ -164,7 +190,11 @@ func writeSeriesCSV(dir, file string, labels []string, cols map[string]seriesRef
 		for _, name := range names {
 			ref := cols[name]
 			vals, _ := emit.SeriesValues(m, ref.id)
-			row = append(row, emit.Ftoa(ref.scale*emit.SeriesAt(vals, i)))
+			v := ref.scale * emit.SeriesAt(vals, i)
+			if ref.scale != 1 && ref.scale != -1 {
+				v = math.Round(v*1e12) / 1e12 // a derived value, without float noise
+			}
+			row = append(row, emit.Ftoa(v))
 		}
 		out = append(out, row)
 	}

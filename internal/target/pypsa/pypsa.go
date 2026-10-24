@@ -241,7 +241,8 @@ func (PyPSA) Emit(j *model.Job, outDir string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if err := MaterializeTimeSeries(&j.Model, outDir); err != nil {
+	_, isPF := powerFlowOf(j)
+	if err := materializeTimeSeries(&j.Model, outDir, isPF); err != nil {
 		return "", fmt.Errorf("materialize time series: %w", err)
 	}
 	return entrypoint, nil

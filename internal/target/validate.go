@@ -81,10 +81,24 @@ func modeFeature(m model.Mode) model.Feature {
 	}
 }
 
-// electricalIDs lists the arcs and nodes carrying electrical parameters.
-func electricalIDs(m *model.Model) (arcs, nodes []string) {
+// powerFlowInputs lists the technologies (dispatch or electrical block, base
+// field or override), arcs (electrical parameters or a fixed transfer) and
+// nodes (electrical block) that carry power-flow inputs.
+func powerFlowInputs(m *model.Model) (techs, arcs, nodes []string) {
+	for _, id := range sortedTechIDs(m) {
+		t := m.Technologies[id]
+		has := t.Dispatch != nil || t.Electrical != nil
+		for _, ov := range t.NodeOverrides {
+			if ov.Dispatch != nil || ov.Electrical != nil {
+				has = true
+			}
+		}
+		if has {
+			techs = append(techs, id)
+		}
+	}
 	for _, id := range sortedTransmissionIDs(m) {
-		if m.Transmission[id].Electrical != nil {
+		if l := m.Transmission[id]; l.Electrical != nil || l.Dispatch != nil {
 			arcs = append(arcs, id)
 		}
 	}
@@ -93,21 +107,7 @@ func electricalIDs(m *model.Model) (arcs, nodes []string) {
 			nodes = append(nodes, id)
 		}
 	}
-	return arcs, nodes
-}
-
-// hasDispatch reports whether a technology fixes its dispatch anywhere (base
-// field or a per-node override).
-func hasDispatch(t model.Technology) bool {
-	if t.Dispatch != nil {
-		return true
-	}
-	for _, ov := range t.NodeOverrides {
-		if ov.Dispatch != nil {
-			return true
-		}
-	}
-	return false
+	return techs, arcs, nodes
 }
 
 // validateGeneric holds every gate that is purely capability-driven — no
@@ -127,21 +127,17 @@ func validateGeneric(t Target, j *model.Job) ([]string, error) {
 		return nil, fmt.Errorf("mode %q is not supported by target %q", mode, t.Name())
 	}
 
-	// Power-flow inputs (ADR-0008). A fixed dispatch only means something
-	// where nothing is optimized: in every optimization mode the solver
-	// decides dispatch, so the field is rejected with a pointer to the knob
-	// that pins dispatch there. Electrical parameters, by contrast, are
-	// harmless outside a power flow — the same model serves the planning call
-	// and the power-flow call — so they are named as unused and the arcs stay
-	// transport links. Inside a power flow nothing may be a decision.
+	// Power-flow inputs (ADR-0008, ADR-0009): dispatch, reactive power,
+	// voltage control, shunts, impedances and fixed transfers mean something
+	// only where a power flow runs. Everywhere else — Calliope and AdOpT,
+	// which have no such concept, and PyPSA's optimization modes, where the
+	// solver decides dispatch — they are ignored and named in one warning, so
+	// the same document serves the planning call and the power-flow call and
+	// nothing is dropped silently. Inside a power flow nothing may be a
+	// decision.
 	if mode != model.ModePowerFlow {
-		for _, id := range sortedTechIDs(m) {
-			if hasDispatch(m.Technologies[id]) {
-				return nil, fmt.Errorf("tech %q: dispatch is a power-flow input (mode power_flow); in mode %q the solver decides dispatch, pin it with operation.equals_pu instead", id, mode)
-			}
-		}
-		if arcs, nodes := electricalIDs(m); len(arcs)+len(nodes) > 0 {
-			warns = append(warns, fmt.Sprintf("electrical parameters on transmission %v and nodes %v are only used by a power flow (mode power_flow on a target with the power_flow capability); in mode %q the arcs are emitted as transport links", arcs, nodes, mode))
+		if techs, arcs, nodes := powerFlowInputs(m); len(techs)+len(arcs)+len(nodes) > 0 {
+			warns = append(warns, fmt.Sprintf("power-flow inputs are only used by mode power_flow on a target with the power_flow capability; in mode %q on target %q they are ignored: dispatch/electrical on technologies %v, electrical/dispatch on transmission %v (emitted as transport links), electrical on nodes %v. Pin a dispatch in an optimization with operation.equals_pu instead", mode, t.Name(), techs, arcs, nodes))
 		}
 	} else {
 		for _, id := range sortedTechIDs(m) {

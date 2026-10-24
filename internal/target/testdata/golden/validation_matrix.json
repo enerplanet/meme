@@ -750,6 +750,23 @@
       "verdict": "ok"
     }
   },
+  "pypsa_power_flow_reactive.json": {
+    "adopt-net0": {
+      "verdict": "error: mode \"power_flow\" is not supported by target \"adopt-net0\""
+    },
+    "calliope": {
+      "verdict": "error: mode \"power_flow\" is not supported by target \"calliope\""
+    },
+    "calliope-0.6": {
+      "verdict": "error: mode \"power_flow\" is not supported by target \"calliope-0.6\""
+    },
+    "pypsa": {
+      "verdict": "ok",
+      "warnings": [
+        "AC island [mv3] is balanced by PyPSA on its largest generator (\"dg\"), not by the slack \"grid\""
+      ]
+    }
+  },
   "pypsa_stochastic.json": {
     "adopt-net0": {
       "verdict": "error: mode \"stochastic\" is not supported by target \"adopt-net0\""

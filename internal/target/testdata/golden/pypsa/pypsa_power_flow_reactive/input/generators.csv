@@ -1,0 +1,4 @@
+name,bus,carrier,p_nom,p_nom_extendable,p_nom_max,capital_cost,marginal_cost,efficiency,control,p_set,q_set
+dg,mv3::electricity,electricity,5,False,inf,0,0,1,PQ,1,0.484322104838
+grid,hv::electricity,electricity,100,False,inf,0,0,1,Slack,0,0
+pv,mv2::electricity,electricity,10,False,inf,0,0,1,PV,0,0

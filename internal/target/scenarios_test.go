@@ -78,6 +78,9 @@ func TestScenarios(t *testing.T) {
 		// An AC network: buses with a voltage level, a line and a transformer
 		// table, a slack generator and fixed dispatch.
 		{"pypsa_power_flow.json", model.TargetPyPSA, []string{"v_nom", "num_parallel", "tap_ratio", "Slack", "snapshot,pv"}},
+		// Reactive power and voltage control: PV control with a bus set-point,
+		// q_set static and as a series, a shunt, a controlled link, phase shift.
+		{"pypsa_power_flow_reactive.json", model.TargetPyPSA, []string{"v_mag_pu_set", "PV", "q_set", "mv1::shunt", "phase_shift", "load1,load2"}},
 
 		// --- Calliope ---
 		{"calliope_plan.json", model.TargetCalliope, []string{"mode: base", "base_tech: supply", "solver: cbc"}},

@@ -417,7 +417,7 @@ project an indexed value to a scalar (and error if it can't for a flat target).
                              "allowed_techs"?: ["…"], "available_area"?: 1e4,
                              "climate"?: {"ghi":"series_id","temp_air":15,…},  // AdOpT weather for physics techs
                              "native"?: {…} } },
-    "timeseries"?:{ "<id>": { "source": "inline"|"file", "values"?: [ … ], "path"?: "…", "column"?: "…" } },
+    "timeseries"?:{ "<id>": { "source": "inline"|"file", "values"?: [ … ], "path"?: "…", "column"?: "…" } },  // file: accepted by the schema, rejected by validation until a target reads files
 
     "technologies": {
       "<id>": {

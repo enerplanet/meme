@@ -39,7 +39,7 @@ One `Job` = `model` (the physical system) + `experiment` (how to run it).
     "nodes":     { "<id>": { "coords": {"lat":48,"lon":11,"alt":0}, "available_area": 1e4,
                              "climate": { "ghi": "ts-id", "temp_air": 8.5, … }, "native": { … } } },
     "timeseries":{ "<id>": { "source": "inline", "values": [ … ], "unit": "MW" }   // or
-                            { "source": "file", "path": "…", "column": "…" } },
+                            { "source": "file", "path": "…", "column": "…" } },  // file: schema-valid, but no target reads files yet -> 422
     "technologies": {
       "<id>": {
         "role": "supply" | "demand" | "conversion" | "storage",
@@ -334,7 +334,7 @@ storage (`Storage_Battery`) map canonically. Any other non-demand tech is
 | `annual_output_min` / `max` | ✓ `e_sum_min`/`e_sum_max` (supply only) | ✗ | ✗ | |
 | `build_year` | ✓ `build_year` | ⚠ informational | ⚠ informational | |
 | `active: false` | ✓ `active` column | ✓ `active: false` | ✓ omitted from `Technologies.json` | |
-| `node_overrides` | ✓ one component per node | ✓ `nodes.<n>.techs` overrides (capacity + costs projected) | ✓ per-node `Technologies.json` + node-keyed overrides | |
+| `node_overrides` | ✓ one component per node | ✓ `nodes.<n>.techs` overrides (capacity + costs projected; a per-node `demand_profile` / availability lands in that node's data-table column) | ✓ per-node `Technologies.json` + node-keyed overrides | 0.6: per-location `constraints`/`costs` + per-node `file=` columns |
 | `native` | ✓ CSV columns | ✓ YAML merge | ✓ tech-JSON patch | merged last, verbatim |
 
 ### 3.5 Transmission & trade properties

@@ -53,8 +53,8 @@ make -C environment shell ENV=dev   # go/python/pypsa/calliope (0.7 + 0.6)/adopt
 
 # End-to-end tiers (real HTTP API + frameworks + solvers; defined in
 # test/Makefile, aliased at the root):
-make e2e-smoke               # 4 per-target lifecycles (incl. calliope-0.6) + one multi-target job (~1 min)
-make e2e                     # the whole scenario corpus, -parallel 3 (~1.5 min)
+make e2e-smoke               # 4 per-target lifecycles (incl. calliope-0.6), one multi-target job, the PyPSA feature checks (~30 s)
+make e2e                     # the whole scenario corpus and all examples, -parallel 3 (~2 min)
 ```
 
 See [Testing](testing.md) for what the E2E tiers assert.

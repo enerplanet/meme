@@ -1,7 +1,7 @@
 # ADR-0009: Reactive power, voltage control, shunts and fixed transfers complete the power-flow network; power-flow inputs are ignored where no power flow runs
 
 - **Status:** accepted
-- **Date:** 2026-10-25
+- **Date:** 2026-10-24
 
 ## Context
 

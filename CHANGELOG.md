@@ -22,10 +22,10 @@ Go modules require (`v0.1.0-alpha`).
   a snapshot that does not converge fails the run. The API consumer chains a
   plan and a power flow as two calls; MEME holds no state between them.
 - Gates around the new inputs: the mode routes through the `power_flow`
-  capability (PyPSA only); a `dispatch` in any optimization mode is rejected
-  on every target with a pointer to `operation.equals_pu`; electrical
-  parameters outside a power flow are named as unused while the arcs stay
-  transport links; in mode `power_flow` expandable capacities, trade,
+  capability (PyPSA only); power-flow inputs in an optimization mode (a
+  `dispatch`, the `electrical` blocks) are kept and named in one warning
+  while the arcs stay transport links (see *Changed*); in mode `power_flow`
+  expandable capacities, trade,
   constraints, emission limits and scenarios are rejected, and
   `distribute_slack` requires a dispatch on the slack technology (PyPSA
   shares the balance in proportion to each generator's set-point, so a slack
@@ -87,6 +87,12 @@ Go modules require (`v0.1.0-alpha`).
   the unit-commitment extras, the quadratic cost, investment periods) are
   ignored there with a warning. The validation matrix records every verdict
   that moved.
+- `time.subset` and `costs.<class>.purchase` are rejected on PyPSA and
+  AdOpT-NET0 instead of being dropped without a word: neither target has a
+  slot (narrow `time.start`/`end`; fold the purchase cost into
+  `investment_per_capacity`). Calliope 0.7 warns that `area.per_capacity`
+  is not emitted (0.6 emits `resource_area_per_energy_cap`). The validation
+  matrix records the moved verdicts.
 - Power-flow inputs — `dispatch`, the `electrical` blocks on technologies,
   arcs and nodes — are ignored with one warning wherever no power flow runs:
   on Calliope and AdOpT-NET0 and in PyPSA's optimization modes alike. A

@@ -41,7 +41,8 @@ support. Support is a sparse map — absence means unsupported.
 
 **Enforcement nuances.** Modes route through `modeFeature(mode)`. Every claimed
 cell is backed by a runnable scenario (`TestCapabilityCoverage` fails the build
-otherwise). PyPSA operate requires fixed capacities and rejects horizon-wide
+otherwise; `calliope/indexed_params` is the one named exception, covered by a
+unit test). PyPSA operate requires fixed capacities and rejects horizon-wide
 constraints; PyPSA stochastic validates that every scenario override translates
 to a component attribute. Calliope committable is the MILP subset (integer
 units + min stable load) — start/stop costs and min up/down times are rejected
@@ -88,15 +89,15 @@ with a pointer to the 0.7 target.
 |---|---|---|---|---|
 | node + carrier | one **Bus** per (node, carrier) | orthogonal `nodes` / carriers | `locations` / carriers | orthogonal nodes / carriers |
 | `role: supply` | `Generator` | `base_tech: supply` | `parent: supply` (`supply_plus` when `source.cap` is set) | `Res` / physics tech |
-| `role: conversion` + `flows` | multi-output **Link** (`bus2`/`efficiency2`) | `carrier_out` list + ratio-pinning math | `parent: conversion_plus`, `carrier_out_2/_3` tiers, `carrier_ratios` relative to the primary output | multi-carrier conversion |
+| `role: conversion` + `flows` | multi-output **Link** (`bus2`/`efficiency2`) | `carrier_out` list + ratio-pinning math | `parent: conversion_plus`, `carrier_out_2/_3` tiers, `carrier_ratios` relative to the primary output | ✗ rejected (`multi_carrier_conversion` unclaimed) |
 | `role: storage` | `StorageUnit` | `base_tech: storage` | `parent: storage` (one `energy_eff` for both directions, model-wide `run.cyclic_storage`) | `Storage` |
-| `transmission` | `Link` across buses | transmission tech (`link_from`/`link_to`) | transmission tech placed in `links.<from>,<to>` (+ `distance`) | `Networks` + matrices |
+| `transmission` | `Link` across buses | transmission tech (`link_from`/`link_to`) | transmission tech placed in `links.<from>,<to>` (+ `distance`) | ✗ rejected (Networks unmapped) |
 | time series | per-attribute CSVs | `data_tables` (`table`, `add_dims.inputs`) + CSVs | `file=<file>.csv:<node>` references into `timeseries_data/` (demand negative) | per-node CSV columns |
 | overnight cost + `lifetime`/`interest_rate` | annualized `capital_cost` (CRF) | `cost_flow_cap` + `cost_interest_rate` (annualized internally) | `costs.monetary.energy_cap` + `interest_rate` + `constraints.lifetime` (both required by 0.6; lifetime 1 / rate 0 when absent or already annualized) | economics block |
 | carrier `co2_intensity` | carrier `co2_emissions` | per-tech `cost_flow_in[costs=co2]` on consumed fuels + `objective_cost_weights[co2]=0` | `costs.emissions.om_con` on consuming techs + `run.objective_options.cost_class.emissions: 0` | emission factors |
 | `emission_limits` | `global_constraints.csv` (primary_energy) | `additional_math.yaml` constraint on `cost[costs=co2]` | `group_constraints.<name>.cost_max.emissions` | emission targets |
-| `constraints` (linear IR) | GlobalConstraint or `_constraints.json` | `additional_math.yaml`, registered via `config.init.math_paths`/`extra_math` (`sum(flow_cap[techs=pv]) <= …`, one member per dim; multi-member sets expand into a sum) | single-term → `group_constraints` (`energy_cap_*`, `carrier_prod_*`, `carrier_con_*`, `storage_cap_*`, `cost_*`) | constraints |
-| `experiment.mode` | (native) | `config.init.mode`: plan→`base`, operate→`operate`, alternatives→`spores` (+ `config.solve.spores`) | `run.mode`: plan / operate (+ `run.operation` window/horizon hours) / spores (+ `run.spores_options`, `systemwide_cost_max` group, `spores_score` costs) | `ConfigModel.optimization`: pareto→`objective: pareto`, monte_carlo→`monte_carlo.N > 0`; `time_aggregation: typical_days`→`typicaldays.N`. Tunable via `experiment.solver.options` (`monte_carlo.N`, `pareto.points`) |
+| `constraints` (linear IR) | GlobalConstraint or `_constraints.json` | `additional_math.yaml`, registered via `config.init.math_paths`/`extra_math` (`sum(flow_cap[techs=pv]) <= …`, one member per dim; multi-member sets expand into a sum) | single-term → `group_constraints` (`energy_cap_*`, `carrier_prod_*`, `carrier_con_*`, `storage_cap_*`, `cost_*`) | ✗ rejected (`linear_constraint` unclaimed) |
+| `experiment.mode` | run.py branches: plan → `optimize`, operate → rolling horizon, alternatives → MGA, stochastic → scenarios, power_flow → `pf`/`lpf` | `config.init.mode`: plan→`base`, operate→`operate`, alternatives→`spores` (+ `config.solve.spores`) | `run.mode`: plan / operate (+ `run.operation` window/horizon hours) / spores (+ `run.spores_options`, `systemwide_cost_max` group, `spores_score` costs) | `ConfigModel.optimization`: pareto→`objective: pareto`, monte_carlo→`monte_carlo.N > 0`; `time_aggregation: typical_days`→`typicaldays.N`. tuned by `experiment.monte_carlo.samples` / `experiment.pareto.points` (the `solver.options.monte_carlo`/`.pareto` namespaces are deprecated and warn) |
 | `experiment.time_aggregation` | — | `config.init.resample` | `model.time`: `resample`, or `apply_clustering` (k-means, `k` = periods, fixed `random_seed`) | `typicaldays.N` |
 | `experiment.objective: min_emissions` | — | — | `objective_options.cost_class: {monetary: 0, emissions: 1}` | `costs_emissionlimit`/emissions objective |
 | `experiment.solver` | passed through (e.g. `highs`) | `highs`→`cbc` (HiGHS can't drive Calliope's pyomo backend) | `highs`→`cbc` | forced `glpk` (adopt supports only gurobi/glpk) |
@@ -121,8 +122,8 @@ merges it into buses/carriers/links; Calliope 0.6 deep-merges it into the
 nested `essentials`/`constraints`/`costs` mapping and applies model- and
 experiment-level blocks to the whole document; AdOpT deep-merges it into the
 tech economics and node `Technologies.json`, and the model-level block into
-`ConfigModel.json`). PyPSA additionally drops a whole-model `native.pypsa` block
-into a `_native.pypsa.json` sidecar for the runner to apply.
+`ConfigModel.json`). PyPSA additionally writes a whole-model `native.pypsa` block
+into a `_native.pypsa.json` sidecar that documents it; run.py does not read it.
 
 ### Shared (canonical field → per-framework param)
 
@@ -133,7 +134,7 @@ into a `_native.pypsa.json` sidecar for the runner to apply.
 | `costs.investment_per_capacity` | `capital_cost` (CRF) | `cost_flow_cap` (+`cost_interest_rate`) | capex |
 | `costs.variable_om` | `marginal_cost` | `cost_flow_out` | variable O&M |
 | `costs.fixed_om` | folded into `capital_cost` | `cost_om_annual` | fixed O&M |
-| `costs.investment_per_energy_capacity` | (via `max_hours`) | `cost_storage_cap` | energy capex |
+| `costs.investment_per_energy_capacity` | Store `capital_cost` per MWh (needs `storage.energy_capacity`; dropped on a StorageUnit) | `cost_storage_cap` | energy capex |
 | `costs.purchase` | — | `cost_purchase` | purchase cost |
 | `lifetime` / `interest_rate` | annualization inputs | `lifetime` / `cost_interest_rate` | economics |
 | `operation.min_pu` | `p_min_pu` | `flow_out_min_relative` | min load |
@@ -142,7 +143,7 @@ into a `_native.pypsa.json` sidecar for the runner to apply.
 | `storage.self_discharge` | `standing_loss` | `storage_loss` | self-discharge |
 | `storage.initial_soc` | `state_of_charge_initial` | `storage_initial` | initial SOC |
 | `storage.cyclic` | `cyclic_state_of_charge` | `cyclic_storage` | cyclic |
-| `storage.energy_capacity` / `max_hours` | `max_hours` | `storage_cap_max` / `_min` | energy capacity |
+| `storage.energy_capacity` / `max_hours` | Store `e_nom*` with charger/discharger Links / StorageUnit `max_hours` | `storage_cap_max` / `_min` | energy capacity |
 | carrier `co2_intensity` + `emission_limits` | carrier `co2_emissions` + global constraint | `cost_flow_in[costs=co2]` + `objective_cost_weights[co2]=0` | emission factor/target |
 | `constraints` (linear IR) | GlobalConstraint (unscoped) / run.py linopy constraints (tech- or node-scoped) | `additional_math.yaml` | constraints |
 
@@ -159,8 +160,8 @@ into a `_native.pypsa.json` sidecar for the runner to apply.
 
 | Framework | Params | Supply via |
 |---|---|---|
-| PyPSA | power flow (`x`, `r`, `s_nom`, …) — Lines are not emitted first-class | `native.pypsa` |
-| Calliope | `flow_out_parasitic_eff`, `*_eff_per_distance`, `storage_discharge_depth`, `storage_cap_per_unit`, `flow_cap_*_systemwide`, `sink_use_min`, `area_use_per_flow_cap`, `source_use_equals`/`source_use_min` (must-run) | `native.calliope` |
+| PyPSA | component columns without a canonical slot (`terrain_factor`, `v_ang_min`/`v_ang_max`, `e_cyclic_per_period`, …) and whole-model options; the electrical network, reactive power, Stores and the unit-commitment extras are first-class | `native.pypsa` |
+| Calliope | `flow_out_parasitic_eff`, `flow_in_eff_per_distance`, `storage_cap_per_unit`, `sink_use_min`, `area_use_per_flow_cap` (0.7), `source_use_equals`/`source_use_min` (must-run) | `native.calliope` |
 | AdOpT | unmapped techs (generic supply/conversion, `GasTurbine`, `CHP`, …), per-tech physics params, climate data | `native.adopt-net0` (name a real database tech + override) |
 
 `native` blocks are merged **last**, so they can also override an emitted

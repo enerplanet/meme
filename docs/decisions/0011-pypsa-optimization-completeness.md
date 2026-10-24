@@ -1,7 +1,7 @@
 # ADR-0011: PyPSA optimization completeness: Store-based storage, modular capacity, retirement, slack demand, copperplate, unit-commitment extras and multi-period investment
 
 - **Status:** accepted
-- **Date:** 2026-10-25
+- **Date:** 2026-10-24
 
 ## Context
 

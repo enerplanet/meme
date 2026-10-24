@@ -1,16 +1,17 @@
 # Examples
 
-Six payloads — one **maximal** config per framework (every property that
+Eleven payloads — one **maximal** config per framework (every property that
 target honors per the [capability reference](../reference/capability-reference.md)),
-two **shared** configs valid for every framework at once, and a PyPSA
-**power-flow** payload (the second call after a plan) — and the API calls to
-drive them. All six have been executed against the real API with real solvers
+two **shared** configs valid for every framework at once, five PyPSA
+**power-flow** payloads (the second call after a plan) and a PyPSA
+**planning** payload on the electrical network — and the API calls to drive
+them. All eleven have been executed against the real API with real solvers
 and run to `succeeded` (PyPSA/HiGHS, Calliope/CBC, AdOpT/GLPK); the full E2E
 tier re-runs them on every change.
 
 | File | Target | Exercises |
 |---|---|---|
-| [`pypsa_full.json`](https://github.com/enerplanet/meme/blob/main/examples/pypsa_full.json) | `pypsa` | 3 carriers, 2 nodes (coords + native bus columns), physics PV with precomputed CF + per-node overrides, committable CCGT (full UC set + ramps + min/max_pu), time-varying marginal cost, multi-output CHP (rigid ratios), battery (cyclic, self-discharge, initial SOC), hydro (inflow series + spill cost, non-cyclic), bidirectional line with native `x`/`r`, trade with **series** import price + emission factor + export revenue, CO₂ cap (GlobalConstraint), one unscoped + two scoped/multi-term constraints (run.py sidecar), a **series import limit** (fixed-p_nom generator + time-varying `p_max_pu`), per-distance line losses folded into the link efficiency, snapshot **weights**, `build_year`/`annual_output_max`/`systemwide_max`, typed solver `time_limit`/`threads`, tech/carrier/system native blocks, and a 2-point **sweep** → 2 independent runs |
+| [`pypsa_full.json`](https://github.com/enerplanet/meme/blob/main/examples/pypsa_full.json) | `pypsa` | 3 carriers, 2 nodes (coords + native bus columns), physics PV with precomputed CF + per-node overrides, committable CCGT (full UC set + ramps + min/max_pu), time-varying marginal cost, multi-output CHP (rigid ratios), battery (cyclic, self-discharge, initial SOC), hydro (inflow series + spill cost, non-cyclic), bidirectional line with native `x`/`r`, trade with **series** import price + emission factor + export revenue, CO₂ cap (GlobalConstraint), one unscoped + two scoped/multi-term constraints (run.py sidecar), per-distance line losses folded into the link efficiency, `build_year`/`annual_output_max`/`systemwide_max`, typed solver `time_limit`/`threads`, tech/carrier/system native blocks, and a 2-point **sweep** → 2 independent runs |
 | [`pypsa_power_flow.json`](https://github.com/enerplanet/meme/blob/main/examples/pypsa_power_flow.json) | `pypsa` | **Mode `power_flow`**: no optimization — an HV slack feeding two 20 kV nodes through a transformer and a line (`node.electrical.v_nom`, `transmission.electrical`), PV and a battery following their `dispatch` series, two loads; Newton-Raphson seeded by a linear solve, results under `output/power_flow/` (per-bus voltages, line and transformer loading, `summary.json`). The second call of a plan-then-check workflow; see below |
 | [`pypsa_power_flow_minimal.json`](https://github.com/enerplanet/meme/blob/main/examples/pypsa_power_flow_minimal.json) | `pypsa` | The **smallest valid power flow**: two 20 kV nodes, one line whose rating defaults to its installed capacity, a slack generator, a load with an inline two-snapshot profile, and nothing else — the shape to start from |
 | [`pypsa_power_flow_meshed.json`](https://github.com/enerplanet/meme/blob/main/examples/pypsa_power_flow_meshed.json) | `pypsa` | A **meshed** 20 kV ring under an HV transformer: one PV technology placed at two nodes with a `dispatch` series per node (`node_overrides`), one load technology at three nodes with a per-node profile, two parallel transformers (`num_parallel`, `tap_ratio`), the slack spelled `grid@hv`, a tight `tolerance`; real loop flows and a visible voltage sag |
@@ -23,7 +24,7 @@ tier re-runs them on every change.
 | [`payload_full.json`](https://github.com/enerplanet/meme/blob/main/examples/payload_full.json) | **`all`** | `shared_full` pushed to the limit, with **all native scopes from the three per-target payloads riding together**: three physics techs (PV, wind, heat pump — each with climate data for AdOpT *and* a precomputed profile for PyPSA/Calliope), two carriers, capacity `min`, and native blocks at every honored scope — carrier (`nice_name`), node (`v_nom`), model (`_native.pypsa.json`), and a battery carrying `pypsa` + `calliope` + `adopt-net0` fragments side by side. Each framework consumes only its own key; the validate response's warnings read like a routing table of who ignored what. Verified: `?target=all` → 6/6 optimal solves |
 
 The three per-target payloads are deliberately *not* portable — and a raw
-*union* of them cannot validate anywhere: `pypsa_full`'s UC extras are rejected
+*union* of them cannot validate anywhere: `pypsa_full`'s start-up cost and minimum up-time are rejected
 by Calliope, `calliope_full`'s piecewise tech by PyPSA, the CHP/constraints/
 transmission by AdOpT (see [Targets and versions](../targets.md)). `payload_full.json` is the honest maximum of
 "one config, three frameworks": the largest shared property set, with each
@@ -166,7 +167,7 @@ curl -s -X POST 'localhost:8080/simulate?target=adopt-net0' -d @$S/adopt_typical
 # PyPSA payload sent to AdOpT -> 422 naming the first unsupported feature
 curl -s -X POST 'localhost:8080/validate?target=adopt-net0' -d @examples/pypsa_full.json | jq .
 # {"valid":false, "error":"multi-port conversion (flows) is not supported by target \"adopt-net0\""}
-# (drop the CHP and the next gate fires: tech "ccgt" has no adopt_net0 database mapping …)
+# (drop the CHP and the next gate fires: tech "ccgt" (supply) has no adopt_net0 database mapping (only pv/wind/heat_pump physics and storage map); …)
 ```
 
 ## Power flow: the second call after a plan
@@ -200,10 +201,11 @@ unzip -p pf.zip files/run_0/output/power_flow/summary.json
 A snapshot that does not converge fails the run (exit code 3, job `failed`)
 with `convergence.csv` and the tables still written for diagnosis; the
 `linear` method (`experiment.power_flow.method`) always solves and keeps the
-voltages nominal. Calliope and AdOpT reject the mode outright; a `dispatch`
-in any optimization mode is rejected on every target with a pointer to
-`operation.equals_pu`, so a planning payload and a power-flow payload cannot
-be confused.
+voltages nominal. Calliope and AdOpT reject the mode outright; in an
+optimization mode the power-flow inputs (`dispatch`, the `electrical` blocks)
+are kept and named in one warning on every target, so the same document
+serves the planning call and the power-flow call (pin a dispatch in a plan
+with `operation.equals_pu`).
 
 ### The power-flow payloads
 

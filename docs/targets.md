@@ -150,9 +150,10 @@ by property, what each target honors.
     (default 10), and `time_aggregation.method: typical_days` sets
     `typicaldays.N` to the requested `periods`. Without this the capability
     matrix would accept the payload but adopt would silently solve a plain
-    cost-optimal plan. Iteration counts are tunable via
-    `experiment.solver.options` — `{"monte_carlo": {"N": 25}}` and
-    `{"pareto": {"points": 6}}` — mirroring Calliope's `options.spores`.
+    cost-optimal plan. Iteration counts come from the typed blocks
+    `experiment.monte_carlo.samples` and `experiment.pareto.points`, like
+    Calliope's `experiment.alternatives`; the older `solver.options`
+    namespaces still work but validate with a deprecation warning.
   - **Technologies are database-driven.** A tech is a *named* library entry
     (`Photovoltaic`, `Storage_Battery`, `HeatPump_AirSourced`, …). The emitter
     maps supported canonical techs to a database name, lists it in
@@ -162,8 +163,9 @@ by property, what each target honors.
     **Only mapped roles are emitted** (storage → `Storage_Battery`; physics
     supply → `Photovoltaic`/`WindTurbine_Onshore_1500`/`HeatPump_AirSourced`).
     Generic supply/conversion techs (`ccgt`, `chp`) have no library counterpart
-    and are **skipped** — supply them via `native.adopt-net0` (name a real
-    database tech in `Technologies.json` + override).
+    and are **rejected** (422 `has no adopt_net0 database mapping`) — supply
+    them via `native.adopt-net0` (name a real database tech in
+    `Technologies.json` + override).
   - **Physics techs need climate data — supply it via `node.climate`.**
     `Photovoltaic`/wind read `ClimateData.csv` (ghi/dni/dhi/temp_air/rh/ws10/
     hydro_inflow). The emitter materializes those columns from a node's

@@ -7,7 +7,8 @@ honors. This document mirrors the enforced behavior:
 - **✓ emitted** — the property lands in the target's native input and affects
   the solve. Every ✓ is backed by a runnable scenario
   ([`internal/scenarios/testdata/scenarios/`](https://github.com/enerplanet/meme/tree/main/internal/scenarios/testdata/scenarios/)); the
-  build fails if a claimed capability loses its scenario (`TestCapabilityCoverage`).
+  build fails if a claimed capability loses its scenario (`TestCapabilityCoverage`;
+  `indexed_params` on Calliope is the one claim covered by a unit test instead).
 - **✗ rejected** — `ValidateFor` returns 422 with a pointed message. A payload
   is never accepted and then partially ignored.
 - **⚠ warning** — accepted, but the property is dropped and a warning names it
@@ -33,7 +34,7 @@ One `Job` = `model` (the physical system) + `experiment` (how to run it).
     "time":      { "start": "2025-01-01", "end": "2025-01-02", "resolution": "1H", "subset": ["…", "…"],
                    "timesteps": ["…", …],        // explicit labels (P/C; A needs a regular range)
                    "weights": 1 | "ts-id" },     // snapshot weightings (P; C scalar; A rejects)
-    "periods":   ["…" | {"name":"…","year":2030,"length_years":5,"objective_weight":1}],  // reserved for multi-horizon
+    "periods":   ["…" | {"name":"…","year":2030,"length_years":5,"objective_weight":1}],  // with years: PyPSA investment periods (§3.2)
     "discount_rate": 0.07,                       // global; overrides per-tech interest_rate
     "carriers":  { "<id>": { "unit": "MWh", "co2_intensity": 0.2, "color": "…", "native": { … } } },
     "nodes":     { "<id>": { "coords": {"lat":48,"lon":11,"alt":0}, "available_area": 1e4,
@@ -178,11 +179,12 @@ resolved; supply real literals or full data-table definitions.
 | `transmission.<id>.native` | extra columns on the link row, or on the line/transformer row in mode power_flow (e.g. `{"length": 12}`) |
 | `model.native` | `_native.pypsa.json` sidecar (not consumed by run.py — documentation payload) |
 
-Typical native-only uses: `marginal_cost_quadratic`, `ramp_limit_start_up`,
-`stand_by_cost`, Stores with independent charger/discharger links, reactive
-set-points (`q_set`) and `PV` voltage control on the power-flow generators.
-Electrical parameters themselves are first-class since mode power_flow
-(`transmission.electrical`, `node.electrical`).
+Typical native-only uses: component columns without a canonical slot —
+`terrain_factor` on lines, `v_ang_min`/`v_ang_max` on buses,
+`e_cyclic_per_period` on Stores — and the whole-model block. The electrical
+network, reactive set-points and voltage control, Stores, the unit-commitment
+extras and the quadratic cost are first-class (ADR-0008, ADR-0009, ADR-0011)
+and have their rows in §3.4.
 
 ### Calliope (`native.calliope`)
 
@@ -204,7 +206,7 @@ files. Scalars broadcast over missing dims
 | `technologies.<id>.native` | deep-merged into the tech's `techs.<id>` mapping (`essentials` / `constraints` / `costs`), so `{"constraints": {"parasitic_eff": 0.98}}` extends the emitted constraints instead of replacing them |
 | `transmission.<id>.native` / `trade.<id>.native` | deep-merged into the generated transmission / market tech |
 | `nodes.<id>.native` | deep-merged into `locations.<id>` |
-| `model.native` / `experiment.native` | deep-merged into the whole document (`run.bigM`, `model.random_seed`, extra `group_constraints`, …) |
+| `model.native` | deep-merged into the whole document (`run.bigM`, `model.random_seed`, extra `group_constraints`, …); `experiment.native` is reserved and not read |
 
 Typical native-only uses: `resource_min_use`, `parasitic_eff`, `export_cap`,
 `energy_cap_scale`, `run.bigM`, `run.zero_threshold`, additional
@@ -265,20 +267,20 @@ storage (`Storage_Battery`) map canonically. Any other non-demand tech is
 |---|:-:|:-:|:-:|---|
 | `metadata.*` | · | · | · | informational; `name` is required |
 | `time.start/end/resolution` | ✓ snapshots | ✓ time index | ✓ Topology dates | required + ISO-parseable; the snapshot/time index spans the longest inline series, else the range `start`..`end` at `resolution`, on every target |
-| `time.subset` | ✗ dropped | ✓ `init.subset.timesteps` | ✗ dropped | P/A: use start/end instead |
+| `time.subset` | ✗ rejected | ✓ `init.subset.timesteps` (0.6: `subset_time`) | ✗ rejected | P/A: narrow `time.start`/`end` instead |
 | `time.timesteps` (explicit labels) | ✓ snapshot labels | ✓ data-table index | ✗ rejected (needs a regular date_range) | |
 | `time.weights` | ✓ `snapshot_weightings` (scalar or series) | ✓ `timestep_weights` (scalar; series ✗) | ✗ rejected | |
 | `periods` (with `year`) | ✓ `investment_periods` (years from `length_years`, weights from `objective_weight`), snapshots `(period, timestep)` with every series repeated per period, `build_year` + `lifetime`, new builds per period as `<name>-<year>`, `multi_investment_periods` | ⚠ ignored (single horizon) | ⚠ ignored (single horizon) | mode plan; an expandable technology with existing capacity needs continuous retirement; expandable stores and arcs not yet ([ADR-0011](https://enerplanet.github.io/meme/decisions/0011-pypsa-optimization-completeness/)) |
 | `discount_rate` (global) | ✓ overrides annuity rate | ✓ overrides `cost_interest_rate` | ✓ `global_discountrate` | |
 | `carriers.<id>.co2_intensity` | ✓ `carriers.co2_emissions` | ✓ co2 cost class on fuel inflow | ✓ `emission_factor` | |
 | `carriers.<id>.unit/color` | · | · | · | |
-| `timeseries` (inline) | ✓ | ✓ | ✓ | file-sourced series: referenced, not copied |
+| `timeseries` (inline) | ✓ | ✓ | ✓ | `source: file` is rejected on every target (inline the values) |
 | `transmission` | ✓ Link; Line/Transformer under `network.model: linear_power_flow` | ✓ transmission tech | ✗ rejected (Networks unmapped) | |
 | `trade` | ✓ market generators | ✓ market supply/demand techs | ✓ carrier CSV columns | |
 | `emission_limits` | ✓ GlobalConstraint `primary_energy` | ✓ custom-math cap on `cost[costs=co2]` | ✓ `costs_emissionlimit` objective | |
 | `constraints` (unscoped, single-variable) | ✓ GlobalConstraint | ✓ custom math | ✗ rejected | |
 | `constraints` (tech/node-scoped or multi-term) | ✓ run.py linopy constraints (scope-exact; no scoped `emissions` terms) | ✓ custom math | ✗ rejected | |
-| `model.native` | ✓ sidecar | ✓ YAML merge | ✓ ConfigModel merge | |
+| `model.native` | · `_native.pypsa.json` sidecar (documentation only) | ✓ YAML merge | ✓ ConfigModel merge | |
 
 ### 3.3 Node properties
 
@@ -342,7 +344,7 @@ storage (`Storage_Battery`) map canonically. Any other non-demand tech is
 | `electrical.reactive_dispatch` (scalar / series) or `electrical.power_factor` (+ `leading`) | ✓ `q_set` / `<component>-q_set.csv` on generators, loads and storage units (mode power_flow; Q derived per snapshot from the active set-point at the power factor, in the component's own direction) | ⚠ ignored | ⚠ ignored | mutually exclusive; a conversion carries no reactive fields; `method: linear` ignores them (warned) |
 | `electrical.control: pv` + `electrical.voltage_setpoint` | ✓ generator `control: PV`, bus `v_mag_pu_set` (the slack may carry a set-point too) | ⚠ ignored | ⚠ ignored | supply only; a set-point needs `pv` or the slack role; set-points at one bus must agree |
 | `area.max` | ✗ gated | ✓ `area_use_max` (+node `available_area`) | ✗ gated | |
-| `area.per_capacity` | — | ⚠ not emitted (use native `area_use_per_flow_cap`) | — | |
+| `area.per_capacity` | ✗ gated | ⚠ warned, not emitted on 0.7 (use native `area_use_per_flow_cap`); ✓ `resource_area_per_energy_cap` on 0.6 | ✗ gated | |
 | `source.max` (scalar / series) | ✗ gated | ✓ `source_use_max` (+ data table) | ✗ gated | |
 | `source.unit` / `source.cap` | — | ✓ `source_unit` / `source_cap_max` | — | |
 | `costs.monetary.investment_per_capacity` | ✓ annualized → `capital_cost` | ✓ `cost_flow_cap` + `cost_interest_rate` | ✓ `unit_CAPEX` | overnight basis needs `lifetime`+`interest_rate` |
@@ -353,7 +355,7 @@ storage (`Storage_Battery`) map canonically. Any other non-demand tech is
 | `costs.monetary.variable_om` (scalar) | ✓ `marginal_cost` | ✓ `cost_flow_out` (merged multi-class) | ✓ `OPEX_variable` | |
 | `costs.monetary.variable_om` (series) | ✓ `*-marginal_cost.csv` | ✗ | ✗ | |
 | `costs.monetary.fuel_cost` (scalar) | ✓ fuel/efficiency folded into `marginal_cost` | ✓ `cost_flow_in` (merged with co2 class) | ✗ (price the input via trade) | series → ✗ |
-| `costs.monetary.purchase` | ✗ (not emitted) | ✓ `cost_purchase` (committable) | ✗ | |
+| `costs.monetary.purchase` | ✗ rejected (no fixed purchase cost; fold it into `investment_per_capacity`) | ✓ `cost_purchase` (committable) | ✗ rejected | |
 | `costs.<other class>` | ⚠ warned & dropped | ⚠ (except co2 accounting) | ⚠ | only `monetary` is priced |
 | `lifetime` / `interest_rate` / `cost_basis` | ✓ CRF annualization | ✓ `lifetime` + `cost_interest_rate` | ✓ economics | global `discount_rate` overrides the rate |
 | `emission_factor` | ✗ (carrier-wide accounting; set carrier intensity) | ✓ co2 cost class on `cost_flow_out` | ✓ `Performance.emission_factor` | |
@@ -370,7 +372,7 @@ storage (`Storage_Battery`) map canonically. Any other non-demand tech is
 | `transmission.capacity` | ✓ `p_nom*` | ✓ `flow_cap_max` | ✗ | systemwide bounds as for technologies |
 | `transmission.efficiency` | ✓ (scalar; series ✗) | ✓ `flow_out_eff` | ✗ | |
 | `transmission.bidirectional` | ✓ `p_min_pu: -1` | ✓ `one_way: true` when false | ✗ | |
-| `transmission.distance` | ⚠ not emitted (feeds loss/aux folding) | ✓ `distance` | ✗ | |
+| `transmission.distance` | · folded into the link efficiency (`loss_per_distance`) and the per-distance investment; `length` on a Line/Transformer | ✓ `distance` | ✗ | |
 | `transmission.loss_per_distance` | ✓ folded into `efficiency` (needs `distance`) | ✓ `flow_out_eff_per_distance` | ✗ | |
 | `transmission.min_flow` | ✓ `p_min_pu` (one-way arcs only) | ✓ `flow_out_min_relative` | ✗ | |
 | `transmission.emission_factor` | ✗ (carrier-wide accounting) | ✓ co2 cost class on the link flow | ✗ | |

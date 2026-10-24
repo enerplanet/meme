@@ -21,10 +21,11 @@ directly loadable by the pinned framework (see [Targets and versions](targets.md
 | `pypsa_committable` | unit commitment | `committable`, `start_up_cost`, `ramp_limit_up` |
 | `pypsa_emission` | CO₂ cap GlobalConstraint | `primary_energy`, `co2_emissions` |
 | `pypsa_constraints` | linear-constraint IR | `max_pv` |
+| `pypsa_extensions` | must-run dispatch (`operation.equals_pu` pins both bounds), a system-wide capacity cap (`capacity.systemwide_max`), an import limited by a series (`trade.import.limit`) | `p_min_pu` = `p_max_pu`, `p_nom_max`, `backup_import` |
 | **`pypsa_node_override`** | one tech on `[n1,n2]` with per-node capacity/cost overrides | `pv@n1`, `pv@n2`, per-node `p_nom_max` |
 | **`pypsa_physics_precomputed`** | physics `pv` model carried by a precomputed CF series | `_performance.json` (`type: physics`, `precomputed`) |
 | `pypsa_operate` | rolling-horizon dispatch over fixed capacities (`optimize_with_rolling_horizon`) | `gen`, fixed `p_nom` |
-| `pypsa_alternatives` | MGA near-optimal alternative (`optimize_mga`, `options.mga.slack`) | `p_nom_extendable` |
+| `pypsa_alternatives` | MGA near-optimal alternative (`optimize_mga`; the payload still uses the deprecated `solver.options.mga` namespace and validates with a warning) | `p_nom_extendable` |
 | `pypsa_stochastic` | two-stage stochastic (`set_scenarios` + per-scenario overrides) | `_scenarios.json` (`fuel_high`, translated `marginal_cost`) |
 | `pypsa_constraints_sidecar` | tech-scoped constraint applied by run.py as a linopy constraint (binding, objective-checked in E2E) | `force_pv` in `_constraints.json` |
 | `pypsa_trade_price_series` | time-varying import price (objective-checked in E2E) | `market_import`, `generators-marginal_cost.csv` |
@@ -59,6 +60,8 @@ directly loadable by the pinned framework (see [Targets and versions](targets.md
 | **`calliope_multi_node`** | one demand tech at two nodes → one data table with a column per node (#7); solves to the same objective on PyPSA and both Calliope releases (`TestE2EMultiNodeDemandConsistency`) | `techs,load,load`, `nodes,n1,n2` |
 | **`calliope_multi_node_supply`** | one PV tech with an availability series at two nodes → `source_use_max` table with a column per node (#7, supply side); same-objective check on all three targets (`TestE2EMultiNodeAvailabilityConsistency`) | `techs,pv,pv`, `source_unit: per_cap` |
 | **`calliope_operate_limits`** | operate mode with a limited import and a capacity-bound line (#8): both installed as fixed `flow_cap`; same-objective check on PyPSA and both Calliope releases (`TestE2EOperateLimitsConsistency`) | `flow_cap: 50`, `flow_cap: 40` |
+| `calliope_extensions` | annualized costs under a model-wide `discount_rate`, a system-wide capacity cap, a battery with `energy_capacity`, depth of discharge and charge rate, a curtailable demand (`demand_curtailable`), `reporting.save_logs` | `flow_cap_max_systemwide`, `storage_discharge_depth`, `flow_cap_per_storage_cap_max`, `sink_use_max`, `save_logs` |
+| `calliope_hub_node` | a hub node without technologies joined by two arcs (0.7 and 0.6 dialects) | `link_to: hub`, `link_from: hub`, `hub:` with `techs: {}` |
 
 ## Calliope 0.6 (`calliope-0.6`)
 
@@ -85,10 +88,12 @@ CLI — plus four 0.6-specific scenarios:
 | `adopt_pv_climate` | physics `pv` → `Photovoltaic` + `ClimateData.csv` | `Photovoltaic`, `;ghi;` |
 | `adopt_emission` | emission-limit objective | `costs_emissionlimit` |
 | **`adopt_wind`** | physics `wind` → `WindTurbine_Onshore_1500` + wind climate columns | `WindTurbine_Onshore_1500`, `;ws10;` |
-| **`adopt_pareto`** | `mode: pareto` → `objective: pareto` (+ `pareto.points` option) | `pareto` |
-| **`adopt_monte_carlo`** | `mode: monte_carlo` → `monte_carlo.N > 0` (via `options.monte_carlo.N`) | `monte_carlo` (N asserted in `TestAdoptRunModeConfig`) |
+| **`adopt_pareto`** | `mode: pareto` → `objective: pareto` (+ `points` via the deprecated `solver.options.pareto`, warned) | `pareto` |
+| **`adopt_monte_carlo`** | `mode: monte_carlo` → `monte_carlo.N > 0` (via the deprecated `solver.options.monte_carlo.N`, warned) | `monte_carlo` (N asserted in `TestAdoptRunModeConfig`) |
 | **`adopt_typicaldays`** | `time_aggregation: typical_days` → `typicaldays.N = periods` | `typicaldays` (N asserted in `TestAdoptRunModeConfig`) |
 | `adopt_node_override` | per-node storage overrides in the node-keyed `_meme_overrides.json` | `Storage_Battery`, per-node `size_max` |
+| `adopt_extensions` | a battery with independent charge/discharge rates and `no_simultaneous_charge_discharge`, retirement (`capacity.decommission`), import/export with emission factors, `discount_rate`, `reporting.case_name` | `charge_rate`, `discharge_rate`, `allow_only_one_direction`, `decommission`, `case_name` |
+| `adopt_min_emissions` | `objective: min_emissions` on a PV system | `emissions_net`, `Photovoltaic` |
 
 The three AdOpT run-mode scenarios are backed by
 `TestAdoptRunModeConfig`, which parses the emitted `ConfigModel.json` and checks

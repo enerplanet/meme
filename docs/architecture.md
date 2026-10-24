@@ -206,7 +206,7 @@ flowchart TD
 │   │   ├── adoptnet0/       plugin: gates, input_data tree, embedded run.py driver
 │   │   ├── all/             blank-import umbrella that registers the plugin packages
 │   │   └── testdata/golden/ emitter snapshots + frozen validation matrix
-│   ├── scenarios/           embedded corpus: 49 runnable payloads + shared sample
+│   ├── scenarios/           embedded corpus: 59 runnable payloads + shared sample
 │   └── service/             Executor (bounded concurrency), Orchestrator (sweep →
 │                            emit → run), Runners (dry / command+timeout),
 │                            JobStore + GC, result-zip bundling

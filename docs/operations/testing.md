@@ -8,7 +8,7 @@ Everything about testing MEME lives behind
 make test           # vet + all unit/integration tests on the host (no Python)
 make test-race      # race-detector pass over the concurrent packages
 make schema-check   # examples/ + scenario corpus vs schemas/revised_unified_schema.json (python3 + jsonschema)
-make e2e-smoke      # container: 4 real-solver lifecycles (incl. calliope-0.6) + one multi-target job (~1 min)
+make e2e-smoke      # container: 4 real-solver lifecycles (incl. calliope-0.6), one multi-target job, the PyPSA feature checks (~30 s)
 make e2e            # container: the full corpus on real solvers, both Calliope releases (~2 min)
 make golden-update  # accept an intended emitter/validation change into the goldens
 ```
@@ -76,7 +76,7 @@ Live next to their packages:
   (`Emit` + `Plan`, generated driver script included) into a temp dir and
   compared **byte-for-byte** against
   [`internal/target/testdata/golden/`](https://github.com/enerplanet/meme/tree/main/internal/target/testdata/golden/)
-  (~490 files). The one absolute path is normalized to `${BASE}`.
+  (~880 files). The one absolute path is normalized to `${BASE}`.
 - **Validation matrix golden** — `testdata/golden/validation_matrix.json`:
   the exact verdict (`ok` / error text) and every warning string for each
   scenario × target pair, frozen in one JSON.
@@ -92,15 +92,19 @@ map iterations are sorted), so goldens never flake.
 Gated by `MEME_E2E=1` (set by the Make targets); outside the container every
 test self-skips. Two tiers, selected with Go's standard `-short` flag:
 
-- **Smoke** (`make e2e-smoke`, ~1 min): one full lifecycle per target
+- **Smoke** (`make e2e-smoke`, ~30 s): one full lifecycle per target
   (submit → poll → files on disk → solver optimal → complete zip) — PyPSA,
   Calliope 0.7 (`calliope`), Calliope 0.6 (`calliope-0.6`, the second venv's
   `calliope-0.6` CLI) and AdOpT — plus one `?target=all` job (the 3 default
   frameworks × 2 sweep points in a single bundle; `all` never runs two
-  Calliope releases unless named), and the three **power-flow** checks on
-  PyPSA (`TestE2EPyPSAPowerFlow*`: Newton-Raphson converging on every
-  snapshot with plausible voltages and loadings, the linear method, and a
-  diverging load that must fail the run with exit code 3). The lifecycles
+  Calliope releases unless named), and the **PyPSA feature checks**
+  (`TestE2EPyPSA*`): the power flows (Newton-Raphson converging on every
+  snapshot with plausible voltages and loadings, the linear method, a
+  diverging load that must fail the run with exit code 3, reactive power and
+  voltage control) and the planning features (the voltage law with
+  Kirchhoff's law checked around a loop, a security-constrained solve, the
+  Store, modules, retirement, slack and copperplate, the unit-commitment
+  extras, the quadratic cost and investment periods). The lifecycles
   also pin the **objective value**: each `objectivePin` carries the recorded
   optimum and its own relative delta (`rel: 1e-4` = ±0.01%) absorbing solver
   numerics — drift beyond it is a translation regression. The two Calliope

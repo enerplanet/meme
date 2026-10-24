@@ -19,8 +19,10 @@ project an indexed value to a scalar (and error if it can't for a flat target).
   "api_key"?: "…",   // required iff the server has API_KEY configured; redacted from the bundle
   "model": {
     "metadata": { "name": "…", "currency"?: "EUR", "currency_year"?: 2025 },
-    "time":     { "start": "2025-01-01", "end": "2025-01-02", "resolution"?: "1H", "subset"?: ["…","…"] },
+    "time":     { "start": "2025-01-01", "end": "2025-01-02", "resolution"?: "1H", "subset"?: ["…","…"],   // subset: Calliope only
+                  "timesteps"?: ["…"], "weights"?: Value },          // explicit labels (P/C); snapshot weights (P; C scalar)
     "periods"?: ["period1"] | [{"name":"2030","year":2030,"length_years":10}],   // with years: investment periods (PyPSA)
+    "discount_rate"?: 0.07,                                        // global; overrides per-tech interest_rate
 
     "carriers":  { "<id>": { "unit"?: "MWh", "co2_intensity"?: 0.2, "color"?: "#…", "native"?: {…} } },
     "nodes":     { "<id>": { "coords"?: {"lat":48.8,"lon":12.9,"alt"?:0},
@@ -45,7 +47,9 @@ project an indexed value to a scalar (and error if it can't for a flat target).
           "model"?: "pv"|"wind"|"heat_pump"|"open_hydro",        // physics
           "params"?: { … }, "precomputed"?: "series_id"
         },
-        "capacity"?:  { "existing":0, "expandable":true, "min"?:0, "max"?:500, "unit"?:"MW", "per_unit"?:1 },
+        "capacity"?:  { "existing":0, "expandable":true, "min"?:0, "max"?:500, "unit"?:"MW",
+                        "per_unit"?:10, "units_min"?:0, "units_max"?:12, "systemwide_min"?:0, "systemwide_max"?:1000,
+                        "decommission"?: { "mode":"impossible"|"continuous"|"only_complete", "cost"?:0 } },
         "operation"?: { "max_pu"?:Value, "min_pu"?:Value, "ramp_up"?:0.6, "ramp_down"?:0.6,
                         "committable"?:true, "start_up_cost"?:5000, "shut_down_cost"?:0,
                         "min_uptime"?:3, "min_downtime"?:2,
@@ -53,6 +57,8 @@ project an indexed value to a scalar (and error if it can't for a flat target).
         "storage"?:   { "energy_capacity"?:{…Capacity}, "max_hours"?:4, "charge_eff"?:0.95,
                         "discharge_eff"?:0.95, "self_discharge"?:0.001, "inflow"?:Value,
                         "spill_cost"?:0, "initial_soc"?:0.5, "cyclic"?:true,
+                        "max_charge_rate"?:0.5, "max_discharge_rate"?:0.5, "depth_of_discharge"?:0.1,
+                        "no_simultaneous_charge_discharge"?:false,
                         "soc_profile"?:Value },                                 // pinned state of charge (PyPSA StorageUnit)
         "demand_profile"?: Value,                                // role: demand
         "dispatch"?: Value,                                      // fixed MW per timestep; power_flow input (ignored elsewhere)
@@ -98,6 +104,12 @@ project an indexed value to a scalar (and error if it can't for a flat target).
     "objective"?: "min_cost"|"min_emissions",
     "foresight"?: "perfect"|"myopic",
     "time_aggregation"?: { "method":"typical_days"|"resample", "periods"?:12, "resolution"?:"3H" },
+    "operate"?: { "window":"24H", "horizon":"48H" },                                   // rolling horizon
+    "alternatives"?: { "number":5, "slack"?:0.1, "scoring_algorithm"?:"integer"|"relative_deployment" },  // MGA / SPORES
+    "pareto"?: { "points":6 },  "monte_carlo"?: { "samples":25, "standard_deviation"?:0.1, "on"?:["technology_capex"] },
+    "allow_unmet_demand"?: { "enabled":true, "penalty_price"?:1000 },  "copperplate"?: false,
+    "emission_accounting"?: "net"|"positive_only",
+    "reporting"?: { "output_dir"?:"…", "case_name"?:"…", "save_logs"?:"…", "shadow_prices"?:true },
     "scenarios"?: [ { "name":"…", "weight"?:0.5, "overrides"?:{ "<path>": 1.2 } } ],
     "sweep"?: [ { "parameter":"technologies.pv.capacity.max", "values":[200,400] } ],
     "solver": { "name":"highs", "options"?:{ … } },
@@ -171,7 +183,7 @@ combined log.
 
 | Target | Entrypoint | Contents |
 |---|---|---|
-| PyPSA | CSV folder | `network.csv` (name + pinned `pypsa_version`), `buses.csv`, `carriers.csv`, `generators.csv`, `loads.csv`, `links.csv`, `storage_units.csv`, `global_constraints.csv` (unscoped constraints only), materialized time-varying CSVs (`loads-p_set`, `generators-p_max_pu`, `generators-marginal_cost`, `links-marginal_cost`, `storage_units-inflow`), `_constraints.json` (scoped constraints, applied by run.py), `_scenarios.json` (stochastic mode), `_performance.json`, `_native.pypsa.json`; mode power_flow or network model linear_power_flow: `lines.csv`, `transformers.csv`, `v_nom` + carrier `AC` on the electrical buses (power flow: `control`/`p_set`/`q_set`, `shunt_impedances.csv`, dispatch series); energy-sized storage: `stores.csv` + charger/discharger links + `_storage.json`; investment periods: `investment_periods.csv` and `(period, timestep)` snapshots |
+| PyPSA | CSV folder | `network.csv` (name + pinned `pypsa_version`), `buses.csv`, `carriers.csv`, `generators.csv`, `loads.csv`, `links.csv`, `storage_units.csv`, `global_constraints.csv` (unscoped constraints only), `snapshots.csv` (plain, or `(period, timestep)` under investment periods), materialized time-varying CSVs (`loads-p_set`, `generators-p_max_pu`/`p_min_pu`, `generators-marginal_cost`, `links-marginal_cost`, `storage_units-inflow`, `storage_units-state_of_charge_set`; `*-p_set`/`*-q_set` dispatch series in mode power_flow), `_constraints.json` (scoped constraints, applied by run.py), `_scenarios.json` (stochastic mode), `_performance.json`, `_native.pypsa.json`; mode power_flow or network model linear_power_flow: `lines.csv`, `transformers.csv`, `v_nom` + carrier `AC` on the electrical buses (power flow: `control`/`p_set`/`q_set`, `shunt_impedances.csv`, dispatch series); energy-sized storage: `stores.csv` + charger/discharger links + `_storage.json`; investment periods: `investment_periods.csv` and `(period, timestep)` snapshots |
 | Calliope 0.7 (`calliope`) | `model.yaml` | `config` (`init.mode`/`init.resample`/`solve.solver`/`solve.spores`/`init.math_paths`+`extra_math` incl. `milp`), `techs` (incl. co2 `cost_flow_in` / `cost_source_use` on supply, trade market techs, MILP unit-commitment params, piecewise breakpoint params), `nodes`, `data_tables` (`table` + `add_dims.inputs`) + materialized series CSVs (demand, availability, source), `data_definitions.objective_cost_weights`, `additional_math.yaml` (constraint IR + flow-ratio pinning + piecewise machinery), `_constraints.json` sidecar when `custom_math=false` |
 | Calliope 0.6 (`calliope-0.6`) | `model.yaml` | `model` (`calliope_version`, `timeseries_data_path`, `subset_time`, `time` resample / k-means `apply_clustering`), `run` (`mode` plan/operate/spores, `solver`, `objective_options.cost_class` weights, `cyclic_storage`, `operation`, `spores_options`), `techs` (`essentials`/`constraints`/`costs`; `conversion_plus` carrier tiers + `carrier_ratios`; trade market techs; `units_max`/`energy_cap_per_unit` MILP; `emissions` cost class), `locations` (coordinates, `available_area`, per-location `file=` resources + overrides), `links` (`from,to` → transmission techs + distance), `group_constraints` (constraint IR, emission limits, annual output bounds, SPORES cost slack), `timeseries_data/*.csv` (datetime index, one column per node; demand negative) |
 | AdOpT-NET0 | `input_data/` | `Topology.json`, `ConfigModel.json` (glpk, `write_results: 1`), `NodeLocations.csv`, `_meme_overrides.json` (keyed node → tech), per-period `Networks.json`, per-node `Technologies.json` (database tech names) + `ClimateData.csv` + `CarbonCost.csv` + `carrier_data/*.csv` (`;`-delimited; demand/import/export incl. per-timestep prices) + `EnergybalanceOptions.json`. The run step copies tech data + applies overrides. |

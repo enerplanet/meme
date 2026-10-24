@@ -43,6 +43,9 @@ in a warning.
   made the electrical network canonical (`node.electrical`,
   `transmission.electrical`, `technology.dispatch`, mode `power_flow`): the
   rule of this record still holds — the fields are first-class because they
-  describe the physical system, not one framework's input format — and what
-  remains native-only on the PyPSA side is reactive set-points, voltage
-  control and the other attributes the capability reference lists.
+  describe the physical system, not one framework's input format.
+  [ADR-0009](0009-reactive-power-voltage-control-and-fixed-transfers.md)
+  then made reactive set-points and voltage control canonical and
+  [ADR-0011](0011-pypsa-optimization-completeness.md) the Store, the
+  unit-commitment extras and the quadratic cost; what remains native-only is
+  the list in the capability reference.

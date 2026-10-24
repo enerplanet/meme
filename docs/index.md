@@ -78,7 +78,7 @@ AdOpT `input_data/` tree — and solves to the same optimum on each.
   through canonical fields; every optimization run returns its tables under
   `output/results/`.
 - **Capability-gated validation.** Every feature claim is backed by a
-  runnable scenario; a payload that asks for something the selected target
+  runnable scenario or a named test; a payload that asks for something the selected target
   cannot honor is rejected with a pointed message, never silently trimmed.
 - **Async job API.** `POST /simulate` answers `202` with an id; poll
   `GET /jobs/{id}/status` for state and the live solver log, download the

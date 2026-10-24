@@ -31,7 +31,7 @@ the workflow and the project's conventions. By participating you agree to the
 make test           # vet + unit tests + golden files + validation matrix
 make test-race      # race detector over the concurrent packages
 make schema-check   # examples and corpus against schemas/revised_unified_schema.json
-make e2e-smoke      # container: one real-solver lifecycle per target (~1 min)
+make e2e-smoke      # container: one real-solver lifecycle per target, one multi-target job, the PyPSA feature checks (~30 s)
 make e2e            # container: the whole corpus on real solvers (~2 min)
 make docs           # build the documentation site strictly
 ```

@@ -1,7 +1,7 @@
 # ADR-0010: The electrical network enters the optimization: linear power flow, line expansion, security constraints and transmission economics
 
 - **Status:** accepted
-- **Date:** 2026-10-25
+- **Date:** 2026-10-24
 
 ## Context
 

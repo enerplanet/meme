@@ -1,8 +1,9 @@
 # `examples/` — ready-to-run payloads
 
 One **maximal** payload per framework (every property that target honors),
-two **shared** payloads valid for all frameworks at once, and a PyPSA
-**power-flow** payload (the second call after a plan); all have been run
+two **shared** payloads valid for all frameworks at once, five PyPSA
+**power-flow** payloads (the second call after a plan) and a PyPSA
+**planning** payload on the electrical network; all eleven have been run
 against the real API with real solvers.
 
 | File | Target |

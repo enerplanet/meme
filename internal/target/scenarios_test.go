@@ -90,6 +90,9 @@ func TestScenarios(t *testing.T) {
 		{"pypsa_modular.json", model.TargetPyPSA, []string{"p_nom_mod", "e_nom_mod"}},
 		{"pypsa_retire_slack.json", model.TargetPyPSA, []string{"::unmet", "unmet,0"}},
 		{"pypsa_copperplate.json", model.TargetPyPSA, []string{"copperplate::electricity"}},
+		{"pypsa_uc_extras.json", model.TargetPyPSA, []string{"ramp_limit_start_up", "stand_by_cost", "up_time_before"}},
+		{"pypsa_quadratic.json", model.TargetPyPSA, []string{"marginal_cost_quadratic"}},
+		{"pypsa_multi_period.json", model.TargetPyPSA, []string{"period,objective,years", "new-2030", "new-2040", "build_year"}},
 
 		// --- Calliope ---
 		{"calliope_plan.json", model.TargetCalliope, []string{"mode: base", "base_tech: supply", "solver: cbc"}},

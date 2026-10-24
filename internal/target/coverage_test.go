@@ -32,6 +32,9 @@ var featureScenarios = map[model.Target]map[model.Feature]string{
 		model.FeatPowerFlow:              "pypsa_power_flow.json",
 		model.FeatLinearPowerFlow:        "pypsa_lopf.json",
 		model.FeatSOCProfile:             "pypsa_store.json",
+		model.FeatUnitCommitmentExtras:   "pypsa_uc_extras.json",
+		model.FeatQuadraticCost:          "pypsa_quadratic.json",
+		model.FeatMultiPeriod:            "pypsa_multi_period.json",
 	},
 	model.TargetCalliope: {
 		model.FeatModePlan:               "calliope_plan.json",

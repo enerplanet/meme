@@ -656,3 +656,80 @@ func TestRetirementSlackCopperplateGates(t *testing.T) {
 		t.Errorf("calliope: modular payload should validate: %v", err)
 	}
 }
+
+// --- ADR-0011: unit-commitment extras, quadratic cost, investment periods ----
+
+// The unit-commitment extras and the quadratic cost are honored on PyPSA and
+// ignored with a warning elsewhere; a quadratic cost next to integer
+// variables is a MIQP the free solvers cannot solve.
+func TestUnitCommitmentExtrasAndQuadraticGates(t *testing.T) {
+	for _, file := range []string{"pypsa_uc_extras.json", "pypsa_quadratic.json"} {
+		j := scenarioJob(t, file, nil)
+		if warns, err := target.ValidateFor(&j, model.TargetPyPSA); err != nil || hasWarning(warns, "ignored") {
+			t.Errorf("%s on pypsa: err %v warns %v", file, err, warns)
+		}
+	}
+	j := scenarioJob(t, "pypsa_uc_extras.json", func(j *model.Job) {
+		// Calliope rejects start/stop costs of its own accord; keep only the extras.
+		c := j.Model.Technologies["ccgt"]
+		c.Operation.StartUpCost = nil
+		c.Operation.MinUptime = nil
+		j.Model.Technologies["ccgt"] = c
+	})
+	warns, err := target.ValidateFor(&j, model.TargetCalliope)
+	if err != nil {
+		t.Fatalf("calliope: extras must be ignored, not rejected: %v", err)
+	}
+	if !hasWarning(warns, "unit-commitment extras", "technologies [ccgt]", "ignored", `target "calliope"`) {
+		t.Errorf("calliope: want the extras warning, got %v", warns)
+	}
+	j = scenarioJob(t, "pypsa_quadratic.json", nil)
+	warns, err = target.ValidateFor(&j, model.TargetCalliope)
+	if err != nil {
+		t.Fatalf("calliope: quadratic cost must be ignored, not rejected: %v", err)
+	}
+	if !hasWarning(warns, "variable_om_quadratic", "technologies [quad]", "ignored") {
+		t.Errorf("calliope: want the quadratic warning, got %v", warns)
+	}
+	j = scenarioJob(t, "pypsa_quadratic.json", func(j *model.Job) {
+		q := j.Model.Technologies["quad"]
+		q.Operation = &model.Operation{Committable: true}
+		j.Model.Technologies["quad"] = q
+	})
+	wantGateErr(t, &j, model.TargetPyPSA, "variable_om_quadratic together with integer variables (committable units, modular capacity) is a MIQP the free solvers cannot solve")
+	j = scenarioJob(t, "pypsa_quadratic.json", func(j *model.Job) {
+		q := j.Model.Technologies["quad"]
+		q.Operation = &model.Operation{Committable: true}
+		j.Model.Technologies["quad"] = q
+		j.Experiment.Solver.Name = "gurobi"
+	})
+	if _, err := target.ValidateFor(&j, model.TargetPyPSA); err != nil {
+		t.Errorf("gurobi solves a MIQP: %v", err)
+	}
+}
+
+// Investment periods are a capability PyPSA claims; a target without it keeps
+// the single horizon and says so. On PyPSA they need mode plan.
+func TestMultiPeriodGates(t *testing.T) {
+	j := scenarioJob(t, "pypsa_multi_period.json", nil)
+	if _, err := target.ValidateFor(&j, model.TargetPyPSA); err != nil {
+		t.Fatalf("pypsa should accept periods: %v", err)
+	}
+	if !target.Supports(model.TargetPyPSA, model.FeatMultiPeriod) {
+		t.Error("pypsa must claim multi_period")
+	}
+	warns, err := target.ValidateFor(&j, model.TargetCalliope)
+	if err != nil {
+		t.Fatalf("calliope: periods must be ignored, not rejected: %v", err)
+	}
+	if !hasWarning(warns, "periods", "ignored", "single horizon") {
+		t.Errorf("calliope: want the periods warning, got %v", warns)
+	}
+	j = scenarioJob(t, "pypsa_multi_period.json", func(j *model.Job) {
+		j.Experiment.Mode = model.ModeOperate
+		n := j.Model.Technologies["new"]
+		n.Capacity = &model.Capacity{Existing: 50}
+		j.Model.Technologies["new"] = n
+	})
+	wantGateErr(t, &j, model.TargetPyPSA, `investment periods need mode "plan" on pypsa`)
+}

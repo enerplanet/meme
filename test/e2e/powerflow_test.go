@@ -463,3 +463,46 @@ func TestE2EPyPSAModularRetireSlackCopperplate(t *testing.T) {
 		t.Errorf("the copperplate hub should carry the generator's output to the two loads (80 MW in the last hour), got %v", flow)
 	}
 }
+
+// TestE2EPyPSAUnitCommitmentQuadraticMultiPeriod: the last three planning
+// additions on the real framework. The committable unit solves with its
+// start/stop ramps, standby cost and prior uptime; the quadratic cost
+// spreads the dispatch (a convex QP on HiGHS); the two-period plan retires
+// the 2020 unit before 2040 and builds new capacity in that period only.
+func TestE2EPyPSAUnitCommitmentQuadraticMultiPeriod(t *testing.T) {
+	requireE2E(t)
+	t.Parallel()
+	srv, _ := newE2EServer(t)
+	ids := map[string]string{}
+	for _, f := range []string{"pypsa_uc_extras.json", "pypsa_quadratic.json", "pypsa_multi_period.json"} {
+		ids[f] = submit(t, srv.URL, model.TargetPyPSA, readScenario(t, f))["id"].(string)
+	}
+	results := map[string]map[string][]byte{}
+	for f, id := range ids {
+		st := awaitJob(t, srv.URL, id)
+		if st["state"] != string(service.StateSucceeded) {
+			t.Fatalf("%s failed: %v\nlog:\n%v", f, st["error"], st["log"])
+		}
+		results[f] = fetchZip(t, srv.URL, id)
+	}
+	if p := resultCol(t, results["pypsa_uc_extras.json"], "generators-p.csv", "ccgt"); len(p) != 4 || p[1] <= 0 {
+		t.Errorf("the committable unit should run: %v", p)
+	}
+	// With a quadratic cost the cheap unit no longer takes the whole load at
+	// the 80 MW hours: marginal 10 + 0.5 x 2p meets the peaker's 60 at 50 MW.
+	if p := resultCol(t, results["pypsa_quadratic.json"], "generators-p.csv", "quad"); len(p) != 4 || math.Abs(p[1]-50) > 0.5 {
+		t.Errorf("quadratic cost should cap the cheap unit near 50 MW at the peak, got %v", p)
+	}
+	recs, err := csv.NewReader(bytes.NewReader(results["pypsa_multi_period.json"]["files/run_0/output/results/capacities.csv"])).ReadAll()
+	if err != nil {
+		t.Fatal(err)
+	}
+	caps := map[string]float64{}
+	for _, r := range recs[1:] {
+		v, _ := strconv.ParseFloat(r[3], 64)
+		caps[r[1]] = v
+	}
+	if caps["new-2030"] > 1e-6 || caps["new-2040"] < 40-1e-6 {
+		t.Errorf("the 2020 unit covers 2030 and retires before 2040, so new capacity is built in 2040 only: %v", caps)
+	}
+}

@@ -45,6 +45,9 @@ func (PyPSA) Capabilities() map[model.Feature]bool {
 		model.FeatPowerFlow:              true,
 		model.FeatLinearPowerFlow:        true, // the voltage law inside optimize (Lines/Transformers; ADR-0010)
 		model.FeatSOCProfile:             true, // StorageUnit state_of_charge_set (ADR-0011)
+		model.FeatUnitCommitmentExtras:   true, // ramp_limit_start_up/shut_down, stand_by_cost, up/down_time_before
+		model.FeatQuadraticCost:          true, // marginal_cost_quadratic (QP; MIQP needs gurobi)
+		model.FeatMultiPeriod:            true, // investment_periods + build_year/lifetime, multi_investment_periods
 		model.FeatMultiCarrierConversion: true, // multi-output Links
 		model.FeatEmissionLimit:          true, // GlobalConstraint
 		model.FeatImportExport:           true, // via generators/loads + marginal_cost
@@ -159,6 +162,59 @@ func (PyPSA) ValidateJob(j *model.Job) ([]string, error) {
 	}
 	if ud := e.AllowUnmetDemand; ud != nil && ud.Enabled && ud.PenaltyPrice == nil {
 		return nil, fmt.Errorf("allow_unmet_demand needs penalty_price on pypsa (the slack generators' marginal cost)")
+	}
+
+	// A quadratic variable cost makes a QP; with integer variables (committable
+	// units, modular capacity) a MIQP, which only gurobi solves here.
+	hasQuad, hasInt := false, false
+	for _, t := range m.Technologies {
+		for _, c := range t.Costs {
+			if c.VariableOMQuadratic != nil {
+				hasQuad = true
+			}
+		}
+		if t.Operation != nil && t.Operation.Committable {
+			hasInt = true
+		}
+		if c := t.Capacity; c != nil && c.Expandable && c.PerUnit != nil {
+			hasInt = true
+		}
+		if t.Storage.IsStore() && t.Storage.EnergyCapacity.Expandable && t.Storage.EnergyCapacity.PerUnit != nil {
+			hasInt = true
+		}
+	}
+	for _, l := range m.Transmission {
+		if c := l.Capacity; c != nil && c.Expandable && c.PerUnit != nil {
+			hasInt = true
+		}
+	}
+	if hasQuad && hasInt && solverName(e.Solver.Name) != "gurobi" {
+		return nil, fmt.Errorf("costs.variable_om_quadratic together with integer variables (committable units, modular capacity) is a MIQP the free solvers cannot solve; use solver gurobi or drop one of them")
+	}
+
+	// Investment periods (ADR-0011): a planning solve over (period, timestep)
+	// snapshots. An expandable technology is built per period, so its
+	// existing capacity must be a part of its own (continuous retirement) or
+	// modelled as a separate fixed technology; expandable stores and arcs are
+	// not split per period yet.
+	if periods := m.InvestmentPeriods(); periods != nil {
+		if e.EffectiveMode() != model.ModePlan {
+			return nil, fmt.Errorf("investment periods need mode \"plan\" on pypsa (multi_investment_periods is a planning solve)")
+		}
+		for _, id := range emit.Keys(m.Technologies) {
+			t := m.Technologies[id]
+			if c := t.Capacity; c != nil && c.Expandable && c.Existing > 0 && c.DecommissionMode() != "continuous" {
+				return nil, fmt.Errorf("tech %q: under investment periods an expandable technology with existing capacity needs decommission continuous (the existing part keeps its build_year, the new builds get one per period), or capacity.existing 0 with the fleet as its own fixed technology", id)
+			}
+			if s := t.Storage; s.IsStore() && ((t.Capacity != nil && t.Capacity.Expandable) || s.EnergyCapacity.Expandable) {
+				return nil, fmt.Errorf("tech %q: an expandable Store-based storage under investment periods is not supported yet on pypsa; size it with max_hours or fix its capacities", id)
+			}
+		}
+		for _, id := range emit.Keys(m.Transmission) {
+			if c := m.Transmission[id].Capacity; c != nil && c.Expandable {
+				return nil, fmt.Errorf("transmission %q: expandable transmission under investment periods is not supported yet on pypsa; fix its capacity", id)
+			}
+		}
 	}
 	if e.EmissionAccounting == "positive_only" {
 		return nil, fmt.Errorf("emission_accounting \"positive_only\" is not supported for pypsa (carrier co2_emissions accounting is net by construction)")
@@ -350,6 +406,9 @@ func runPy(j *model.Job, inputDir, outDir string) string {
 		"mga_slack": slack,
 		"horizon":   horizon,
 		"overlap":   int(optionFloat(e.Solver.Options, "operate", "overlap", 0)),
+	}
+	if j.Model.InvestmentPeriods() != nil {
+		cfgMap["multi_period"] = true
 	}
 	if so := solverOptions(e.Solver); so != nil {
 		cfgMap["solver_options"] = so

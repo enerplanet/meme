@@ -812,3 +812,70 @@ func TestSlackDemandAndCopperplate(t *testing.T) {
 		t.Error("copperplate drops the model's own arcs")
 	}
 }
+
+// --- ADR-0011: unit-commitment extras, quadratic cost, investment periods ----
+
+func TestUnitCommitmentExtrasAndQuadraticColumns(t *testing.T) {
+	dir, _ := emitScenario(t, "pypsa_uc_extras.json", nil)
+	g := table(t, dir, "generators.csv")["ccgt"]
+	want := map[string]string{"committable": "True", "ramp_limit_start_up": "0.6", "ramp_limit_shut_down": "0.6", "stand_by_cost": "5", "up_time_before": "2", "min_up_time": "2"}
+	for k, v := range want {
+		if g[k] != v {
+			t.Errorf("ccgt %s: got %q want %q", k, g[k], v)
+		}
+	}
+	dir, _ = emitScenario(t, "pypsa_quadratic.json", nil)
+	if q := table(t, dir, "generators.csv")["quad"]; q["marginal_cost_quadratic"] != "0.5" || q["marginal_cost"] != "10" {
+		t.Errorf("quadratic cost: %v", q)
+	}
+}
+
+// Investment periods: the snapshot index becomes (period, timestep) with the
+// series repeated per period, investment_periods.csv carries the years and
+// weights, fixed components carry build_year and lifetime, and an expandable
+// technology gets one component per period to build in.
+func TestMultiPeriodEmission(t *testing.T) {
+	dir, j := emitScenario(t, "pypsa_multi_period.json", nil)
+	raw := readFile(t, dir, "investment_periods.csv")
+	if !strings.Contains(raw, "period,objective,years") || !strings.Contains(raw, "2030,1,10") || !strings.Contains(raw, "2040,1,10") {
+		t.Errorf("investment_periods.csv:\n%s", raw)
+	}
+	snaps := readFile(t, dir, "snapshots.csv")
+	if !strings.HasPrefix(snaps, ",period,timestep") || strings.Count(snaps, "\n") != 5 || !strings.Contains(snaps, "2,2040,2025-01-01 00:00:00") {
+		t.Errorf("snapshots.csv:\n%s", snaps)
+	}
+	gens := table(t, dir, "generators.csv")
+	if o := gens["old"]; o["build_year"] != "2020" || o["lifetime"] != "15" || o["p_nom"] != "50" {
+		t.Errorf("fixed generator with build year and lifetime: %v", o)
+	}
+	if _, ok := gens["new"]; ok {
+		t.Error("an expandable technology is built per period, not once")
+	}
+	for _, y := range []string{"2030", "2040"} {
+		n := gens["new-"+y]
+		if n["build_year"] != y || n["lifetime"] != "20" || n["p_nom_extendable"] != "True" || n["p_nom_max"] != "100" {
+			t.Errorf("per-period build %s: %v", y, n)
+		}
+	}
+	// Series repeat per period and are keyed by position like PyPSA writes them.
+	j.Model.Technologies["load"] = model.Technology{Role: model.RoleDemand, Node: model.StringList{"n1"}, CarrierIn: model.StringList{"electricity"},
+		DemandProfile: &model.Value{Inline: []float64{40, 45}}}
+	if _, err := target.ValidateFor(&j, model.TargetPyPSA); err != nil {
+		t.Fatal(err)
+	}
+	dir = t.TempDir()
+	if _, err := (pypsa.PyPSA{}).Emit(&j, dir); err != nil {
+		t.Fatal(err)
+	}
+	pset := readFile(t, dir, "loads-p_set.csv")
+	if pset != ",load\n0,40\n1,45\n2,40\n3,45\n" {
+		t.Errorf("loads-p_set.csv under periods:\n%s", pset)
+	}
+	run := t.TempDir()
+	if _, err := (pypsa.PyPSA{}).Plan(&j, "input", target.RunDirs{RunDir: run, InputDir: "input", OutDir: "output"}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(cfgOf(t, readFile(t, run, "run.py")), `"multi_period":true`) {
+		t.Error("the driver must solve with multi_investment_periods")
+	}
+}

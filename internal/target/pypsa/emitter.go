@@ -62,6 +62,18 @@ func (Emitter) Emit(j *model.Job, outDir string) (string, error) {
 	// additionally fixes every injection (see powerflow.go, ADR-0008/0010).
 	netCarrier, isNet := electricalNetworkOf(j)
 	pf, isPF := powerFlowOf(j)
+	// Investment periods (ADR-0011): their years and weights, and the per-period
+	// new-build components periodRows adds.
+	periods := m.InvestmentPeriods()
+	if periods != nil {
+		rows := [][]string{{"period", "objective", "years"}}
+		for _, p := range periods {
+			rows = append(rows, []string{strconv.Itoa(p.Year), emit.Ftoa(p.Objective), emit.Ftoa(p.Years)})
+		}
+		if err := emit.WriteCSV(outDir, "investment_periods.csv", rows); err != nil {
+			return "", err
+		}
+	}
 
 	// buses (one per node,carrier) + carriers ---------------------------------
 	buses := &pcsv{base: []string{"name", "carrier", "x", "y"}}
@@ -248,7 +260,8 @@ func (Emitter) Emit(j *model.Job, outDir string) (string, error) {
 				return "", fmt.Errorf("tech %q: %w", id, err)
 			}
 			setModule(row, eff.Capacity, "p_nom_mod")
-			for _, r := range retirementRows(m, eff, row) {
+			applyQuadratic(row, eff)
+			for _, r := range periodRows(retirementRows(m, eff, row), eff, periods) {
 				tbl.add(r)
 			}
 		}
@@ -620,6 +633,21 @@ func applyOperation(row map[string]string, op *model.Operation) {
 	}
 	if f, ok := op.RampUp.Reduce(); ok {
 		row["ramp_limit_up"] = emit.Ftoa(f)
+	}
+	if op.RampStartUp != nil {
+		row["ramp_limit_start_up"] = emit.Ftoa(*op.RampStartUp)
+	}
+	if op.RampShutDown != nil {
+		row["ramp_limit_shut_down"] = emit.Ftoa(*op.RampShutDown)
+	}
+	if op.StandbyCost != nil {
+		row["stand_by_cost"] = emit.Ftoa(*op.StandbyCost)
+	}
+	if op.InitialUptime != nil {
+		row["up_time_before"] = emit.Ftoa(*op.InitialUptime)
+	}
+	if op.InitialDowntime != nil {
+		row["down_time_before"] = emit.Ftoa(*op.InitialDowntime)
 	}
 	if f, ok := op.RampDown.Reduce(); ok {
 		row["ramp_limit_down"] = emit.Ftoa(f)

@@ -5,6 +5,7 @@ package pypsa
 
 import (
 	"math"
+	"strconv"
 
 	"github.com/enerplanet/meme/internal/emit"
 	"github.com/enerplanet/meme/internal/model"
@@ -35,6 +36,7 @@ func MaterializeTimeSeries(m *model.Model, dir string) error {
 // the components' p_set / q_set files; an optimization run ignores those
 // inputs (ValidateFor says so) and gets none of the files.
 func materializeTimeSeries(m *model.Model, dir string, pfMode bool) error {
+	periods := m.InvestmentPeriods()
 	files := map[string]map[string]seriesRef{} // file -> component -> series
 	addScaled := func(file, component, seriesID string, scale float64) {
 		if files[file] == nil {
@@ -52,8 +54,9 @@ func materializeTimeSeries(m *model.Model, dir string, pfMode bool) error {
 			}
 			eff := t.At(node)
 			// Continuous retirement splits an expandable technology into an
-			// existing and a new-build part; every series applies to both.
-			for _, name := range retirementNames(base, eff) {
+			// existing and a new-build part, investment periods into one
+			// component per period; every series applies to each of them.
+			for _, name := range emittedNames(base, eff, periods) {
 				// Power-flow inputs: a fixed dispatch is the component's p_set;
 				// reactive power is a q_set series as given, or derived from a
 				// series active set-point at the power factor (the scale is Q per
@@ -160,56 +163,84 @@ func materializeTimeSeries(m *model.Model, dir string, pfMode bool) error {
 	labels := emit.SnapshotLabels(m.Time, n)
 
 	// snapshots.csv: the time index, plus the snapshot weightings when set
-	// (PyPSA reads objective/generators/stores as extra columns).
-	header := []string{"name"}
+	// (PyPSA reads objective/generators/stores as extra columns). Under
+	// investment periods the index is (period, timestep), written the way
+	// PyPSA writes it: a positional first column, then period and timestep,
+	// the series repeated per period and keyed by position.
 	var weights []float64
 	if m.Time.Weights != nil {
-		header = append(header, "objective", "generators", "stores")
 		if vals, ok := emit.SeriesValues(m, m.Time.Weights.SeriesID()); ok {
 			weights = vals
 		} else if f, ok := m.Time.Weights.Reduce(); ok {
 			weights = []float64{f} // SeriesAt pads with the last value
 		}
 	}
+	header := []string{"name"}
+	if periods != nil {
+		header = []string{"", "period", "timestep"}
+	}
+	if weights != nil {
+		header = append(header, "objective", "generators", "stores")
+	}
 	snaps := [][]string{header}
-	for i, l := range labels {
-		row := []string{l}
-		if weights != nil {
-			w := emit.Ftoa(emit.SeriesAt(weights, i))
-			row = append(row, w, w, w)
+	pos := 0
+	for p := 0; p < max(len(periods), 1); p++ {
+		for i, l := range labels {
+			row := []string{l}
+			if periods != nil {
+				row = []string{strconv.Itoa(pos), strconv.Itoa(periods[p].Year), l}
+			}
+			if weights != nil {
+				w := emit.Ftoa(emit.SeriesAt(weights, i))
+				row = append(row, w, w, w)
+			}
+			snaps = append(snaps, row)
+			pos++
 		}
-		snaps = append(snaps, row)
 	}
 	if err := emit.WriteCSV(dir, "snapshots.csv", snaps); err != nil {
 		return err
 	}
 	for _, file := range emit.Keys(files) {
-		if err := writeSeriesCSV(dir, file, labels, files[file], m); err != nil {
+		if err := writeSeriesCSV(dir, file, labels, len(periods), files[file], m); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func writeSeriesCSV(dir, file string, labels []string, cols map[string]seriesRef, m *model.Model) error {
+// writeSeriesCSV writes one time-varying attribute file: a column per
+// component, a row per snapshot — labelled, or positional and repeated per
+// period under investment periods.
+func writeSeriesCSV(dir, file string, labels []string, nPeriods int, cols map[string]seriesRef, m *model.Model) error {
 	if len(cols) == 0 {
 		return nil
 	}
 	names := emit.Keys(cols)
 	header := append([]string{"snapshot"}, names...)
+	if nPeriods > 0 {
+		header = append([]string{""}, names...)
+	}
 	out := [][]string{header}
-	for i, label := range labels {
-		row := []string{label}
-		for _, name := range names {
-			ref := cols[name]
-			vals, _ := emit.SeriesValues(m, ref.id)
-			v := ref.scale * emit.SeriesAt(vals, i)
-			if ref.scale != 1 && ref.scale != -1 {
-				v = math.Round(v*1e12) / 1e12 // a derived value, without float noise
+	pos := 0
+	for p := 0; p < max(nPeriods, 1); p++ {
+		for i, label := range labels {
+			row := []string{label}
+			if nPeriods > 0 {
+				row = []string{strconv.Itoa(pos)}
 			}
-			row = append(row, emit.Ftoa(v))
+			for _, name := range names {
+				ref := cols[name]
+				vals, _ := emit.SeriesValues(m, ref.id)
+				v := ref.scale * emit.SeriesAt(vals, i)
+				if ref.scale != 1 && ref.scale != -1 {
+					v = math.Round(v*1e12) / 1e12 // a derived value, without float noise
+				}
+				row = append(row, emit.Ftoa(v))
+			}
+			out = append(out, row)
+			pos++
 		}
-		out = append(out, row)
 	}
 	return emit.WriteCSV(dir, file, out)
 }

@@ -82,6 +82,7 @@ func storeTopology(m *model.Model, name, node string, t model.Technology) (store
 	}
 	charge = power(name+"_charge", grid, bus, s.ChargeEff, 0, "0")
 	discharge = power(name+"_discharge", bus, grid, s.DischargeEff, pypsaCapitalCost(m, t), marginal(t))
+	applyQuadratic(discharge, t)
 	if !t.IsActive() {
 		store["active"] = "False"
 	}

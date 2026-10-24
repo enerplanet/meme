@@ -722,6 +722,30 @@
       "verdict": "ok"
     }
   },
+  "pypsa_multi_period.json": {
+    "adopt-net0": {
+      "verdict": "error: tech \"new\" (supply) has no adopt_net0 database mapping (only pv/wind/heat_pump physics and storage map); model it via nodes.\u003cnode\u003e.native.adopt-net0 naming a database technology"
+    },
+    "calliope": {
+      "verdict": "ok",
+      "warnings": [
+        "model.periods are ignored by target \"calliope\" (single horizon); only a target with the multi_period capability plans over investment periods",
+        "tech \"old\": build_year is informational for calliope and not emitted",
+        "solver \"highs\" is not usable with Calliope; emitting cbc instead"
+      ]
+    },
+    "calliope-0.6": {
+      "verdict": "ok",
+      "warnings": [
+        "model.periods are ignored by target \"calliope-0.6\" (single horizon); only a target with the multi_period capability plans over investment periods",
+        "tech \"old\": build_year is informational for calliope-0.6 and not emitted",
+        "solver \"highs\" is not usable with Calliope; emitting cbc instead"
+      ]
+    },
+    "pypsa": {
+      "verdict": "ok"
+    }
+  },
   "pypsa_node_override.json": {
     "adopt-net0": {
       "verdict": "error: tech \"pv\" (supply) has no adopt_net0 database mapping (only pv/wind/heat_pump physics and storage map); model it via nodes.\u003cnode\u003e.native.adopt-net0 naming a database technology"
@@ -816,6 +840,28 @@
       "warnings": [
         "AC island [mv3] is balanced by PyPSA on its largest generator (\"dg\"), not by the slack \"grid\""
       ]
+    }
+  },
+  "pypsa_quadratic.json": {
+    "adopt-net0": {
+      "verdict": "error: tech \"peaker\" (supply) has no adopt_net0 database mapping (only pv/wind/heat_pump physics and storage map); model it via nodes.\u003cnode\u003e.native.adopt-net0 naming a database technology"
+    },
+    "calliope": {
+      "verdict": "ok",
+      "warnings": [
+        "costs.variable_om_quadratic on technologies [quad] is ignored by target \"calliope\" (its variable cost stays linear there)",
+        "solver \"highs\" is not usable with Calliope; emitting cbc instead"
+      ]
+    },
+    "calliope-0.6": {
+      "verdict": "ok",
+      "warnings": [
+        "costs.variable_om_quadratic on technologies [quad] is ignored by target \"calliope-0.6\" (its variable cost stays linear there)",
+        "solver \"highs\" is not usable with Calliope; emitting cbc instead"
+      ]
+    },
+    "pypsa": {
+      "verdict": "ok"
     }
   },
   "pypsa_retire_slack.json": {
@@ -953,6 +999,20 @@
       "warnings": [
         "solver \"highs\" is not usable with Calliope; emitting cbc instead"
       ]
+    },
+    "pypsa": {
+      "verdict": "ok"
+    }
+  },
+  "pypsa_uc_extras.json": {
+    "adopt-net0": {
+      "verdict": "error: committable operation is not supported by target \"adopt-net0\""
+    },
+    "calliope": {
+      "verdict": "error: tech \"ccgt\": start-up/shut-down costs and min up/down times are not representable in Calliope 0.7 MILP math; drop them or supply native.calliope math"
+    },
+    "calliope-0.6": {
+      "verdict": "error: tech \"ccgt\": start-up/shut-down costs and min up/down times are not representable in Calliope 0.6 MILP constraints; drop them or supply native[\"calliope-0.6\"]"
     },
     "pypsa": {
       "verdict": "ok"

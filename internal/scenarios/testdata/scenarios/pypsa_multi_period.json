@@ -1,0 +1,17 @@
+{
+  "model": {
+    "metadata": {"name": "pypsa_multi_period"},
+    "time": {"start": "2025-01-01T00:00:00", "end": "2025-01-01T01:00:00", "resolution": "1H"},
+    "periods": [{"name": "2030", "year": 2030, "length_years": 10}, {"name": "2040", "year": 2040, "length_years": 10}],
+    "carriers": {"electricity": {"unit": "MWh"}},
+    "nodes": {"n1": {}},
+    "technologies": {
+      "old": {"role": "supply", "node": "n1", "carrier_out": "electricity", "capacity": {"existing": 50},
+              "build_year": 2020, "lifetime": 15, "costs": {"monetary": {"variable_om": 10}}},
+      "new": {"role": "supply", "node": "n1", "carrier_out": "electricity", "capacity": {"existing": 0, "expandable": true, "max": 100},
+              "lifetime": 20, "interest_rate": 0.05, "costs": {"monetary": {"investment_per_capacity": 1000, "variable_om": 20}}},
+      "load": {"role": "demand", "node": "n1", "carrier_in": "electricity", "demand_profile": 40}
+    }
+  },
+  "experiment": {"mode": "plan", "solver": {"name": "highs"}}
+}

@@ -1,0 +1,16 @@
+{
+  "model": {
+    "metadata": {"name": "pypsa_quadratic"},
+    "time": {"start": "2025-01-01T00:00:00", "end": "2025-01-01T03:00:00", "resolution": "1H"},
+    "carriers": {"electricity": {"unit": "MWh"}},
+    "nodes": {"n1": {}},
+    "technologies": {
+      "quad": {"role": "supply", "node": "n1", "carrier_out": "electricity", "capacity": {"existing": 100},
+               "costs": {"monetary": {"variable_om": 10, "variable_om_quadratic": 0.5}}},
+      "peaker": {"role": "supply", "node": "n1", "carrier_out": "electricity", "capacity": {"existing": 100},
+                 "costs": {"monetary": {"variable_om": 60}}},
+      "load": {"role": "demand", "node": "n1", "carrier_in": "electricity", "demand_profile": [50, 80, 80, 50]}
+    }
+  },
+  "experiment": {"mode": "plan", "solver": {"name": "highs"}}
+}

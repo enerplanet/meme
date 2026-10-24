@@ -1,0 +1,4 @@
+name,bus,carrier,p_nom,p_nom_extendable,p_nom_max,capital_cost,marginal_cost,efficiency,build_year,lifetime
+new-2030,n1::electricity,electricity,0,True,100,80.24258719069131,20,1,2030,20
+new-2040,n1::electricity,electricity,0,True,100,80.24258719069131,20,1,2040,20
+old,n1::electricity,electricity,50,False,inf,0,10,1,2020,15

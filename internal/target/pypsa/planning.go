@@ -5,10 +5,80 @@ package pypsa
 
 import (
 	"sort"
+	"strconv"
+	"strings"
 
 	"github.com/enerplanet/meme/internal/emit"
 	"github.com/enerplanet/meme/internal/model"
 )
+
+// applyQuadratic writes the quadratic variable cost (PyPSA marginal_cost_
+// quadratic) of the primary cost class.
+func applyQuadratic(row map[string]string, t model.Technology) {
+	if c, ok := t.Costs[model.PrimaryCostClass]; ok && c.VariableOMQuadratic != nil {
+		row["marginal_cost_quadratic"] = emit.Ftoa(*c.VariableOMQuadratic)
+	}
+}
+
+// isNewBuild reports whether an emitted row is capacity to be built — an
+// expandable technology, or the new-build part of a retirable one — as
+// opposed to existing capacity, which under investment periods keeps its
+// build year while new builds get one component per period.
+func isNewBuild(name string, t model.Technology) bool {
+	c := t.Capacity
+	if c == nil || !c.Expandable {
+		return false
+	}
+	return c.DecommissionMode() != "continuous" || strings.HasSuffix(name, "_new")
+}
+
+// periodRows applies investment periods (ADR-0011) to a technology's rows:
+// every row carries the technology's lifetime, and a new-build row becomes
+// one component per period named <row>-<year> with that build year. Without
+// periods the rows come back unchanged.
+func periodRows(rows []map[string]string, t model.Technology, periods []model.InvestmentPeriod) []map[string]string {
+	if len(periods) == 0 {
+		return rows
+	}
+	var out []map[string]string
+	for _, row := range rows {
+		if t.Lifetime != nil {
+			row["lifetime"] = emit.Ftoa(*t.Lifetime)
+		}
+		if !isNewBuild(row["name"], t) {
+			out = append(out, row)
+			continue
+		}
+		for _, p := range periods {
+			fresh := make(map[string]string, len(row)+2)
+			for k, v := range row {
+				fresh[k] = v
+			}
+			fresh["name"] = row["name"] + "-" + strconv.Itoa(p.Year)
+			fresh["build_year"] = strconv.Itoa(p.Year)
+			fresh["p_nom"] = "0"
+			out = append(out, fresh)
+		}
+	}
+	return out
+}
+
+// emittedNames lists every component name a technology instance emits —
+// its retirement parts and, under investment periods, the per-period
+// new-build components — so the series files carry a column for each.
+func emittedNames(base string, t model.Technology, periods []model.InvestmentPeriod) []string {
+	var out []string
+	for _, name := range retirementNames(base, t) {
+		if len(periods) > 0 && isNewBuild(name, t) {
+			for _, p := range periods {
+				out = append(out, name+"-"+strconv.Itoa(p.Year))
+			}
+			continue
+		}
+		out = append(out, name)
+	}
+	return out
+}
 
 // unmetCarrier is the carrier of the slack generators allow_unmet_demand adds,
 // so their output is attributed separately from any real supply.

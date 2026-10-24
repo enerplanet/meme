@@ -142,8 +142,9 @@ def solve_plan():
         import pandas as pd
         outages = pd.MultiIndex.from_tuples([(o["component"], o["name"]) for o in CFG["security"]["outages"]])
         print("security-constrained solve over %d branch outage(s): %s" % (len(outages), ", ".join(o["name"] for o in CFG["security"]["outages"])))
-        return n.optimize.optimize_security_constrained(branch_outages=outages, solver_name=CFG["solver"], **SOLVER_OPTS)
-    m = n.optimize.create_model()
+        return n.optimize.optimize_security_constrained(branch_outages=outages, solver_name=CFG["solver"],
+                                                        multi_investment_periods=CFG.get("multi_period", False), **SOLVER_OPTS)
+    m = n.optimize.create_model(multi_investment_periods=CFG.get("multi_period", False))
     apply_constraints(m)
     apply_storage(m)
     return n.optimize.solve_model(solver_name=CFG["solver"], **SOLVER_OPTS)
@@ -163,7 +164,8 @@ def write_results(status, cond):
         try:
             if df is None or df.empty or df.shape[1] == 0:
                 return
-            df.to_csv(os.path.join(out, name), index_label="snapshot")
+            label = list(df.index.names) if isinstance(df.index, pd.MultiIndex) else "snapshot"
+            df.to_csv(os.path.join(out, name), index_label=label)
         except Exception as exc:  # a scenario-indexed frame or an unsolved component is not worth failing the run
             print("results: skipped %s (%s)" % (name, exc))
 

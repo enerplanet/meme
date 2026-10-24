@@ -21,11 +21,13 @@ import (
 func TestE2EExamplesSolve(t *testing.T) {
 	requireFull(t)
 	cases := map[string]string{
-		"pypsa_full.json":    "pypsa",
-		"calliope_full.json": "calliope",
-		"adopt_full.json":    "adopt-net0",
-		"shared_full.json":   "all",
-		"payload_full.json":  "all",
+		"pypsa_full.json": "pypsa",
+		// a power flow, not a solve: the job succeeds when every snapshot converges
+		"pypsa_power_flow.json": "pypsa",
+		"calliope_full.json":    "calliope",
+		"adopt_full.json":       "adopt-net0",
+		"shared_full.json":      "all",
+		"payload_full.json":     "all",
 	}
 	for file, tgt := range cases {
 		file, tgt := file, tgt
@@ -53,11 +55,12 @@ func TestE2EExamplesSolve(t *testing.T) {
 // example fails here, not at a user.
 func TestExamplePayloadsValidate(t *testing.T) {
 	cases := map[string][]model.Target{
-		"shared_full.json":   {model.TargetPyPSA, model.TargetCalliope, model.TargetCalliope06, model.TargetAdOpt},
-		"payload_full.json":  {model.TargetPyPSA},
-		"pypsa_full.json":    {model.TargetPyPSA},
-		"calliope_full.json": {model.TargetCalliope},
-		"adopt_full.json":    {model.TargetAdOpt},
+		"shared_full.json":      {model.TargetPyPSA, model.TargetCalliope, model.TargetCalliope06, model.TargetAdOpt},
+		"payload_full.json":     {model.TargetPyPSA},
+		"pypsa_full.json":       {model.TargetPyPSA},
+		"pypsa_power_flow.json": {model.TargetPyPSA},
+		"calliope_full.json":    {model.TargetCalliope},
+		"adopt_full.json":       {model.TargetAdOpt},
 	}
 	for file, tgts := range cases {
 		b, err := os.ReadFile(filepath.Join("..", "..", "examples", file))

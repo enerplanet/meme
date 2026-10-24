@@ -1,0 +1,173 @@
+{
+  "api_key": "s3cret",
+  "model": {
+    "metadata": {
+      "name": "pypsa_power_flow",
+      "description": "AC power flow of a fixed dispatch: an HV slack feeding two MV nodes through a transformer and a line, with PV and a battery following their dispatch series. Second call after a planning run on another target."
+    },
+    "time": {
+      "start": "2025-01-01T00:00:00",
+      "end": "2025-01-01T03:00:00",
+      "resolution": "1H"
+    },
+    "carriers": {
+      "electricity": {
+        "unit": "MWh"
+      }
+    },
+    "nodes": {
+      "hv": {
+        "coords": {
+          "lat": 48.0,
+          "lon": 11.0
+        },
+        "electrical": {
+          "v_nom": 110
+        }
+      },
+      "mv1": {
+        "coords": {
+          "lat": 48.1,
+          "lon": 11.1
+        },
+        "electrical": {
+          "v_nom": 20
+        }
+      },
+      "mv2": {
+        "coords": {
+          "lat": 48.2,
+          "lon": 11.2
+        },
+        "electrical": {
+          "v_nom": 20
+        }
+      }
+    },
+    "technologies": {
+      "grid": {
+        "role": "supply",
+        "node": "hv",
+        "carrier_out": "electricity",
+        "capacity": {
+          "existing": 100
+        }
+      },
+      "pv": {
+        "role": "supply",
+        "node": "mv2",
+        "carrier_out": "electricity",
+        "capacity": {
+          "existing": 10
+        },
+        "dispatch": "pv_out"
+      },
+      "load1": {
+        "role": "demand",
+        "node": "mv1",
+        "carrier_in": "electricity",
+        "demand_profile": "dem1"
+      },
+      "load2": {
+        "role": "demand",
+        "node": "mv2",
+        "carrier_in": "electricity",
+        "demand_profile": "dem2"
+      },
+      "battery": {
+        "role": "storage",
+        "node": "mv1",
+        "carrier_out": "electricity",
+        "capacity": {
+          "existing": 4
+        },
+        "storage": {
+          "max_hours": 2,
+          "charge_eff": 0.95,
+          "discharge_eff": 0.95
+        },
+        "dispatch": "batt_out"
+      }
+    },
+    "timeseries": {
+      "pv_out": {
+        "source": "inline",
+        "values": [
+          0,
+          2,
+          6,
+          8
+        ]
+      },
+      "dem1": {
+        "source": "inline",
+        "values": [
+          10,
+          12,
+          14,
+          11
+        ]
+      },
+      "dem2": {
+        "source": "inline",
+        "values": [
+          6,
+          7,
+          8,
+          6
+        ]
+      },
+      "batt_out": {
+        "source": "inline",
+        "values": [
+          2,
+          1,
+          -1,
+          -2
+        ]
+      }
+    },
+    "transmission": {
+      "trafo": {
+        "carrier": "electricity",
+        "from": "hv",
+        "to": "mv1",
+        "bidirectional": true,
+        "capacity": {
+          "existing": 40
+        },
+        "electrical": {
+          "kind": "transformer",
+          "r": 0.01,
+          "x": 0.1,
+          "s_nom": 40
+        }
+      },
+      "l12": {
+        "carrier": "electricity",
+        "from": "mv1",
+        "to": "mv2",
+        "bidirectional": true,
+        "capacity": {
+          "existing": 20
+        },
+        "distance": 10,
+        "electrical": {
+          "kind": "line",
+          "r": 1.2,
+          "x": 3.5,
+          "s_nom": 20
+        }
+      }
+    }
+  },
+  "experiment": {
+    "mode": "power_flow",
+    "power_flow": {
+      "method": "newton_raphson",
+      "slack": "grid",
+      "distribute_slack": false,
+      "tolerance": 1e-06
+    }
+  }
+}

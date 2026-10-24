@@ -1,12 +1,14 @@
 # `examples/` — ready-to-run payloads
 
-One **maximal** payload per framework (every property that target honors) and
-two **shared** payloads valid for all frameworks at once; all have been solved
+One **maximal** payload per framework (every property that target honors),
+two **shared** payloads valid for all frameworks at once, and a PyPSA
+**power-flow** payload (the second call after a plan); all have been run
 against the real API with real solvers.
 
 | File | Target |
 |---|---|
 | [`pypsa_full.json`](pypsa_full.json) | `pypsa` |
+| [`pypsa_power_flow.json`](pypsa_power_flow.json) | `pypsa`, mode `power_flow` (AC power flow of a fixed dispatch; no optimization) |
 | [`calliope_full.json`](calliope_full.json) | `calliope` |
 | [`adopt_full.json`](adopt_full.json) | `adopt-net0` |
 | [`shared_full.json`](shared_full.json) | `all` (also valid for `calliope-0.6`) |

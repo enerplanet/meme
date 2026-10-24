@@ -4,8 +4,12 @@
 package e2e_test
 
 import (
+	"bytes"
+	"encoding/csv"
 	"encoding/json"
+	"math"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -167,4 +171,78 @@ func TestE2EPyPSAPowerFlowDiverges(t *testing.T) {
 	}
 	jobDir := jobDirOf(t, work)
 	mustExist(t, filepath.Join(jobDir, "run_0", "output", "power_flow", "convergence.csv"))
+}
+
+// TestE2EPyPSAPowerFlowReactive: the reactive network on the real framework.
+// The slack holds 1.02 pu, the PV generator holds its bus at 1.0 pu by
+// supplying reactive power, the derived and set reactive loads apply, the
+// shunt draws reactive power at mv1, the controlled link carries its 3 MW
+// into the island that PyPSA balances on its own generator.
+func TestE2EPyPSAPowerFlowReactive(t *testing.T) {
+	requireE2E(t)
+	t.Parallel()
+	srv, _ := newE2EServer(t)
+	sub := submit(t, srv.URL, model.TargetPyPSA, readScenario(t, "pypsa_power_flow_reactive.json"))
+	id := sub["id"].(string)
+	status := awaitJob(t, srv.URL, id)
+	logText, _ := status["log"].(string)
+	if status["state"] != string(service.StateSucceeded) {
+		t.Fatalf("reactive power flow failed: %v\nlog:\n%s", status["error"], logText)
+	}
+	if !strings.Contains(logText, "power flow converged 4/4 snapshots") {
+		t.Errorf("log lacks the convergence line:\n%s", logText)
+	}
+	files := fetchZip(t, srv.URL, id)
+	s := pfSummary(t, files)
+	if s["converged_snapshots"] != 4.0 || s["slack_bus"] != "hv::electricity" {
+		t.Errorf("summary: %v", s)
+	}
+	col := func(file, name string) []float64 {
+		t.Helper()
+		raw, ok := files["files/run_0/output/power_flow/"+file]
+		if !ok {
+			t.Fatalf("bundle lacks power_flow/%s (have %v)", file, zipNames(files))
+		}
+		recs, err := csv.NewReader(bytes.NewReader(raw)).ReadAll()
+		if err != nil || len(recs) < 2 {
+			t.Fatalf("%s: %v", file, err)
+		}
+		idx := -1
+		for i, h := range recs[0] {
+			if h == name {
+				idx = i
+			}
+		}
+		if idx < 0 {
+			t.Fatalf("%s has no column %q (header %v)", file, name, recs[0])
+		}
+		out := make([]float64, 0, len(recs)-1)
+		for _, r := range recs[1:] {
+			f, _ := strconv.ParseFloat(r[idx], 64)
+			out = append(out, f)
+		}
+		return out
+	}
+	for _, v := range col("buses-v_mag_pu.csv", "hv::electricity") {
+		if math.Abs(v-1.02) > 1e-3 {
+			t.Errorf("slack bus should hold 1.02 pu, got %v", v)
+		}
+	}
+	for _, v := range col("buses-v_mag_pu.csv", "mv2::electricity") {
+		if math.Abs(v-1.0) > 1e-3 {
+			t.Errorf("pv bus should be held at 1.0 pu, got %v", v)
+		}
+	}
+	if q := col("generators-q.csv", "pv"); q[1] <= 0 {
+		t.Errorf("the pv generator must supply reactive power to hold its voltage, got %v", q)
+	}
+	if q := col("shunt_impedances-q.csv", "mv1::shunt"); math.Abs(q[0]) < 0.1 {
+		t.Errorf("the shunt at mv1 should draw reactive power, got %v", q)
+	}
+	if p := col("links-p0.csv", "hvdc"); math.Abs(p[0]-3) > 1e-6 {
+		t.Errorf("the controlled link carries its dispatch, got %v", p)
+	}
+	if q := col("loads-q.csv", "load1"); math.Abs(q[1]-12*math.Tan(math.Acos(0.95))) > 1e-3 {
+		t.Errorf("load1 reactive power derived from the power factor, got %v", q)
+	}
 }

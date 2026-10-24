@@ -179,6 +179,7 @@ type Experiment struct {
 	Pareto             *ParetoOptions       `json:"pareto,omitempty"`
 	MonteCarlo         *MonteCarloOptions   `json:"monte_carlo,omitempty"`
 	PowerFlow          *PowerFlowOptions    `json:"power_flow,omitempty"`
+	Network            *NetworkOptions      `json:"network,omitempty"`
 	AllowUnmetDemand   *AllowUnmetDemand    `json:"allow_unmet_demand,omitempty"`
 	// Copperplate drops all inter-node transport constraints (AdOpT
 	// energybalance.copperplate; rejected elsewhere).
@@ -245,6 +246,22 @@ func (e *Experiment) Validate() error {
 	}
 	if p := e.Pareto; p != nil && p.Points < 0 {
 		add("experiment.pareto.points must not be negative")
+	}
+	if nw := e.Network; nw != nil {
+		if !nw.Model.Valid() {
+			add("experiment.network.model %q is invalid (transport or linear_power_flow)", nw.Model)
+		}
+		if sec := nw.Security; sec != nil {
+			if len(sec.Outages) == 0 {
+				add("experiment.network.security.outages must name at least one transmission arc")
+			}
+			if e.EffectiveNetworkModel() != NetworkLinearPowerFlow {
+				add("experiment.network.security needs network.model \"linear_power_flow\" (outages are branches of the voltage-law network)")
+			}
+			if e.EffectiveMode() != ModePlan {
+				add("experiment.network.security needs mode \"plan\" (the security-constrained solve is a planning solve)")
+			}
+		}
 	}
 	if pf := e.PowerFlow; pf != nil {
 		switch pf.Method {
@@ -368,6 +385,15 @@ func sortedStrKeys(m map[string]any) []string {
 // Calliope add_math (default on).
 func (e *Experiment) CustomMathEnabled() bool {
 	return e.CustomMath == nil || *e.CustomMath
+}
+
+// EffectiveNetworkModel returns the network model with the default
+// (transport) applied.
+func (e *Experiment) EffectiveNetworkModel() NetworkModel {
+	if e.Network == nil || e.Network.Model == "" {
+		return NetworkTransport
+	}
+	return e.Network.Model
 }
 
 // EffectiveMode returns the mode with the default (plan) applied.

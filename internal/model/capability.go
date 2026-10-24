@@ -36,6 +36,7 @@ const (
 	FeatPiecewisePerformance   Feature = "piecewise_performance"
 	FeatPhysicsPerformance     Feature = "physics_performance"
 	FeatPowerFlow              Feature = "power_flow"
+	FeatLinearPowerFlow        Feature = "linear_power_flow" // the voltage law inside an optimization (experiment.network.model)
 	FeatCustomMath             Feature = "custom_math"
 
 	// FeatObjectiveEmissions marks support for objective "min_emissions"

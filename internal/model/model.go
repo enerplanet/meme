@@ -424,6 +424,12 @@ type Transmission struct {
 	// HVDC link (Link p_set). Exclusive with Electrical — a line's flow is a
 	// result. A power-flow input, ignored by optimization runs.
 	Dispatch *Value `json:"dispatch,omitempty"`
+	// Lifetime (years), InterestRate (fraction) and CostBasis annualize the
+	// arc's investment the way a technology's is (ADR-0010); the global
+	// discount rate overrides the interest rate.
+	Lifetime     *float64  `json:"lifetime,omitempty"`
+	InterestRate *float64  `json:"interest_rate,omitempty"`
+	CostBasis    CostBasis `json:"cost_basis,omitempty"`
 	// Active deactivates the arc without deleting it (nil = active).
 	Active *bool   `json:"active,omitempty"`
 	Native *Native `json:"native,omitempty"`

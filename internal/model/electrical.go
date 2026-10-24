@@ -103,6 +103,9 @@ type TransmissionElectrical struct {
 	G           *float64       `json:"g,omitempty"`
 	TapRatio    *float64       `json:"tap_ratio,omitempty"`
 	PhaseShift  *float64       `json:"phase_shift,omitempty"`
+	// MaxLoading caps the branch flow at this fraction of its rating in a
+	// linear-power-flow optimization (PyPSA s_max_pu); default 1.
+	MaxLoading *float64 `json:"max_loading,omitempty"`
 }
 
 // PerLength reports whether the impedance is given per km.
@@ -159,6 +162,36 @@ func (e *TransmissionElectrical) Tap() float64 {
 		return 1
 	}
 	return *e.TapRatio
+}
+
+// NetworkModel selects how an optimization treats the arcs of the electrical
+// carrier (ADR-0010): as controllable transport links (the default) or as
+// branches under the linear power-flow equations.
+type NetworkModel string
+
+const (
+	NetworkTransport       NetworkModel = "transport"
+	NetworkLinearPowerFlow NetworkModel = "linear_power_flow"
+)
+
+// Valid reports whether n is a defined network model or unset (= transport).
+func (n NetworkModel) Valid() bool {
+	return n == "" || n == NetworkTransport || n == NetworkLinearPowerFlow
+}
+
+// NetworkOptions configures the network inside an optimization: the model,
+// and optionally the branch outages a security-constrained dispatch must
+// survive (PyPSA optimize_security_constrained; needs linear_power_flow and
+// mode plan).
+type NetworkOptions struct {
+	Model    NetworkModel     `json:"model,omitempty"`
+	Security *SecurityOptions `json:"security,omitempty"`
+}
+
+// SecurityOptions names the electrical arcs whose single outage the dispatch
+// must survive.
+type SecurityOptions struct {
+	Outages []string `json:"outages,omitempty"`
 }
 
 // PowerFlowOptions configures mode "power_flow": the algorithm, the balancing

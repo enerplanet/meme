@@ -495,3 +495,88 @@ func TestReactiveInternAndOverride(t *testing.T) {
 		t.Fatalf("interned reactive model should validate: %v", err)
 	}
 }
+
+// --- ADR-0010: the network inside the optimization -------------------------
+
+func lopfModel() model.Model {
+	m := baseModel()
+	m.Nodes = map[string]model.Node{
+		"a": {Electrical: &model.NodeElectrical{VNom: 110}},
+		"b": {Electrical: &model.NodeElectrical{VNom: 110}},
+	}
+	m.Technologies = map[string]model.Technology{
+		"gen":  {Role: model.RoleSupply, Node: model.StringList{"a"}, CarrierOut: model.StringList{"el"}, Capacity: &model.Capacity{Existing: 100}},
+		"load": {Role: model.RoleDemand, Node: model.StringList{"b"}, CarrierIn: model.StringList{"el"}, DemandProfile: model.Num(50)},
+	}
+	m.Transmission = map[string]model.Transmission{
+		"ab": {Carrier: "el", From: "a", To: "b", Bidirectional: true, Capacity: &model.Capacity{Existing: 30, Expandable: true, Max: fp(100)},
+			Costs: map[string]model.CostClass{"monetary": {InvestmentPerCapacity: fp(20000)}}, Lifetime: fp(40), InterestRate: fp(0.05),
+			Electrical: &model.TransmissionElectrical{Kind: model.ElectricalLine, R: 1, X: 10, MaxLoading: fp(0.9)}},
+	}
+	return m
+}
+
+// Transmission economics and the loading limit round-trip and validate.
+func TestTransmissionEconomicsJSON(t *testing.T) {
+	var l model.Transmission
+	raw := `{"carrier":"el","from":"a","to":"b","bidirectional":true,"lifetime":40,"interest_rate":0.05,"cost_basis":"overnight",
+	         "electrical":{"kind":"line","r":1,"x":10,"max_loading":0.9}}`
+	if err := json.Unmarshal([]byte(raw), &l); err != nil {
+		t.Fatal(err)
+	}
+	if *l.Lifetime != 40 || *l.InterestRate != 0.05 || l.CostBasis != model.CostOvernight || *l.Electrical.MaxLoading != 0.9 {
+		t.Errorf("transmission economics not decoded: %+v %+v", l, l.Electrical)
+	}
+	m := lopfModel()
+	if err := m.Validate(); err != nil {
+		t.Fatalf("lopf model should validate: %v", err)
+	}
+	cases := []struct {
+		name string
+		mut  func(m *model.Model)
+		want string
+	}{
+		{"lifetime", func(m *model.Model) { l := m.Transmission["ab"]; l.Lifetime = fp(0); m.Transmission["ab"] = l }, `transmission "ab": lifetime must be positive`},
+		{"interest", func(m *model.Model) { l := m.Transmission["ab"]; l.InterestRate = fp(-1); m.Transmission["ab"] = l }, `transmission "ab": interest_rate must not be negative`},
+		{"cost basis", func(m *model.Model) { l := m.Transmission["ab"]; l.CostBasis = "weird"; m.Transmission["ab"] = l }, `transmission "ab": cost_basis "weird" is invalid`},
+		{"loading above one", func(m *model.Model) {
+			l := m.Transmission["ab"]
+			l.Electrical.MaxLoading = fp(1.5)
+			m.Transmission["ab"] = l
+		}, `transmission "ab": electrical.max_loading must be within (0,1]`},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			m := lopfModel()
+			c.mut(&m)
+			wantValidateErr(t, &m, c.want)
+		})
+	}
+}
+
+// experiment.network: the model enum and the security block's shape.
+func TestExperimentNetworkValidate(t *testing.T) {
+	e := model.Experiment{Network: &model.NetworkOptions{Model: model.NetworkLinearPowerFlow}}
+	if err := e.Validate(); err != nil {
+		t.Fatalf("linear_power_flow should validate: %v", err)
+	}
+	if (&model.Experiment{}).EffectiveNetworkModel() != model.NetworkTransport {
+		t.Error("the default network model is transport")
+	}
+	e.Network.Model = "mesh"
+	if err := e.Validate(); err == nil || !strings.Contains(err.Error(), `experiment.network.model "mesh" is invalid (transport or linear_power_flow)`) {
+		t.Errorf("bad model: %v", err)
+	}
+	e = model.Experiment{Network: &model.NetworkOptions{Model: model.NetworkLinearPowerFlow, Security: &model.SecurityOptions{}}}
+	if err := e.Validate(); err == nil || !strings.Contains(err.Error(), "experiment.network.security.outages must name at least one transmission arc") {
+		t.Errorf("empty outages: %v", err)
+	}
+	e = model.Experiment{Network: &model.NetworkOptions{Security: &model.SecurityOptions{Outages: []string{"ab"}}}}
+	if err := e.Validate(); err == nil || !strings.Contains(err.Error(), `experiment.network.security needs network.model "linear_power_flow"`) {
+		t.Errorf("security without the voltage law: %v", err)
+	}
+	e = model.Experiment{Mode: model.ModeOperate, Network: &model.NetworkOptions{Model: model.NetworkLinearPowerFlow, Security: &model.SecurityOptions{Outages: []string{"ab"}}}}
+	if err := e.Validate(); err == nil || !strings.Contains(err.Error(), `experiment.network.security needs mode "plan"`) {
+		t.Errorf("security outside plan: %v", err)
+	}
+}

@@ -6,6 +6,7 @@ package target
 import (
 	"fmt"
 	"sort"
+	"strings"
 
 	"github.com/enerplanet/meme/internal/emit"
 	"github.com/enerplanet/meme/internal/model"
@@ -83,8 +84,10 @@ func modeFeature(m model.Mode) model.Feature {
 
 // powerFlowInputs lists the technologies (dispatch or electrical block, base
 // field or override), arcs (electrical parameters or a fixed transfer) and
-// nodes (electrical block) that carry power-flow inputs.
-func powerFlowInputs(m *model.Model) (techs, arcs, nodes []string) {
+// nodes (electrical block) that carry inputs only a power flow reads. Under
+// the linear-power-flow network model the impedances and voltage levels ARE
+// read, so only fixed transfers and shunts count there.
+func powerFlowInputs(m *model.Model, lopf bool) (techs, arcs, nodes []string) {
 	for _, id := range sortedTechIDs(m) {
 		t := m.Technologies[id]
 		has := t.Dispatch != nil || t.Electrical != nil
@@ -98,12 +101,14 @@ func powerFlowInputs(m *model.Model) (techs, arcs, nodes []string) {
 		}
 	}
 	for _, id := range sortedTransmissionIDs(m) {
-		if l := m.Transmission[id]; l.Electrical != nil || l.Dispatch != nil {
+		l := m.Transmission[id]
+		if l.Dispatch != nil || (!lopf && l.Electrical != nil) {
 			arcs = append(arcs, id)
 		}
 	}
 	for _, id := range sortedKeys(m.Nodes) {
-		if m.Nodes[id].Electrical != nil {
+		n := m.Nodes[id]
+		if n.Electrical != nil && (!lopf || n.Electrical.Shunt != nil) {
 			nodes = append(nodes, id)
 		}
 	}
@@ -127,6 +132,27 @@ func validateGeneric(t Target, j *model.Job) ([]string, error) {
 		return nil, fmt.Errorf("mode %q is not supported by target %q", mode, t.Name())
 	}
 
+	// The voltage law inside an optimization (ADR-0010) is a run specification
+	// a transport-only target cannot honor: solving the same payload as a
+	// transport model would be a different problem, so it is rejected like a
+	// mode. The outages of a security-constrained solve must be branches of
+	// that network.
+	lopf := e.EffectiveNetworkModel() == model.NetworkLinearPowerFlow
+	if lopf && !caps[model.FeatLinearPowerFlow] {
+		return nil, fmt.Errorf("network model %q is not supported by target %q", e.Network.Model, t.Name())
+	}
+	if e.Network != nil && e.Network.Security != nil {
+		for _, id := range e.Network.Security.Outages {
+			l, ok := m.Transmission[id]
+			if !ok {
+				return nil, fmt.Errorf("experiment.network.security.outages: %q is not a transmission arc", id)
+			}
+			if l.Electrical == nil {
+				return nil, fmt.Errorf("experiment.network.security.outages: %q is not an electrical arc (only a branch of the voltage-law network can be taken out)", id)
+			}
+		}
+	}
+
 	// Power-flow inputs (ADR-0008, ADR-0009): dispatch, reactive power,
 	// voltage control, shunts, impedances and fixed transfers mean something
 	// only where a power flow runs. Everywhere else — Calliope and AdOpT,
@@ -136,8 +162,27 @@ func validateGeneric(t Target, j *model.Job) ([]string, error) {
 	// nothing is dropped silently. Inside a power flow nothing may be a
 	// decision.
 	if mode != model.ModePowerFlow {
-		if techs, arcs, nodes := powerFlowInputs(m); len(techs)+len(arcs)+len(nodes) > 0 {
-			warns = append(warns, fmt.Sprintf("power-flow inputs are only used by mode power_flow on a target with the power_flow capability; in mode %q on target %q they are ignored: dispatch/electrical on technologies %v, electrical/dispatch on transmission %v (emitted as transport links), electrical on nodes %v. Pin a dispatch in an optimization with operation.equals_pu instead", mode, t.Name(), techs, arcs, nodes))
+		techs, arcs, nodes := powerFlowInputs(m, lopf)
+		if len(techs)+len(arcs)+len(nodes) > 0 {
+			var parts []string
+			if len(techs) > 0 {
+				parts = append(parts, fmt.Sprintf("dispatch/electrical on technologies %v", techs))
+			}
+			if len(arcs) > 0 {
+				if lopf {
+					parts = append(parts, fmt.Sprintf("dispatch on transmission %v", arcs))
+				} else {
+					parts = append(parts, fmt.Sprintf("electrical/dispatch on transmission %v (emitted as transport links)", arcs))
+				}
+			}
+			if len(nodes) > 0 {
+				if lopf {
+					parts = append(parts, fmt.Sprintf("shunts on nodes %v", nodes))
+				} else {
+					parts = append(parts, fmt.Sprintf("electrical on nodes %v", nodes))
+				}
+			}
+			warns = append(warns, fmt.Sprintf("power-flow inputs are only used by mode power_flow on a target with the power_flow capability; in mode %q on target %q they are ignored: %s. Pin a dispatch in an optimization with operation.equals_pu instead", mode, t.Name(), strings.Join(parts, ", ")))
 		}
 	} else {
 		for _, id := range sortedTechIDs(m) {
@@ -186,7 +231,6 @@ func validateGeneric(t Target, j *model.Job) ([]string, error) {
 	if e.TimeAggregation != nil && !caps[model.FeatTimeAggregation] {
 		return nil, fmt.Errorf("time_aggregation is not supported by target %q", t.Name())
 	}
-
 	// No target materializes file-backed series yet: every emitter reads the
 	// inline values of the registry. Reject up front instead of failing at
 	// emit time (the schema accepts the form, so this is the only gate).
@@ -318,16 +362,17 @@ func validateGeneric(t Target, j *model.Job) ([]string, error) {
 		}
 	}
 
-	// Transmission costs: the per-distance investment is emitted for calliope;
-	// every other cost field still has no emitter (transmission carries no
-	// lifetime/interest to annualize).
+	// Transmission costs: the per-distance investment is emitted for calliope
+	// and, with the arc's lifetime and interest rate, PyPSA prices the
+	// investment and fixed O&M on its Links and Lines; the remaining cost
+	// fields still have no emitter elsewhere.
 	for _, id := range sortedTransmissionIDs(m) {
 		for _, class := range sortedKeys(m.Transmission[id].Costs) {
 			c := m.Transmission[id].Costs[class]
 			other := c.InvestmentPerCapacity != nil || c.InvestmentPerEnergyCapacity != nil ||
 				c.FixedOM != nil || c.FixedOMFraction != nil || c.VariableOM != nil || c.FuelCost != nil || c.Purchase != nil
-			if other {
-				warns = append(warns, fmt.Sprintf("transmission %q: costs other than investment_per_capacity_distance are not emitted for any target yet; capacity/efficiency/distance are honored", id))
+			if other && t.Name() != model.TargetPyPSA {
+				warns = append(warns, fmt.Sprintf("transmission %q: costs other than investment_per_capacity_distance are not emitted for target %q; capacity/efficiency/distance are honored", id, t.Name()))
 				break
 			}
 		}

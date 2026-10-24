@@ -2396,6 +2396,19 @@
                 "pypsa": "transformers.<id>.phase_shift",
                 "calliope": null
               }
+            },
+            "max_loading": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "maximum": 1,
+              "default": 1,
+              "description": "Loading limit of the branch as a fraction of its rating in a linear-power-flow optimization (PyPSA s_max_pu).",
+              "x-go": "TransmissionElectrical.MaxLoading",
+              "x-map": {
+                "adopt-net0": null,
+                "pypsa": "lines/transformers s_max_pu",
+                "calliope": null
+              }
             }
           },
           "x-go": "Transmission.Electrical (TransmissionElectrical)"
@@ -2407,6 +2420,43 @@
           "x-map": {
             "adopt-net0": null,
             "pypsa": "links.<id>.p_set",
+            "calliope": null
+          }
+        },
+        "lifetime": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "description": "Economic lifetime of the arc in years; with interest_rate it annualizes the arc's investment (ADR-0010).",
+          "x-go": "Transmission.Lifetime",
+          "x-map": {
+            "adopt-net0": null,
+            "pypsa": "capital_cost annuity on the Link / Line",
+            "calliope": null
+          }
+        },
+        "interest_rate": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Interest rate (fraction) for the annuity; the global discount_rate overrides it.",
+          "x-go": "Transmission.InterestRate",
+          "x-map": {
+            "adopt-net0": null,
+            "pypsa": "capital_cost annuity on the Link / Line",
+            "calliope": null
+          }
+        },
+        "cost_basis": {
+          "type": "string",
+          "enum": [
+            "overnight",
+            "annualized"
+          ],
+          "default": "overnight",
+          "description": "Whether the arc's investment figures are upfront (annualized with lifetime and interest_rate) or already annual.",
+          "x-go": "Transmission.CostBasis",
+          "x-map": {
+            "adopt-net0": null,
+            "pypsa": "capital_cost as given when annualized",
             "calliope": null
           }
         }
@@ -3158,6 +3208,54 @@
             }
           },
           "x-go": "Experiment.PowerFlow (PowerFlowOptions)"
+        },
+        "network": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "How an optimization treats the arcs of the electrical carrier (ADR-0010). transport (default): every arc is a controllable link. linear_power_flow: arcs with electrical parameters become Lines and Transformers solved under Kirchhoff's voltage law (PyPSA only; other targets reject the model like an unsupported mode). security.outages lists electrical arcs whose single outage the dispatch must survive (security-constrained solve; needs linear_power_flow and mode plan, and no portable constraints).",
+          "properties": {
+            "model": {
+              "type": "string",
+              "enum": [
+                "transport",
+                "linear_power_flow"
+              ],
+              "default": "transport",
+              "x-go": "NetworkOptions.Model",
+              "x-map": {
+                "adopt-net0": null,
+                "pypsa": "Links vs Lines/Transformers in n.optimize()",
+                "calliope": null
+              }
+            },
+            "security": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "outages"
+              ],
+              "properties": {
+                "outages": {
+                  "type": "array",
+                  "minItems": 1,
+                  "uniqueItems": true,
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "description": "Transmission ids with electrical parameters.",
+                  "x-go": "SecurityOptions.Outages",
+                  "x-map": {
+                    "adopt-net0": null,
+                    "pypsa": "n.optimize.optimize_security_constrained(branch_outages=...)",
+                    "calliope": null
+                  }
+                }
+              },
+              "x-go": "NetworkOptions.Security (SecurityOptions)"
+            }
+          },
+          "x-go": "Experiment.Network (NetworkOptions)"
         }
       }
     },

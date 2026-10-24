@@ -464,6 +464,15 @@ func (m *Model) Validate() error {
 		if l.Dispatch != nil && l.Electrical != nil {
 			add("transmission %q: dispatch and electrical are mutually exclusive (a line's flow is a result of the power flow)", id)
 		}
+		if l.Lifetime != nil && *l.Lifetime <= 0 {
+			add("transmission %q: lifetime must be positive", id)
+		}
+		if l.InterestRate != nil && *l.InterestRate < 0 {
+			add("transmission %q: interest_rate must not be negative", id)
+		}
+		if !l.CostBasis.Valid() {
+			add("transmission %q: cost_basis %q is invalid", id, l.CostBasis)
+		}
 	}
 
 	return errors.Join(errs...)
@@ -510,6 +519,9 @@ func validateElectrical(add func(string, ...any), m *Model, id string, l Transmi
 	}
 	if e.PhaseShift != nil && e.Kind == ElectricalLine {
 		add("transmission %q: electrical.phase_shift applies to a transformer only", id)
+	}
+	if e.MaxLoading != nil && (*e.MaxLoading <= 0 || *e.MaxLoading > 1) {
+		add("transmission %q: electrical.max_loading must be within (0,1]", id)
 	}
 	if e.SNom != nil && *e.SNom <= 0 {
 		add("transmission %q: electrical.s_nom must be positive", id)

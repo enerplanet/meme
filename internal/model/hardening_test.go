@@ -778,3 +778,40 @@ func TestEffectiveCapacityBounds(t *testing.T) {
 		t.Fatalf("EffectiveMax = %v, want 600", max)
 	}
 }
+
+// A time series must name its source and carry that source's data; the
+// values are the ones the published schema enumerates.
+func TestTimeSeriesSourceRules(t *testing.T) {
+	m := baseModel()
+	m.Timeseries = map[string]model.TimeSeries{"bogus": {Source: "url", Values: []float64{1}}}
+	wantValidateErr(t, &m, `source "url" is invalid`)
+
+	m.Timeseries = map[string]model.TimeSeries{"empty": {Source: "inline"}}
+	wantValidateErr(t, &m, `"inline" needs values`)
+
+	m.Timeseries = map[string]model.TimeSeries{"nopath": {Source: "file", Column: "n1"}}
+	wantValidateErr(t, &m, `"file" needs a path`)
+
+	// Structurally fine (the target layer decides whether files can be read).
+	m.Timeseries = map[string]model.TimeSeries{
+		"ok_inline": {Source: "inline", Values: []float64{1, 2}},
+		"ok_file":   {Source: "file", Path: "demand.csv", Column: "n1"},
+	}
+	if err := m.Validate(); err != nil {
+		t.Fatalf("well-formed series must validate: %v", err)
+	}
+}
+
+// A technology may sit at several nodes, but not at the same node twice.
+func TestDuplicateNodeListing(t *testing.T) {
+	m := baseModel()
+	m.Technologies["load"] = model.Technology{Role: model.RoleDemand, Node: model.StringList{"n1", "n1"},
+		CarrierIn: model.StringList{"el"}, DemandProfile: model.Num(10)}
+	wantValidateErr(t, &m, `node "n1" is listed more than once`)
+
+	m.Technologies["load"] = model.Technology{Role: model.RoleDemand, Node: model.StringList{"n1", "n2"},
+		CarrierIn: model.StringList{"el"}, DemandProfile: model.Num(10)}
+	if err := m.Validate(); err != nil {
+		t.Fatalf("distinct nodes must validate: %v", err)
+	}
+}

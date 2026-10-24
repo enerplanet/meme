@@ -298,16 +298,16 @@ func TestCalliopeMultiNodeShortSeriesPadded(t *testing.T) {
 	}
 }
 
-// A node listed twice yields one column (the table is keyed by node), not a
-// duplicate column Calliope would reject; model validation does not currently
-// reject the duplicate listing itself.
+// A node listed twice is rejected by model validation; should one slip past,
+// the emitter keys columns by node and writes one column, not a duplicate
+// Calliope would reject.
 func TestCalliopeDuplicateNodeListingOneColumn(t *testing.T) {
 	j := loadScenario(t, "calliope_plan.json")
 	load := j.Model.Technologies["load"]
 	load.Node = model.StringList{"n1", "n1"}
 	j.Model.Technologies["load"] = load
-	if _, err := validateFor(&j, model.TargetCalliope); err != nil {
-		t.Fatalf("validate: %v", err)
+	if _, err := validateFor(&j, model.TargetCalliope); err == nil || !strings.Contains(err.Error(), "listed more than once") {
+		t.Fatalf("validation should reject the duplicate node listing, got %v", err)
 	}
 	dir := emitCalliopeDir(t, j)
 	file := dataTableFile(readFile(t, dir, "model.yaml"), "load__sink_use_equals")
@@ -316,18 +316,18 @@ func TestCalliopeDuplicateNodeListingOneColumn(t *testing.T) {
 	}
 }
 
-// A profile that references a file-backed series cannot be materialized; the
-// error names the technology, the node and the series instead of writing an
-// empty table (validation does not inspect timeseries.source, so this is a
-// reachable path).
+// A profile that references a file-backed series cannot be materialized.
+// Validation rejects it up front (no target reads files); should one slip
+// past, the emitter still fails naming the technology, the node and the
+// series instead of writing an empty table.
 func TestCalliopeFileBackedSeriesIsAnError(t *testing.T) {
 	j := twoNodeTransmission(t)
 	j.Model.Timeseries = map[string]model.TimeSeries{"ext": {Source: "file", Path: "demand.csv", Column: "n2"}}
 	load := j.Model.Technologies["load"]
 	load.NodeOverrides = map[string]model.NodeOverride{"n2": {DemandProfile: model.Series("ext")}}
 	j.Model.Technologies["load"] = load
-	if _, err := validateFor(&j, model.TargetCalliope); err != nil {
-		t.Fatalf("validate: %v", err)
+	if _, err := validateFor(&j, model.TargetCalliope); err == nil || !strings.Contains(err.Error(), `source "file" is not supported`) {
+		t.Fatalf("validation should reject the file-backed series, got %v", err)
 	}
 	_, err := (calliope.Calliope{}).Emit(&j, t.TempDir())
 	if err == nil {

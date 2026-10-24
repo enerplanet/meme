@@ -96,6 +96,20 @@ func (m *Model) Validate() error {
 		if !validSeriesID(k) {
 			add("timeseries: id %q is invalid (allowed: %s)", k, idCharset)
 		}
+		// The source decides which fields carry the data (the published schema
+		// enumerates the same two values).
+		switch ts := m.Timeseries[k]; ts.Source {
+		case "inline":
+			if len(ts.Values) == 0 {
+				add("timeseries %q: source \"inline\" needs values", k)
+			}
+		case "file":
+			if ts.Path == "" {
+				add("timeseries %q: source \"file\" needs a path", k)
+			}
+		default:
+			add("timeseries %q: source %q is invalid (inline or file)", k, ts.Source)
+		}
 	}
 
 	hasNode := func(id string) bool { _, ok := m.Nodes[id]; return ok }
@@ -122,10 +136,18 @@ func (m *Model) Validate() error {
 		if len(t.Node) == 0 {
 			add("tech %q: no node specified", id)
 		}
+		// A tech listed at several nodes is one copy per node; the same node
+		// twice would be two identically named copies (the schema's StringList
+		// has uniqueItems for the same reason).
+		seenNodes := map[string]bool{}
 		for _, n := range t.Node {
 			if !hasNode(n) {
 				add("tech %q: node %q not defined", id, n)
 			}
+			if seenNodes[n] {
+				add("tech %q: node %q is listed more than once", id, n)
+			}
+			seenNodes[n] = true
 		}
 		for _, c := range append(append(StringList{}, t.CarrierIn...), t.CarrierOut...) {
 			if !hasCarrier(c) {

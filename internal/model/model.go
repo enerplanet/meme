@@ -104,6 +104,9 @@ type Coords struct {
 }
 
 // TimeSeries is either an inline vector or a reference to a CSV column on disk.
+// Only inline series can be emitted today: every emitter reads Values, so
+// target.ValidateFor rejects a file-backed series up front (Model.Validate
+// only checks that each source carries its fields).
 type TimeSeries struct {
 	Source string    `json:"source"`           // "inline" | "file"
 	Path   string    `json:"path,omitempty"`   // for source=="file"

@@ -113,6 +113,15 @@ func validateGeneric(t Target, j *model.Job) ([]string, error) {
 		return nil, fmt.Errorf("time_aggregation is not supported by target %q", t.Name())
 	}
 
+	// No target materializes file-backed series yet: every emitter reads the
+	// inline values of the registry. Reject up front instead of failing at
+	// emit time (the schema accepts the form, so this is the only gate).
+	for _, id := range sortedKeys(m.Timeseries) {
+		if m.Timeseries[id].Source == "file" {
+			return nil, fmt.Errorf("timeseries %q: source \"file\" is not supported by any target yet; inline the values (source \"inline\")", id)
+		}
+	}
+
 	// Problem-shaping feature gates: reject a payload that uses a field the
 	// selected target cannot honor.
 	var usesFlows, usesCommit, usesArea, usesSource bool

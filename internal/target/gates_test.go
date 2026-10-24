@@ -63,4 +63,21 @@ func TestOverrideOnlyCapabilityGates(t *testing.T) {
 	}
 }
 
+// TestFileBackedSeriesGate: a file-backed series is schema-valid and
+// structurally fine, but no target can materialize it, so every target rejects
+// it up front with a pointer to inline values (instead of failing at emit).
+func TestFileBackedSeriesGate(t *testing.T) {
+	for _, tgt := range target.Names() {
+		j, err := scenarios.Load("calliope_plan.json")
+		if err != nil {
+			t.Fatal(err)
+		}
+		j.Model.Timeseries["dem"] = model.TimeSeries{Source: "file", Path: "demand.csv", Column: "n1"}
+		_, err = target.ValidateFor(&j, tgt)
+		if err == nil || !strings.Contains(err.Error(), `source "file" is not supported by any target`) {
+			t.Errorf("%s: file-backed series should be rejected up front, got %v", tgt, err)
+		}
+	}
+}
+
 func fp(v float64) *float64 { return &v }

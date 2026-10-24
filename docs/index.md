@@ -71,6 +71,12 @@ AdOpT `input_data/` tree — and solves to the same optimum on each.
   controlled HVDC transfers) instead of optimizing: bus voltages, branch
   loading and convergence per snapshot. The consumer plans first, on any
   target, and calls again with the same payload; MEME never chains jobs.
+- **PyPSA planning, complete.** The voltage law inside the optimization with
+  line expansion and security constraints, energy-sized storage as a Store,
+  integer modules, continuous retirement, priced slack demand, copperplate,
+  the unit-commitment extras, a quadratic cost and investment periods, all
+  through canonical fields; every optimization run returns its tables under
+  `output/results/`.
 - **Capability-gated validation.** Every feature claim is backed by a
   runnable scenario; a payload that asks for something the selected target
   cannot honor is rejected with a pointed message, never silently trimmed.

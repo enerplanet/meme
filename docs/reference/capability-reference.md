@@ -66,10 +66,12 @@ One `Job` = `model` (the physical system) + `experiment` (how to run it).
                        "ramp_up": 0.6, "ramp_down": 0.6,
                        "committable": true, "start_up_cost": 5000, "shut_down_cost": 0,
                        "min_uptime": 3, "min_downtime": 2, "max_startups": 50, "standby_power": 0.02 },
+                        "ramp_start_up": 0.6, "ramp_shut_down": 0.6, "standby_cost": 5, "initial_uptime": 2 },  // UC extras (P; ignored elsewhere)
         "storage":   { "energy_capacity": {…}, "max_hours": 4, "charge_eff": 0.95, "discharge_eff": 0.95,
                        "max_charge_rate": 0.25, "max_discharge_rate": 0.25,     // instead of max_hours
                        "self_discharge": 0.001, "depth_of_discharge": 0.1, "inflow": "ts-id",
                        "spill_cost": 5, "initial_soc": 0.5, "cyclic": true,
+                        "soc_profile": 12 | "ts-id" },                              // pinned state of charge (P StorageUnit; ignored elsewhere)
                        "no_simultaneous_charge_discharge": true },
         "demand_profile": 100 | "ts-id", "demand_curtailable": false,
         "dispatch": 3 | "ts-id",                 // fixed MW per timestep a power flow injects (P, mode power_flow; ignored elsewhere)
@@ -91,8 +93,9 @@ One `Job` = `model` (the physical system) + `experiment` (how to run it).
     },
     "transmission": { "<id>": { "carrier": "…", "from": "n1", "to": "n2", "bidirectional": true,
                                  "electrical": { "kind": "line" | "transformer", "r": 1.2, "x": 3.5, "r_per_length": 0.12, "x_per_length": 0.35,
-                                                 "s_nom": 20, "num_parallel": 1, "b": 0.0001, "g": 0, "tap_ratio": 1, "phase_shift": 0 },  // AC branch for a power flow
+                                                 "s_nom": 20, "num_parallel": 1, "b": 0.0001, "g": 0, "tap_ratio": 1, "phase_shift": 0, "max_loading": 0.9 },  // AC branch (power flow / voltage law)
                                  "dispatch": 3 | "ts-id",   // fixed transfer of a controlled link (HVDC) instead of an impedance
+                                 "lifetime": 40, "interest_rate": 0.05, "cost_basis": "overnight",   // annualizes the arc's investment (P)
                                 "capacity": {…}, "efficiency": 0.97, "distance": 50,
                                 "loss_per_distance": 1e-4, "min_flow": 0.05, "emission_factor": 0.001,
                                 "energy_consumption": { "carrier": "…", "per_flow": 0.01, "per_flow_distance": 1e-4 },
@@ -111,6 +114,7 @@ One `Job` = `model` (the physical system) + `experiment` (how to run it).
   },
   "experiment": {
     "mode": "plan" | "operate" | "alternatives" | "pareto" | "monte_carlo" | "stochastic" | "power_flow",
+    "network": { "model": "transport" | "linear_power_flow", "security": { "outages": ["ab"] } },  // the voltage law inside optimize (P)
     "objective": "min_cost" | "min_emissions",
     "emission_accounting": "net" | "positive_only",           // A: emissions_net vs emissions_pos
     "foresight": "perfect" | "myopic",
@@ -234,6 +238,8 @@ storage (`Storage_Battery`) map canonically. Any other non-demand tech is
 | `mode: pareto` | ✗ | ✗ | ✓ (`experiment.pareto.points`) | |
 | `mode: monte_carlo` | ✗ | ✗ | ✓ (`experiment.monte_carlo.{samples,standard_deviation,on}`) | |
 | `mode: stochastic` | ✓ two-stage `set_scenarios` | ✗ | ✗ | overrides must be translatable and numeric (validated) |
+| `network.model: linear_power_flow` | ✓ Lines and Transformers under Kirchhoff's voltage law inside `optimize` (arcs without `electrical` stay Links; line expansion with the impedance held fixed; `max_loading` → `s_max_pu`) | ✗ rejected like a mode | ✗ rejected | default `transport` keeps every arc a Link ([ADR-0010](https://enerplanet.github.io/meme/decisions/0010-electrical-network-inside-optimization/)) |
+| `network.security.outages` | ✓ `optimize_security_constrained` over the named branches (mode plan; no portable constraints) | ✗ | ✗ | the outages must be electrical arcs |
 | `mode: power_flow` | ✓ `lpf()` then `pf()` (or `lpf()` alone) over the electrical fields; `experiment.power_flow.{method,slack,distribute_slack,tolerance}`; results under `output/power_flow/` | ✗ | ✗ | no optimization: fixed capacities, `dispatch` on every injection but the slack, no trade/constraints/emission limits/scenarios ([ADR-0008](https://enerplanet.github.io/meme/decisions/0008-power-flow-as-a-pypsa-run-mode/)) |
 | `objective: min_cost` | ✓ | ✓ | ✓ | default |
 | `objective: min_emissions` | ✗ | ✗ | ✓ | |
@@ -242,8 +248,8 @@ storage (`Storage_Battery`) map canonically. Any other non-demand tech is
 | `time_aggregation: resample` | ✗ | ✓ `config.init.resample` | ✗ | |
 | `time_aggregation: typical_days` | ✗ | ✗ | ✓ k-means `typicaldays.N` (+ `keep_full_resolution_for` → `technologies_with_full_res`) | |
 | `time_aggregation: cluster` | ✗ | ✗ | ✗ | accepted by the model; no target claims it yet |
-| `allow_unmet_demand` | ✗ | ✓ `ensure_feasibility` (⚠ penalty approximated by bigM) | ✓ `energybalance.violation` (needs `penalty_price`) | |
-| `copperplate` | ✗ | ✗ | ✓ `energybalance.copperplate` | |
+| `allow_unmet_demand` | ✓ slack generator per load bus under carrier `unmet`, priced at `penalty_price` (required) | ✓ `ensure_feasibility` (⚠ penalty approximated by bigM) | ✓ `energybalance.violation` (needs `penalty_price`) | |
+| `copperplate` | ✓ one free hub per carrier joins every node's bus, arcs dropped (⚠ named); not with a power flow or the voltage law | ✗ | ✓ `energybalance.copperplate` | |
 | `reporting` | ⚠ `output_dir` service-managed | ✓ `save_logs`, `shadow_prices` | ✓ `case_name` | |
 | `scenarios` | ✓ (stochastic mode) | ✗ | ✗ | |
 | `sweep` | ✓ | ✓ | ✓ | orchestrator-level: N independent runs, any target |
@@ -262,12 +268,12 @@ storage (`Storage_Battery`) map canonically. Any other non-demand tech is
 | `time.subset` | ✗ dropped | ✓ `init.subset.timesteps` | ✗ dropped | P/A: use start/end instead |
 | `time.timesteps` (explicit labels) | ✓ snapshot labels | ✓ data-table index | ✗ rejected (needs a regular date_range) | |
 | `time.weights` | ✓ `snapshot_weightings` (scalar or series) | ✓ `timestep_weights` (scalar; series ✗) | ✗ rejected | |
-| `periods` | · | · | · | reserved (single investment period); rich `{name,year,…}` entries accepted |
+| `periods` (with `year`) | ✓ `investment_periods` (years from `length_years`, weights from `objective_weight`), snapshots `(period, timestep)` with every series repeated per period, `build_year` + `lifetime`, new builds per period as `<name>-<year>`, `multi_investment_periods` | ⚠ ignored (single horizon) | ⚠ ignored (single horizon) | mode plan; an expandable technology with existing capacity needs continuous retirement; expandable stores and arcs not yet ([ADR-0011](https://enerplanet.github.io/meme/decisions/0011-pypsa-optimization-completeness/)) |
 | `discount_rate` (global) | ✓ overrides annuity rate | ✓ overrides `cost_interest_rate` | ✓ `global_discountrate` | |
 | `carriers.<id>.co2_intensity` | ✓ `carriers.co2_emissions` | ✓ co2 cost class on fuel inflow | ✓ `emission_factor` | |
 | `carriers.<id>.unit/color` | · | · | · | |
 | `timeseries` (inline) | ✓ | ✓ | ✓ | file-sourced series: referenced, not copied |
-| `transmission` | ✓ Link | ✓ transmission tech | ✗ rejected (Networks unmapped) | |
+| `transmission` | ✓ Link; Line/Transformer under `network.model: linear_power_flow` | ✓ transmission tech | ✗ rejected (Networks unmapped) | |
 | `trade` | ✓ market generators | ✓ market supply/demand techs | ✓ carrier CSV columns | |
 | `emission_limits` | ✓ GlobalConstraint `primary_energy` | ✓ custom-math cap on `cost[costs=co2]` | ✓ `costs_emissionlimit` objective | |
 | `constraints` (unscoped, single-variable) | ✓ GlobalConstraint | ✓ custom math | ✗ rejected | |
@@ -303,9 +309,9 @@ storage (`Storage_Battery`) map canonically. Any other non-demand tech is
 | `capacity.existing` | ✓ `p_nom` | ✓ `flow_cap_min = flow_cap_max` (fixed) | ✓ `existing` size | |
 | `capacity.expandable` | ✓ `p_nom_extendable` | ✓ bounds only | ✓ `new` tech | |
 | `capacity.min` / `max` | ✓ `p_nom_min`/`p_nom_max` | ✓ `flow_cap_min`/`flow_cap_max` | ✓ `size_min`/`size_max` overrides | |
-| `capacity.per_unit` + `units_min/max` | ✓ implied `p_nom_min`/`_max` = units·per_unit | ✓ `flow_cap_per_unit` + `purchased_units_min/max` (committable); implied bounds otherwise | ✓ implied `size_min`/`size_max` | explicit `min`/`max` win |
+| `capacity.per_unit` + `units_min/max` | ✓ integer module `p_nom_mod` / `e_nom_mod` / `s_nom_mod` on expandable components + implied `p_nom_min`/`_max` = units·per_unit | ✓ `flow_cap_per_unit` + `purchased_units_min/max` (committable); implied bounds otherwise | ✓ implied `size_min`/`size_max` | explicit `min`/`max` win; a module with a quadratic cost is a MIQP (gurobi) |
 | `capacity.systemwide_min/max` | ✓ synthesized sidecar constraint (✗ in operate/stochastic) | ✓ `flow_cap_min/max_systemwide` | ✗ | |
-| `capacity.decommission` | impossible only (else ✗) | ✓ impossible/continuous (`only_complete` ✗) | ✓ full enum + `decommission_cost` | default: impossible |
+| `capacity.decommission` | ✓ `continuous`: the existing part extendable in [0, existing] at its fixed O&M, a new-build part above it when expandable (`<name>_new`); `only_complete` ✗; `cost` ⚠ not priced; not for Stores or arcs | ✓ impossible/continuous (`only_complete` ✗) | ✓ full enum + `decommission_cost` | default: impossible |
 | `operation.max_pu` (scalar) | ✓ `p_max_pu` | ✓ `source_use_max` + `per_cap` (supply only) | ✗ | |
 | `operation.max_pu` (series) | ✓ `generators-p_max_pu.csv` | ✓ data table (supply only) | ✗ | |
 | `operation.min_pu` (scalar) | ✓ `p_min_pu` | ✓ `flow_out_min_relative` | ✗ | series → ✗ everywhere |
@@ -314,17 +320,21 @@ storage (`Storage_Battery`) map canonically. Any other non-demand tech is
 | `operation.committable` | ✓ MILP UC | ✓ MILP: `cap_method: integer` + `integer_dispatch` + `purchased_units_max` (needs unit size) | ✗ | |
 | `operation.start_up_cost` / `shut_down_cost` | ✓ | ✗ (no 0.7 math) | ✗ | |
 | `operation.min_uptime` / `min_downtime` | ✓ `min_up_time`/`min_down_time` (snapshot counts) | ✗ | ✗ | |
+| `operation.ramp_start_up` / `ramp_shut_down` | ✓ `ramp_limit_start_up`/`ramp_limit_shut_down` | ⚠ ignored | ⚠ ignored | fraction of capacity in the start/stop hour |
+| `operation.standby_cost` | ✓ `stand_by_cost` | ⚠ ignored | ⚠ ignored | per committed hour |
+| `operation.initial_uptime` / `initial_downtime` | ✓ `up_time_before`/`down_time_before` | ⚠ ignored | ⚠ ignored | one of the two |
 | `operation.max_startups` / `standby_power` | ✗ | ✗ | ✓ `Performance.max_startups`/`standby_power` | |
-| `storage.energy_capacity` | (via `max_hours`) | ✓ `storage_cap_max`/`_min` | (fixed E/P ratio of DB tech) | |
+| `storage.energy_capacity` | ✓ **Store** on its own bus with charger/discharger Links (`e_nom*`, equal link power when expandable, rate bounds via `_storage.json`) | ✓ `storage_cap_max`/`_min` | (fixed E/P ratio of DB tech) | without it a `max_hours` storage is a StorageUnit ([ADR-0011](https://enerplanet.github.io/meme/decisions/0011-pypsa-optimization-completeness/)) |
 | `storage.max_hours` | ✓ `max_hours` | ✓ `storage_cap_max = max_hours·cap_max` | — | mutually exclusive with the rate bounds |
-| `storage.max_charge_rate` / `max_discharge_rate` | ✗ (use `max_hours` or native Stores) | ✓ `flow_cap_per_storage_cap_max` (rates must be equal) | ✓ `Flexibility.charge_rate`/`discharge_rate` | independent power/energy sizing |
+| `storage.max_charge_rate` / `max_discharge_rate` | ✓ link power ≤ rate × store energy (needs `energy_capacity`; ✗ on a StorageUnit) | ✓ `flow_cap_per_storage_cap_max` (rates must be equal) | ✓ `Flexibility.charge_rate`/`discharge_rate` | independent power/energy sizing |
 | `storage.charge_eff` / `discharge_eff` | ✓ `efficiency_store`/`_dispatch` | ✓ `flow_in_eff`/`flow_out_eff` | ✓ DB performance | |
 | `storage.self_discharge` | ✓ `standing_loss` | ✓ `storage_loss` | — | |
-| `storage.depth_of_discharge` | ✗ (no min-SOC on StorageUnit) | ✓ `storage_discharge_depth` | ✗ | |
+| `storage.depth_of_discharge` | ✓ Store `e_min_pu` (needs `energy_capacity`; ✗ on a StorageUnit) | ✓ `storage_discharge_depth` | ✗ | |
 | `storage.no_simultaneous_charge_discharge` | ✗ | ✓ `force_async_flow` | ✓ `allow_only_one_direction` | |
-| `storage.inflow` | ✓ scalar or `storage_units-inflow.csv` | ✗ | ✗ | |
+| `storage.inflow` | ✓ scalar or `storage_units-inflow.csv` (StorageUnit only; ✗ on a Store) | ✗ | ✗ | |
 | `storage.spill_cost` | ✓ | ✗ | ✗ | |
-| `storage.initial_soc` | ✓ `state_of_charge_initial` | ✓ `storage_initial` | — | |
+| `storage.initial_soc` | ✓ `state_of_charge_initial` (absolute: fraction × `p_nom` × `max_hours`) / Store `e_initial` of a fixed energy capacity (⚠ expandable: starts from existing) | ✓ `storage_initial` | — | |
+| `storage.soc_profile` (scalar / series) | ✓ `state_of_charge_set` / `storage_units-state_of_charge_set.csv` (StorageUnit only) | ⚠ ignored | ⚠ ignored | pins the state of charge |
 | `storage.cyclic` | ✓ `cyclic_state_of_charge` | ✓ `cyclic_storage` (operate: forced false) | — | |
 | `demand_profile` (scalar / series) | ✓ `p_set` / `loads-p_set.csv` | ✓ data table (scalar expanded) | ✓ `Demand` column | |
 | `demand_curtailable` | ✗ | ✓ `sink_use_max` instead of `sink_use_equals` | ✗ | |
@@ -336,7 +346,8 @@ storage (`Storage_Battery`) map canonically. Any other non-demand tech is
 | `source.max` (scalar / series) | ✗ gated | ✓ `source_use_max` (+ data table) | ✗ gated | |
 | `source.unit` / `source.cap` | — | ✓ `source_unit` / `source_cap_max` | — | |
 | `costs.monetary.investment_per_capacity` | ✓ annualized → `capital_cost` | ✓ `cost_flow_cap` + `cost_interest_rate` | ✓ `unit_CAPEX` | overnight basis needs `lifetime`+`interest_rate` |
-| `costs.monetary.investment_per_energy_capacity` | ⚠ dropped (no per-MWh slot on StorageUnit) | ✓ `cost_storage_cap` | ⚠ dropped | |
+| `costs.monetary.investment_per_energy_capacity` | ✓ Store `capital_cost` per MWh (needs `energy_capacity`; ⚠ dropped on a StorageUnit) | ✓ `cost_storage_cap` | ⚠ dropped | |
+| `costs.monetary.variable_om_quadratic` | ✓ `marginal_cost_quadratic` (QP; with integer variables a MIQP that needs gurobi) | ⚠ ignored | ⚠ ignored | |
 | `costs.monetary.fixed_om` | ✓ folded into `capital_cost` | ✓ `cost_om_annual` | ✓ `OPEX_fixed` | mutually exclusive with `fixed_om_fraction` |
 | `costs.monetary.fixed_om_fraction` | ✓ fraction·investment folded into `capital_cost` | ✓ `cost_om_annual_investment_fraction` | ✓ `OPEX_fixed` (adopt's native convention) | needs overnight basis |
 | `costs.monetary.variable_om` (scalar) | ✓ `marginal_cost` | ✓ `cost_flow_out` (merged multi-class) | ✓ `OPEX_variable` | |
@@ -367,8 +378,10 @@ storage (`Storage_Battery`) map canonically. Any other non-demand tech is
 | `transmission.active: false` | ✓ `active` column | ✓ `active: false` | ✗ | |
 | `transmission.electrical` (`kind`, `r`/`x` or `r_per_length`/`x_per_length`, `s_nom`, `num_parallel`, `b`, `g`, `tap_ratio`, `phase_shift`) | ✓ `lines.csv` / `transformers.csv` row with the impedance, admittance, rating and tap (mode power_flow; ⚠ ignored otherwise, arc stays a Link) | ⚠ ignored (transmission tech) | ✗ | electrical arcs are bidirectional; a line joins equal `v_nom`; `s_nom` defaults to `capacity.existing`; per-length impedance × `distance`; `b`/`g` lines only, `phase_shift` transformers only |
 | `transmission.dispatch` (scalar / series) | ✓ Link `p_set` / `links-p_set.csv`: a controlled HVDC transfer (mode power_flow) | ⚠ ignored | ✗ | exclusive with `electrical`; an electricity arc in a power flow needs one of the two; the island behind a link needs its own generator (PyPSA balances it, warned) |
-| `transmission.costs.investment_per_capacity_distance` | ⚠ warned & dropped | ✓ `cost_flow_cap_per_distance` | ✗ | |
-| `transmission.costs` (other fields) | ⚠ warned & dropped | ⚠ warned & dropped | ✗ | no lifetime/interest on transmission to annualize |
+| `transmission.costs.investment_per_capacity_distance` | ✓ × `distance` into `capital_cost` (annualized) | ✓ `cost_flow_cap_per_distance` | ✗ | |
+| `transmission.costs.investment_per_capacity`, `fixed_om`, `fixed_om_fraction` | ✓ annualized into `capital_cost` of the Link / Line (⚠ not priced without `lifetime` + `interest_rate` or `cost_basis: annualized`) | ⚠ warned & dropped | ✗ | |
+| `transmission.lifetime` / `interest_rate` / `cost_basis` | ✓ annuity of the arc's investment (global `discount_rate` overrides) | ⚠ not used | ✗ | |
+| `transmission.electrical.max_loading` | ✓ `s_max_pu` (voltage-law optimization) | ⚠ ignored | ✗ | |
 | `trade.import.limit` (scalar / series) | ✓ `p_nom_max` / ✓ fixed `p_nom=1` + `p_max_pu` series | ✓ `flow_cap_max` / ✗ | ✓ / ✓ per-timestep column | |
 | `trade.import.price` (scalar / series) | ✓ / ✓ `generators-marginal_cost.csv` | ✓ / ✗ | ✓ / ✓ per-timestep column | |
 | `trade.import.emission_factor` | ⚠ not emitted (set carrier intensity) | ✓ co2 cost class | ✓ `Import emission factor` | |
@@ -383,7 +396,7 @@ storage (`Storage_Battery`) map canonically. Any other non-demand tech is
 |---|---|---|---|
 | Native inputs on disk | `run_i/input/*.csv` + sidecars | `run_i/input/model.yaml` + data tables + `additional_math.yaml` | `run_i/input/input_data/` tree |
 | Executed driver | `run_i/run.py` | Calliope CLI (command in `results.json`) | `run_i/run.py` |
-| Solved model | `run_i/output/network.nc` (+ `network_baseline.nc` for MGA) | `run_i/output/results.nc` + `output/csv/*` (per-variable CSVs incl. `flow_out`, `storage`, `purchased_units`, costs) | `run_i/input/results/` (HDF5 per solve + `Summary.xlsx` + `solver_log.txt`) |
+| Solved model | `run_i/output/network.nc` (+ `network_baseline.nc` for MGA) and `run_i/output/results/`: `generators-p.csv`, `loads-p.csv`, `links-p0/p1.csv`, `lines-p0/p1.csv`, `transformers-p0/p1.csv`, `storage_units-p/state_of_charge.csv`, `stores-e/p.csv`, `buses-marginal_price.csv`, `capacities.csv` (nominal and optimal per component), `statistics.csv` (PyPSA statistics), `summary.json` (objective, status, mode) | `run_i/output/results.nc` + `output/csv/*` (per-variable CSVs incl. `flow_out`, `storage`, `purchased_units`, costs) | `run_i/input/results/` (HDF5 per solve + `Summary.xlsx` + `solver_log.txt`) |
 | Objective / status in log | `status ok optimal`, `objective <v>` (non-optimal ⇒ non-zero exit ⇒ job `failed`); power flow: `power flow converged k/n snapshots`, `status ok power flow converged` (a non-converged snapshot ⇒ exit 3 ⇒ job `failed`) | `Optimal - objective value <v>`, `Calliope run complete` | Pyomo block (`Termination condition: optimal`, bounds) |
 | Power-flow results (mode power_flow) | `run_i/output/power_flow/`: `convergence.csv`, `buses-v_mag_pu/v_ang/p/q.csv`, `lines-p0/p1/q0/q1/loading.csv`, `transformers-…`, `generators-p/q.csv`, `loads-p/q.csv`, `storage_units-p/q.csv`, `links-p0/p1.csv`, `shunt_impedances-p/q.csv`, `summary.json` (method, slack bus, converged snapshots, voltage band, peak loadings) | — | — |
 | Job artifacts (all targets) | `GET /jobs/{id}` zip: `metadata.json`, `log.txt`, `results.json` (target-labeled per-run exit/stdout/plan), `config.json` (byte-identical initial config), `files/` (everything above; multi-target jobs nest as `files/<target>/run_i/…`) | — | — |

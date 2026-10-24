@@ -110,6 +110,7 @@ config.json           the submitted payload, byte-identical (api_key redacted)
 files/run_0/run.py    the executed driver script (PyPSA, AdOpT)
 files/run_0/input/…   the emitted native model
 files/run_0/output/…  solver results (PyPSA network.nc; Calliope results.nc + csv/)
+files/run_0/output/results/…     PyPSA optimization: dispatch and flow tables, storage states, marginal prices, capacities.csv, statistics.csv, summary.json
 files/run_0/output/power_flow/…  PyPSA mode power_flow: convergence.csv, per-bus and per-branch tables, summary.json
 files/run_1/…         further sweep points
 ```

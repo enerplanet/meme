@@ -52,8 +52,41 @@ Go modules require (`v0.1.0-alpha`).
   method says what it ignores. Scenario and example payload
   `pypsa_power_flow_reactive`, E2E-pinned on the held voltages.
 
+- The electrical network inside the optimization ([ADR-0010]):
+  `experiment.network.model: linear_power_flow` makes PyPSA solve under
+  Kirchhoff's voltage law with Lines and Transformers (expansion from the
+  arc's `capacity`, `electrical.max_loading` as `s_max_pu`), and
+  `network.security.outages` runs the security-constrained solve; other
+  targets reject the model like a mode. Transmission gains `lifetime`,
+  `interest_rate` and `cost_basis`, and PyPSA prices the arc's investment
+  and fixed O&M on Links and Lines. Every optimization run writes
+  `output/results/` (dispatch, flows, storage states, marginal prices,
+  `capacities.csv`, `statistics.csv`, `summary.json`).
+- PyPSA optimization completeness ([ADR-0011]): an energy-sized storage
+  (`storage.energy_capacity`) is a Store with charger and discharger Links,
+  which honors independent rates, depth of discharge and the energy-capacity
+  cost (`_storage.json` carries the equal-power and rate constraints);
+  `storage.soc_profile` pins a StorageUnit's state of charge;
+  `capacity.per_unit` builds integer modules; `decommission.mode:
+  continuous` retires existing capacity at its fixed O&M and builds new
+  capacity above it; `allow_unmet_demand` adds priced slack generators;
+  `copperplate` joins every node through a free hub; `operation.ramp_start_up`,
+  `ramp_shut_down`, `standby_cost`, `initial_uptime`, `initial_downtime` and
+  `costs.<class>.variable_om_quadratic` map onto PyPSA's unit-commitment and
+  cost attributes; `model.periods` with years are investment periods with
+  `build_year`, `lifetime` and new builds per period. Scenarios and goldens
+  for every claim, E2E on the real framework, and the example
+  `examples/pypsa_planning.json`.
+
 ### Changed
 
+- PyPSA no longer rejects independent storage rates, depth of discharge,
+  continuous retirement, unmet demand or copperplate; the energy-capacity
+  cost is priced instead of dropped. Calliope and AdOpT-NET0 keep every
+  mapping they had; the new fields they have no slot for (`soc_profile`,
+  the unit-commitment extras, the quadratic cost, investment periods) are
+  ignored there with a warning. The validation matrix records every verdict
+  that moved.
 - Power-flow inputs — `dispatch`, the `electrical` blocks on technologies,
   arcs and nodes — are ignored with one warning wherever no power flow runs:
   on Calliope and AdOpT-NET0 and in PyPSA's optimization modes alike. A
@@ -62,6 +95,14 @@ Go modules require (`v0.1.0-alpha`).
 - The PyPSA driver parses its run configuration as JSON (`json.loads`)
   instead of pasting the JSON in as a Python literal, which broke on the
   first boolean setting.
+
+### Fixed
+
+- PyPSA `state_of_charge_initial` is absolute (MWh), but the canonical
+  fraction `storage.initial_soc` was written into it unchanged, so a
+  half-full 24 MWh unit started at 0.5 MWh. The fraction is now applied to
+  the installed energy (`p_nom` × `max_hours`); an expandable storage is
+  told it starts from its existing capacity.
 
 ## [0.1.0-alpha] - 2026-10-24
 
@@ -154,6 +195,8 @@ still change between releases.
 [Unreleased]: https://github.com/enerplanet/meme/compare/v0.1.0-alpha...HEAD
 [ADR-0008]: https://enerplanet.github.io/meme/decisions/0008-power-flow-as-a-pypsa-run-mode/
 [ADR-0009]: https://enerplanet.github.io/meme/decisions/0009-reactive-power-voltage-control-and-fixed-transfers/
+[ADR-0010]: https://enerplanet.github.io/meme/decisions/0010-electrical-network-inside-optimization/
+[ADR-0011]: https://enerplanet.github.io/meme/decisions/0011-pypsa-optimization-completeness/
 [0.1.0-alpha]: https://github.com/enerplanet/meme/releases/tag/v0.1.0-alpha
 [#3]: https://github.com/enerplanet/meme/issues/3
 [#4]: https://github.com/enerplanet/meme/issues/4

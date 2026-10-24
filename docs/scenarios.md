@@ -29,6 +29,14 @@ directly loadable by the pinned framework (see [Targets and versions](targets.md
 | `pypsa_constraints_sidecar` | tech-scoped constraint applied by run.py as a linopy constraint (binding, objective-checked in E2E) | `force_pv` in `_constraints.json` |
 | `pypsa_trade_price_series` | time-varying import price (objective-checked in E2E) | `market_import`, `generators-marginal_cost.csv` |
 | `pypsa_power_flow` | mode `power_flow`: an HV slack feeding two MV nodes through a transformer and a line, PV with a dispatch series, two loads (converges 4/4 in E2E; the linear method and a diverging load are E2E-checked too) | `v_nom`, `lines.csv`, `transformers.csv`, `control: Slack`, `generators-p_set.csv` |
+| `pypsa_lopf` | plan under the voltage law (`network.model: linear_power_flow`): a 110 kV ring, an expandable priced line with `max_loading`; E2E checks Kirchhoff's law around the loop and the security-constrained variant | `s_nom_extendable`, `s_max_pu`, `capital_cost` on `lines.csv` |
+| `pypsa_store` | energy-sized storage as a Store with charger/discharger and the `_storage.json` constraints; a pumped unit with a pinned `soc_profile` | `stores.csv`, `battery_charge`, `equal_power`, `state_of_charge_set` |
+| `pypsa_modular` | integer modules on a generator and a store | `p_nom_mod`, `e_nom_mod` |
+| `pypsa_retire_slack` | continuous retirement of an old unit; priced slack on an island short of capacity | `::unmet`, retirable `old` |
+| `pypsa_copperplate` | copperplate: a free hub joins the nodes, the arc is dropped | `copperplate::electricity` |
+| `pypsa_uc_extras` | start/stop ramps, standby cost, prior uptime on a committable unit | `ramp_limit_start_up`, `stand_by_cost`, `up_time_before` |
+| `pypsa_quadratic` | quadratic variable cost (QP on HiGHS) | `marginal_cost_quadratic` |
+| `pypsa_multi_period` | two investment periods: a 2020 unit retires before 2040, new capacity is built per period | `investment_periods.csv`, `new-2030`, `new-2040`, `build_year` |
 | `pypsa_power_flow_reactive` | reactive power and voltage control: slack set-point 1.02 pu, a `pv` generator holding 1.0 pu, loads with a power factor and a reactive series, a shunt, a per-length line impedance, a phase-shifting transformer, a controlled HVDC link into an island PyPSA balances itself (E2E pins the held voltages) | `v_mag_pu_set`, `control: PV`, `q_set`, `shunt_impedances.csv`, `phase_shift`, links `p_set` |
 
 ## Calliope 0.7 (`calliope`)

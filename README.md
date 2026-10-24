@@ -62,7 +62,11 @@ not an optimization: `experiment.mode: power_flow` has PyPSA solve the AC
 network described in the payload (voltage levels, impedances, a fixed
 dispatch, reactive power and voltage control) and report voltages, loading
 and convergence, the natural second call after a plan on any target; the
-other targets ignore those inputs with a warning.
+other targets ignore those inputs with a warning. PyPSA also plans under the
+voltage law (`experiment.network.model: linear_power_flow`, with line
+expansion and security constraints), sizes storage as a Store, builds in
+integer modules, retires capacity, prices unmet demand and plans over
+investment periods.
 
 ## Quickstart
 

@@ -20,7 +20,7 @@ project an indexed value to a scalar (and error if it can't for a flat target).
   "model": {
     "metadata": { "name": "…", "currency"?: "EUR", "currency_year"?: 2025 },
     "time":     { "start": "2025-01-01", "end": "2025-01-02", "resolution"?: "1H", "subset"?: ["…","…"] },
-    "periods"?: ["period1"],
+    "periods"?: ["period1"] | [{"name":"2030","year":2030,"length_years":10}],   // with years: investment periods (PyPSA)
 
     "carriers":  { "<id>": { "unit"?: "MWh", "co2_intensity"?: 0.2, "color"?: "#…", "native"?: {…} } },
     "nodes":     { "<id>": { "coords"?: {"lat":48.8,"lon":12.9,"alt"?:0},
@@ -48,10 +48,12 @@ project an indexed value to a scalar (and error if it can't for a flat target).
         "capacity"?:  { "existing":0, "expandable":true, "min"?:0, "max"?:500, "unit"?:"MW", "per_unit"?:1 },
         "operation"?: { "max_pu"?:Value, "min_pu"?:Value, "ramp_up"?:0.6, "ramp_down"?:0.6,
                         "committable"?:true, "start_up_cost"?:5000, "shut_down_cost"?:0,
-                        "min_uptime"?:3, "min_downtime"?:2 },
+                        "min_uptime"?:3, "min_downtime"?:2,
+                        "ramp_start_up"?:0.6, "ramp_shut_down"?:0.6, "standby_cost"?:5, "initial_uptime"?:2 },  // UC extras (PyPSA)
         "storage"?:   { "energy_capacity"?:{…Capacity}, "max_hours"?:4, "charge_eff"?:0.95,
                         "discharge_eff"?:0.95, "self_discharge"?:0.001, "inflow"?:Value,
-                        "spill_cost"?:0, "initial_soc"?:0.5, "cyclic"?:true },
+                        "spill_cost"?:0, "initial_soc"?:0.5, "cyclic"?:true,
+                        "soc_profile"?:Value },                                 // pinned state of charge (PyPSA StorageUnit)
         "demand_profile"?: Value,                                // role: demand
         "dispatch"?: Value,                                      // fixed MW per timestep; power_flow input (ignored elsewhere)
         "electrical"?: { "reactive_dispatch"?:Value, "power_factor"?:0.95, "leading"?:false,
@@ -59,7 +61,7 @@ project an indexed value to a scalar (and error if it can't for a flat target).
         "area"?:   { "max"?:1500, "per_capacity"?:0.01 },        // Calliope-only
         "source"?: { "cap"?:…, "unit"?:"per_area", "max"?:Value },// Calliope-only
         "costs"?:  { "<class>": { "investment_per_capacity"?:6e5, "investment_per_energy_capacity"?:…,
-                                  "fixed_om"?:…, "variable_om"?:Value, "purchase"?:… } },
+                                  "fixed_om"?:…, "variable_om"?:Value, "variable_om_quadratic"?:0.01, "purchase"?:… } },
         "lifetime"?: 25, "interest_rate"?: 0.07, "cost_basis"?: "overnight"|"annualized",
         "node_overrides"?: { "<node>": { …subset of the fields above… } },
         "native"?: { "pypsa"?:{…}, "calliope"?:{…}, "adopt-net0"?:{…} }
@@ -72,8 +74,9 @@ project an indexed value to a scalar (and error if it can't for a flat target).
                                  "electrical"?: { "kind":"line"|"transformer", "r":1.2, "x":3.5,   // AC branch (PyPSA power flow)
                                                   "r_per_length"?:0.12, "x_per_length"?:0.35,       // … or per km × distance
                                                   "s_nom"?:20, "num_parallel"?:1, "b"?:0.0001, "g"?:0,
-                                                  "tap_ratio"?:1, "phase_shift"?:0 },
+                                                  "tap_ratio"?:1, "phase_shift"?:0, "max_loading"?:0.9 },
                                  "dispatch"?: Value,                                   // fixed transfer of a controlled link (HVDC)
+                                 "lifetime"?:40, "interest_rate"?:0.05, "cost_basis"?:"overnight",  // annualize the arc's investment
                                  "native"?:{…} } },
     "trade"?: { "<id>": { "node":"<node>", "carrier":"<id>",
                           "import"?:{ "limit"?:500, "price"?:Value, "emission_factor"?:0.35 },
@@ -91,6 +94,7 @@ project an indexed value to a scalar (and error if it can't for a flat target).
     "mode"?: "plan"|"operate"|"alternatives"|"pareto"|"monte_carlo"|"stochastic"|"power_flow",
     "power_flow"?: { "method"?:"newton_raphson"|"linear", "slack":"<tech>"|"<tech>@<node>",
                      "distribute_slack"?:false, "tolerance"?:1e-6 },   // mode power_flow (PyPSA)
+    "network"?: { "model"?:"transport"|"linear_power_flow", "security"?:{ "outages":["<arc>"] } },  // the voltage law inside optimize (PyPSA)
     "objective"?: "min_cost"|"min_emissions",
     "foresight"?: "perfect"|"myopic",
     "time_aggregation"?: { "method":"typical_days"|"resample", "periods"?:12, "resolution"?:"3H" },
@@ -167,7 +171,7 @@ combined log.
 
 | Target | Entrypoint | Contents |
 |---|---|---|
-| PyPSA | CSV folder | `network.csv` (name + pinned `pypsa_version`), `buses.csv`, `carriers.csv`, `generators.csv`, `loads.csv`, `links.csv`, `storage_units.csv`, `global_constraints.csv` (unscoped constraints only), materialized time-varying CSVs (`loads-p_set`, `generators-p_max_pu`, `generators-marginal_cost`, `links-marginal_cost`, `storage_units-inflow`), `_constraints.json` (scoped constraints, applied by run.py), `_scenarios.json` (stochastic mode), `_performance.json`, `_native.pypsa.json`; mode power_flow: `lines.csv`, `transformers.csv`, `v_nom` + carrier `AC` on the electrical buses, `control`/`p_set` on generators and `<component>-p_set.csv` dispatch series |
+| PyPSA | CSV folder | `network.csv` (name + pinned `pypsa_version`), `buses.csv`, `carriers.csv`, `generators.csv`, `loads.csv`, `links.csv`, `storage_units.csv`, `global_constraints.csv` (unscoped constraints only), materialized time-varying CSVs (`loads-p_set`, `generators-p_max_pu`, `generators-marginal_cost`, `links-marginal_cost`, `storage_units-inflow`), `_constraints.json` (scoped constraints, applied by run.py), `_scenarios.json` (stochastic mode), `_performance.json`, `_native.pypsa.json`; mode power_flow or network model linear_power_flow: `lines.csv`, `transformers.csv`, `v_nom` + carrier `AC` on the electrical buses (power flow: `control`/`p_set`/`q_set`, `shunt_impedances.csv`, dispatch series); energy-sized storage: `stores.csv` + charger/discharger links + `_storage.json`; investment periods: `investment_periods.csv` and `(period, timestep)` snapshots |
 | Calliope 0.7 (`calliope`) | `model.yaml` | `config` (`init.mode`/`init.resample`/`solve.solver`/`solve.spores`/`init.math_paths`+`extra_math` incl. `milp`), `techs` (incl. co2 `cost_flow_in` / `cost_source_use` on supply, trade market techs, MILP unit-commitment params, piecewise breakpoint params), `nodes`, `data_tables` (`table` + `add_dims.inputs`) + materialized series CSVs (demand, availability, source), `data_definitions.objective_cost_weights`, `additional_math.yaml` (constraint IR + flow-ratio pinning + piecewise machinery), `_constraints.json` sidecar when `custom_math=false` |
 | Calliope 0.6 (`calliope-0.6`) | `model.yaml` | `model` (`calliope_version`, `timeseries_data_path`, `subset_time`, `time` resample / k-means `apply_clustering`), `run` (`mode` plan/operate/spores, `solver`, `objective_options.cost_class` weights, `cyclic_storage`, `operation`, `spores_options`), `techs` (`essentials`/`constraints`/`costs`; `conversion_plus` carrier tiers + `carrier_ratios`; trade market techs; `units_max`/`energy_cap_per_unit` MILP; `emissions` cost class), `locations` (coordinates, `available_area`, per-location `file=` resources + overrides), `links` (`from,to` → transmission techs + distance), `group_constraints` (constraint IR, emission limits, annual output bounds, SPORES cost slack), `timeseries_data/*.csv` (datetime index, one column per node; demand negative) |
 | AdOpT-NET0 | `input_data/` | `Topology.json`, `ConfigModel.json` (glpk, `write_results: 1`), `NodeLocations.csv`, `_meme_overrides.json` (keyed node → tech), per-period `Networks.json`, per-node `Technologies.json` (database tech names) + `ClimateData.csv` + `CarbonCost.csv` + `carrier_data/*.csv` (`;`-delimited; demand/import/export incl. per-timestep prices) + `EnergybalanceOptions.json`. The run step copies tech data + applies overrides. |

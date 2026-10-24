@@ -31,6 +31,11 @@ support. Support is a sparse map — absence means unsupported.
 | `piecewise_performance` | `performance.type: piecewise` (Calliope: fixed-capacity conversion) | | ✓ | | | yes |
 | `physics_performance` | `performance.type: physics` | | | | ✓ | yes (needs precomputed off AdOpT) |
 | `power_flow` | `experiment.mode: power_flow` + `node.electrical` (`v_nom`, `shunt`), `transmission.electrical` / `transmission.dispatch`, `technology.dispatch`, `technology.electrical` (reactive power, voltage control) | ✓ | | | | yes (mode gate; the inputs are ignored with a warning outside the mode) |
+| `linear_power_flow` | `experiment.network.model: linear_power_flow` (+ `security.outages`) | ✓ | | | | yes (rejected like a mode elsewhere) |
+| `soc_profile` | `storage.soc_profile` | ✓ | | | | ignored with a warning elsewhere |
+| `unit_commitment_extras` | `operation.ramp_start_up/ramp_shut_down/standby_cost/initial_uptime/initial_downtime` | ✓ | | | | ignored with a warning elsewhere |
+| `quadratic_cost` | `costs.<class>.variable_om_quadratic` | ✓ | | | | ignored with a warning elsewhere; MIQP needs gurobi |
+| `multi_period` | `model.periods` with years | ✓ | | | | ignored with a warning elsewhere (single horizon) |
 | `custom_math` | `experiment.custom_math` → `additional_math.yaml` | | ✓ | | | rendered (linear IR + emission limits) |
 | `objective:min_emissions` | `experiment.objective` | | | ✓ | ✓ | yes |
 
@@ -52,6 +57,18 @@ named in one warning while the arcs stay transport Links, so one payload
 serves the planning call and the power-flow call
 ([ADR-0008](decisions/0008-power-flow-as-a-pypsa-run-mode.md),
 [ADR-0009](decisions/0009-reactive-power-voltage-control-and-fixed-transfers.md)).
+Two kinds of PyPSA-only claims follow: a **run specification** a transport
+target cannot honor (`linear_power_flow`) is rejected there like a mode,
+because solving the same payload as a transport model would be a different
+problem; an **ignorable field** (`soc_profile`, `unit_commitment_extras`,
+`quadratic_cost`, `multi_period`) is kept and named in a warning, because the
+optimizer solves the same problem without it
+([ADR-0010](decisions/0010-electrical-network-inside-optimization.md),
+[ADR-0011](decisions/0011-pypsa-optimization-completeness.md)). Fields other
+targets honor and PyPSA used to reject — independent storage rates, depth of
+discharge, continuous retirement, unmet-demand slack, copperplate — are
+honored now through the Store representation, a retirable split component,
+slack generators and a copperplate hub.
 `physics_performance` off AdOpT requires a `performance.precomputed` series
 (else 422). `custom_math` is a Calliope 0.7 render toggle (`experiment.custom_math`,
 default on) for the portable `constraints`/`emission_limits` IR; ratio-pinning

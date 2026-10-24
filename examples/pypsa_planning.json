@@ -1,0 +1,48 @@
+{
+  "api_key": "s3cret",
+  "model": {
+    "metadata": {"name": "pypsa_planning",
+      "description": "Planning on the electrical network: a 110 kV ring solved under the voltage law with an expandable, priced line; a modular generator built in 10 MW units; a retirable old unit; a committable unit with start/stop ramps, standby cost and prior uptime; an energy-sized battery as a Store with independent rates; priced slack for unmet demand."},
+    "time": {"start": "2025-01-01T00:00:00", "end": "2025-01-01T03:00:00", "resolution": "1H"},
+    "carriers": {"electricity": {"unit": "MWh"}},
+    "nodes": {
+      "a": {"electrical": {"v_nom": 110}},
+      "b": {"electrical": {"v_nom": 110}},
+      "c": {"electrical": {"v_nom": 110}}
+    },
+    "technologies": {
+      "wind": {"role": "supply", "node": "a", "carrier_out": "electricity",
+               "capacity": {"existing": 0, "expandable": true, "per_unit": 10, "units_max": 12},
+               "operation": {"max_pu": [0.9, 0.6, 0.3, 0.7]},
+               "costs": {"monetary": {"investment_per_capacity": 30, "variable_om": 1}}, "cost_basis": "annualized"},
+      "old": {"role": "supply", "node": "c", "carrier_out": "electricity",
+              "capacity": {"existing": 60, "decommission": {"mode": "continuous"}},
+              "costs": {"monetary": {"fixed_om": 20, "variable_om": 70}}, "cost_basis": "annualized"},
+      "ccgt": {"role": "supply", "node": "b", "carrier_out": "electricity", "capacity": {"existing": 80},
+               "operation": {"committable": true, "min_pu": 0.3, "start_up_cost": 200, "min_uptime": 2,
+                             "ramp_start_up": 0.6, "ramp_shut_down": 0.6, "standby_cost": 5, "initial_uptime": 1},
+               "costs": {"monetary": {"variable_om": 40}}},
+      "battery": {"role": "storage", "node": "b", "carrier_out": "electricity",
+                  "capacity": {"existing": 0, "expandable": true, "max": 30},
+                  "storage": {"energy_capacity": {"existing": 0, "expandable": true, "max": 80},
+                              "charge_eff": 0.95, "discharge_eff": 0.95, "depth_of_discharge": 0.1, "cyclic": true,
+                              "max_charge_rate": 0.5, "max_discharge_rate": 0.5},
+                  "costs": {"monetary": {"investment_per_capacity": 4, "investment_per_energy_capacity": 1}}, "cost_basis": "annualized"},
+      "load_b": {"role": "demand", "node": "b", "carrier_in": "electricity", "demand_profile": [60, 90, 110, 70]},
+      "load_c": {"role": "demand", "node": "c", "carrier_in": "electricity", "demand_profile": [20, 30, 40, 20]}
+    },
+    "transmission": {
+      "ab": {"carrier": "electricity", "from": "a", "to": "b", "bidirectional": true,
+             "capacity": {"existing": 40, "expandable": true, "max": 150},
+             "costs": {"monetary": {"investment_per_capacity": 2}}, "cost_basis": "annualized",
+             "distance": 50, "electrical": {"kind": "line", "r": 1, "x": 10, "max_loading": 0.9}},
+      "bc": {"carrier": "electricity", "from": "b", "to": "c", "bidirectional": true, "capacity": {"existing": 50},
+             "electrical": {"kind": "line", "r": 1, "x": 10}},
+      "ac": {"carrier": "electricity", "from": "a", "to": "c", "bidirectional": true, "capacity": {"existing": 50},
+             "electrical": {"kind": "line", "r": 2, "x": 20}}
+    }
+  },
+  "experiment": {"mode": "plan", "network": {"model": "linear_power_flow"},
+                 "allow_unmet_demand": {"enabled": true, "penalty_price": 1000},
+                 "solver": {"name": "highs"}}
+}

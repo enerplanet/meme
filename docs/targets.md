@@ -58,6 +58,21 @@ by property, what each target honors.
   wherever no power flow runs, so the two payloads may be one document
   ([ADR-0008](decisions/0008-power-flow-as-a-pypsa-run-mode.md),
   [ADR-0009](decisions/0009-reactive-power-voltage-control-and-fixed-transfers.md)).
+- **PyPSA plans on the electrical network too.** `experiment.network.model:
+  linear_power_flow` solves an optimization under Kirchhoff's voltage law
+  (Lines and Transformers with expansion, `max_loading`, annualized
+  transmission investment from `lifetime` and `interest_rate`) and
+  `network.security.outages` makes it security-constrained; other targets
+  reject that model like a mode. Energy-sized storage is a Store with charger
+  and discharger, `capacity.per_unit` builds integer modules, continuous
+  retirement splits existing from new capacity, `allow_unmet_demand` adds
+  priced slack, `copperplate` a free hub, and `model.periods` with years are
+  investment periods; the unit-commitment extras, a quadratic cost and a
+  pinned state of charge round it off. Every optimization run writes
+  `output/results/` with dispatch, flows, prices, capacities and statistics.
+  Fields the other targets have no slot for are ignored there with a warning
+  ([ADR-0010](decisions/0010-electrical-network-inside-optimization.md),
+  [ADR-0011](decisions/0011-pypsa-optimization-completeness.md)).
 - **Calliope versions are targets.** `calliope` is Calliope 0.7.0 (alias
   `calliope-0.7`); `calliope-0.6` is Calliope 0.6.8 — a separate emitter for
   the legacy dialect, driven by the `calliope-0.6` CLI from a second venv in

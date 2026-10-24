@@ -16,6 +16,7 @@ tier re-runs them on every change.
 | [`pypsa_power_flow_meshed.json`](https://github.com/enerplanet/meme/blob/main/examples/pypsa_power_flow_meshed.json) | `pypsa` | A **meshed** 20 kV ring under an HV transformer: one PV technology placed at two nodes with a `dispatch` series per node (`node_overrides`), one load technology at three nodes with a per-node profile, two parallel transformers (`num_parallel`, `tap_ratio`), the slack spelled `grid@hv`, a tight `tolerance`; real loop flows and a visible voltage sag |
 | [`pypsa_power_flow_options.json`](https://github.com/enerplanet/meme/blob/main/examples/pypsa_power_flow_options.json) | `pypsa` | The **options**: `method: linear` (DC, never diverges, voltages stay nominal), `distribute_slack` with the slack carrying its own expected dispatch, a battery whose dispatch changes sign (positive = discharge), and an electric boiler feeding a `heat` carrier the power flow carries as a fixed injection without balancing it (warned) |
 | [`pypsa_power_flow_reactive.json`](https://github.com/enerplanet/meme/blob/main/examples/pypsa_power_flow_reactive.json) | `pypsa` | **Reactive power and voltage control**: the slack holds 1.02 pu, a `pv` generator holds its bus at 1.0 pu by supplying reactive power, loads carry a `power_factor` or a `reactive_dispatch` series, a `shunt` compensates at one node, a controlled HVDC link (`transmission.dispatch`) feeds an island PyPSA balances on its own generator, a line given per km (`r_per_length`, `x_per_length`, `b`) and a phase-shifting transformer |
+| [`pypsa_planning.json`](https://github.com/enerplanet/meme/blob/main/examples/pypsa_planning.json) | `pypsa` | **Planning on the electrical network**: a 110 kV ring solved under the voltage law (`network.model: linear_power_flow`) with an expandable, priced line (`lifetime`, `interest_rate`, `max_loading`), a generator built in 10 MW modules (`per_unit`), a retirable old unit (`decommission: continuous`), a committable unit with start/stop ramps, standby cost and prior uptime, an energy-sized battery as a Store with independent rates and a depth of discharge, and priced slack for unmet demand; read `results/capacities.csv`, `lines-p0.csv` and `statistics.csv` |
 | [`calliope_full.json`](https://github.com/enerplanet/meme/blob/main/examples/calliope_full.json) | `calliope` | availability data table from a CF series, first-class `source` + `area` (per-area resource on a bounded area), **MILP committable** (integer 50-MW units + purchase cost + min stable load), multi-output CHP via **ratio-pinning math**, **piecewise** part-load conversion (fixed 300 MW), battery with energy-capacity costs (`cost_storage_cap`) + `cost_om_annual` + **depth of discharge**, transmission (bidirectional, distance, **per-distance investment cost**), `reporting.save_logs`, typed solver `time_limit`, trade (import price + co2 factor, paid export), CO₂ cap + scoped constraint (custom math), native `flow_out_parasitic_eff`, and **resample 1H → 3H** |
 | [`adopt_full.json`](https://github.com/enerplanet/meme/blob/main/examples/adopt_full.json) | `adopt-net0` | full climate block (ghi/dni/dhi/temp_air/rh/ws10; series and scalars mixed), three physics techs (`pv` → Photovoltaic, `wind` → WindTurbine, `heat_pump` → HeatPump_AirSourced serving a heat demand), battery on two nodes with a **per-node override** (`size_max` 100 vs 40), tech-level native patch, trade at both nodes with a **series** import price + import/**export** emission factors, `reporting.case_name`, typed solver `time_limit`/`mip_gap`, and a CO₂ emission cap (`costs_emissionlimit` objective) |
 | [`shared_full.json`](https://github.com/enerplanet/meme/blob/main/examples/shared_full.json) | **`all`** | The maximal **intersection**: one config valid for all three frameworks *simultaneously* — physics PV + wind carrying both a climate block (AdOpT computes output itself) and precomputed CF profiles (PyPSA/Calliope), a two-node battery with a per-node override, scalar-priced trade at both nodes (+ import co2 factor), an emission cap, a battery-capacity **sweep**, a global **`discount_rate`** and typed solver `time_limit` (both honored by all three), and a per-target `native` block on the same tech (each framework picks only its own). Submitted once with `?target=all` → **6 solves** (3 frameworks × 2 sweep points) in one job, one zip |
@@ -326,3 +327,51 @@ jq '.experiment = {"mode":"plan","solver":{"name":"cbc"}}' examples/pypsa_power_
 #   (emitted as transport links), electrical on nodes [hv mv1 mv2 mv3]. Pin a dispatch in an
 #   optimization with operation.equals_pu instead"]}
 ```
+
+## Planning on the electrical network
+
+`examples/pypsa_planning.json` is the PyPSA planning payload that uses what
+the power-flow payloads describe: the same `electrical` fields, now inside
+the optimization (see [ADR-0010](../decisions/0010-electrical-network-inside-optimization.md)
+and [ADR-0011](../decisions/0011-pypsa-optimization-completeness.md)).
+
+```bash
+ID=$(curl -s -X POST 'localhost:8080/simulate?target=pypsa' -d @examples/pypsa_planning.json | jq -r .id)
+until curl -s "localhost:8080/jobs/$ID/status" | jq -e '.state | test("succeeded|failed")' >/dev/null; do sleep 1; done
+curl -s -o planning.zip "localhost:8080/jobs/$ID"
+unzip -p planning.zip files/run_0/output/results/capacities.csv   # nominal and optimal per component: Line ab, Generator wind (10 MW modules), old (retired part), Store battery, Links battery_charge/discharge
+unzip -p planning.zip files/run_0/output/results/lines-p0.csv     # flows under Kirchhoff's law
+unzip -p planning.zip files/run_0/output/results/summary.json     # objective, status
+```
+
+- `experiment.network.model: linear_power_flow` turns every arc with
+  `electrical` into a Line or a Transformer the optimizer solves under the
+  voltage law; `capacity.expandable` on such an arc expands the line (the
+  impedance stays fixed), `max_loading` caps its loading, and `lifetime`,
+  `interest_rate` and `costs.monetary.investment_per_capacity` price it.
+  `network.security.outages: ["ab"]` would make the dispatch survive that
+  outage (mode `plan`, no portable constraints).
+- `capacity.per_unit` on an expandable component builds integer modules;
+  `decommission.mode: continuous` lets existing capacity retire down to what
+  the horizon uses, at its fixed O&M; `allow_unmet_demand` adds a slack
+  generator per load bus priced at `penalty_price`.
+- A storage with `storage.energy_capacity` is a Store with charger and
+  discharger; `max_charge_rate` and `max_discharge_rate` bound their power
+  against the energy built, `depth_of_discharge` is the minimum state of
+  charge, `investment_per_energy_capacity` prices the energy.
+- The committable unit's `ramp_start_up`, `ramp_shut_down`, `standby_cost`
+  and `initial_uptime` are PyPSA's unit-commitment details; a
+  `variable_om_quadratic` would be a quadratic cost (not together with
+  integer variables on the free solvers).
+- `model.periods` with years turn the plan into investment periods (see
+  the `pypsa_multi_period` scenario): snapshots become (period, timestep),
+  an expandable technology is built per period, `build_year` and `lifetime`
+  retire what ages out.
+
+This is a PyPSA payload. Sent to Calliope or AdOpT-NET0 it is rejected on
+the network model alone, like an unsupported mode, before anything else is
+looked at; without the `network` block the committable unit's start-up cost
+and minimum up-time would still have no mapping there. The shared examples
+above show what every target solves; fields a target has no slot for
+(`soc_profile`, the unit-commitment extras, a quadratic cost, investment
+periods) are kept and named in a warning rather than rejected.

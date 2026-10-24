@@ -28,6 +28,7 @@ func TestE2EExamplesSolve(t *testing.T) {
 		"pypsa_power_flow_meshed.json":   "pypsa",
 		"pypsa_power_flow_options.json":  "pypsa",
 		"pypsa_power_flow_reactive.json": "pypsa",
+		"pypsa_planning.json":            "pypsa",
 		"calliope_full.json":             "calliope",
 		"adopt_full.json":                "adopt-net0",
 		"shared_full.json":               "all",
@@ -67,6 +68,7 @@ func TestExamplePayloadsValidate(t *testing.T) {
 		"pypsa_power_flow_meshed.json":   {model.TargetPyPSA},
 		"pypsa_power_flow_options.json":  {model.TargetPyPSA},
 		"pypsa_power_flow_reactive.json": {model.TargetPyPSA},
+		"pypsa_planning.json":            {model.TargetPyPSA},
 		"calliope_full.json":             {model.TargetCalliope},
 		"adopt_full.json":                {model.TargetAdOpt},
 	}

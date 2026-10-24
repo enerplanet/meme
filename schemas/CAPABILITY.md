@@ -248,7 +248,7 @@ storage (`Storage_Battery`) map canonically. Any other non-demand tech is
 | Property | P | C | A | Notes |
 |---|:-:|:-:|:-:|---|
 | `metadata.*` | · | · | · | informational; `name` is required |
-| `time.start/end/resolution` | ✓ snapshots | ✓ time index | ✓ Topology dates | required + ISO-parseable; PyPSA snapshot count follows the longest series |
+| `time.start/end/resolution` | ✓ snapshots | ✓ time index | ✓ Topology dates | required + ISO-parseable; the snapshot/time index spans the longest inline series, else the range `start`..`end` at `resolution`, on every target |
 | `time.subset` | ✗ dropped | ✓ `init.subset.timesteps` | ✗ dropped | P/A: use start/end instead |
 | `time.timesteps` (explicit labels) | ✓ snapshot labels | ✓ data-table index | ✗ rejected (needs a regular date_range) | |
 | `time.weights` | ✓ `snapshot_weightings` (scalar or series) | ✓ `timestep_weights` (scalar; series ✗) | ✗ rejected | |

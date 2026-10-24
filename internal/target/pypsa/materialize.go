@@ -91,9 +91,12 @@ func MaterializeTimeSeries(m *model.Model, dir string) error {
 		}
 	}
 
-	if len(files) == 0 && m.Time.Weights == nil {
-		return nil
-	}
+	// The snapshot index spans the longest series, else the horizon
+	// model.time describes (emit.SnapshotCount, the same calendar Calliope's
+	// data tables use). A scalar-only model used to get no snapshots.csv at
+	// all, leaving PyPSA on its single default snapshot while the other
+	// targets solved the whole time range — the same payload, a different
+	// problem.
 	n := 0
 	for _, cols := range files {
 		for _, ref := range cols {
@@ -103,10 +106,6 @@ func MaterializeTimeSeries(m *model.Model, dir string) error {
 		}
 	}
 	if n == 0 {
-		if m.Time.Weights == nil {
-			return nil
-		}
-		// Weights alone still need snapshots.csv; size it from the horizon.
 		n = emit.SnapshotCount(m)
 	}
 	labels := emit.SnapshotLabels(m.Time, n)

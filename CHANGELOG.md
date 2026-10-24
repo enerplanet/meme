@@ -7,6 +7,8 @@ Go modules require (`v0.1.0-alpha`).
 
 ## [Unreleased]
 
+## [0.2.0-alpha] - 2026-10-25
+
 ### Added
 
 - Power flow as a PyPSA run mode ([ADR-0008]): `experiment.mode: power_flow`
@@ -198,7 +200,8 @@ still change between releases.
   edge cases, resolution parsing and YAML floats in the emitters; a node
   with no technologies emitted as `techs: {}`.
 
-[Unreleased]: https://github.com/enerplanet/meme/compare/v0.1.0-alpha...HEAD
+[Unreleased]: https://github.com/enerplanet/meme/compare/v0.2.0-alpha...HEAD
+[0.2.0-alpha]: https://github.com/enerplanet/meme/compare/v0.1.0-alpha...v0.2.0-alpha
 [ADR-0008]: https://enerplanet.github.io/meme/decisions/0008-power-flow-as-a-pypsa-run-mode/
 [ADR-0009]: https://enerplanet.github.io/meme/decisions/0009-reactive-power-voltage-control-and-fixed-transfers/
 [ADR-0010]: https://enerplanet.github.io/meme/decisions/0010-electrical-network-inside-optimization/

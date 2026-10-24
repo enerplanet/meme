@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+
+{#- The MEME favicon kit: the theme's `favicon` setting takes one SVG; browsers
+    and home screens that want raster icons get the PNG sizes from here. -#}
+{% block extrahead %}
+  <link rel="icon" type="image/png" sizes="32x32" href="{{ 'assets/favicon/meme-favicon-32.png' | url }}">
+  <link rel="icon" type="image/png" sizes="16x16" href="{{ 'assets/favicon/meme-favicon-16.png' | url }}">
+  <link rel="apple-touch-icon" sizes="180x180" href="{{ 'assets/favicon/meme-favicon-180.png' | url }}">
+  <link rel="icon" type="image/png" sizes="512x512" href="{{ 'assets/favicon/meme-favicon-512.png' | url }}">
+{% endblock %}

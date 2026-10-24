@@ -1,5 +1,10 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" fill="none">
-  <rect width="64" height="64" rx="15" fill="#16191c"></rect>
-  <rect x="26" y="13" width="26" height="26" rx="7" fill="none" stroke="#6b7077" stroke-width="3.2"></rect>
-  <rect x="14" y="27" width="26" height="26" rx="7" fill="none" stroke="#1C9BD6" stroke-width="4.6"></rect>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="64" height="64">
+  <defs><linearGradient id="fg" x1="0" y1="0" x2="1" y2="1">
+    <stop offset="0" stop-color="#12B3A6"></stop><stop offset="1" stop-color="#2B7FD4"></stop>
+  </linearGradient></defs>
+  <rect x="5" y="5" width="90" height="90" rx="23" fill="url(#fg)"></rect>
+  <g stroke="#ffffff" stroke-width="5" stroke-linecap="round" opacity="0.92">
+    <line x1="22" y1="35" x2="35" y2="35"></line><line x1="22" y1="50" x2="35" y2="50"></line><line x1="22" y1="65" x2="35" y2="65"></line>
+  </g>
+  <polygon points="48,33 48,67 76,50" fill="#ffffff"></polygon>
 </svg>

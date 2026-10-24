@@ -12,11 +12,17 @@ repo_name: enerplanet/meme
 repo_url: https://github.com/enerplanet/meme
 edit_uri: edit/main/docs/
 
+# The favicon kit's PNG sizes are wired in through overrides/main.html; the
+# overrides folder is theme input, not a page.
+exclude_docs: |
+  overrides/
+
 # Theme configuration
 theme:
   name: material
-  favicon: assets/logos/favicon.svg # the MEME mark on its plate
-  logo: assets/logos/meme-mark.svg # the mark alone; the header is the ink plate in both schemes
+  custom_dir: docs/overrides
+  favicon: assets/logos/favicon.svg # the MEME icon (gradient tile)
+  logo: assets/logos/meme-icon.svg # the same icon in the header; it reads on the ink plate in both schemes
   features:
     - announce.dismiss
     - content.action.edit
@@ -50,7 +56,7 @@ theme:
         name: Switch to light mode
     - media: "(prefers-color-scheme: light)"
       scheme: default
-      primary: custom # MEME ink + signature blue, see assets/stylesheets/extra.css
+      primary: custom # MEME ink, teal and blue, see assets/stylesheets/extra.css
       accent: custom
       toggle:
         icon: material/toggle-switch

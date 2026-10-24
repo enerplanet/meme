@@ -1,16 +1,20 @@
-/* MEME brand palette, taken from the project's own assets:
-   favicon plate #16191c, mark grey #6b7077, signature blue #1C9BD6, and the
-   banner's blue-to-teal gradient (#1090b0 .. #30d0c0) on deep navy #001020.
-   Material's "custom" primary/accent read these variables. */
+/* MEME brand palette, taken from the project's logo kit (docs/assets/logos):
+   the icon's gradient runs teal #12B3A6 to blue #2B7FD4, the wordmark sets
+   "ME" in navy ink #0C1B24 (light) or white (dark) with the M in teal and the
+   E in blue, lifted to #3FD0C8 / #6AA8F0 on dark backgrounds; the caption
+   grey is #5B7080 (light) / #8CA1B0 (dark); the banner's background is the
+   deep navy #001020. Material's "custom" primary/accent read these variables. */
 
 :root {
-  --meme-ink: #16191c;
-  --meme-ink-light: #2a2f35;
-  --meme-ink-dark: #0b0d10;
-  --meme-blue: #1c9bd6;
-  --meme-blue-dark: #1584b8;
-  --meme-teal: #10b0a0;
-  --meme-grey: #6b7077;
+  --meme-ink: #0c1b24;
+  --meme-ink-light: #16303f;
+  --meme-ink-dark: #06111a;
+  --meme-teal: #12b3a6;
+  --meme-teal-bright: #3fd0c8;
+  --meme-blue: #2b7fd4;
+  --meme-blue-bright: #6aa8f0;
+  --meme-grey: #5b7080;
+  --meme-grey-light: #8ca1b0;
 }
 
 [data-md-color-primary="custom"] {
@@ -23,42 +27,45 @@
 
 [data-md-color-accent="custom"] {
   --md-accent-fg-color: var(--meme-blue);
-  --md-accent-fg-color--transparent: #1c9bd61a;
+  --md-accent-fg-color--transparent: #2b7fd41a;
   --md-accent-bg-color: #ffffff;
   --md-accent-bg-color--light: #ffffffb3;
 }
 
-/* Links and the active navigation item carry the signature blue in both schemes. */
+/* Links carry the brand blue; the dark scheme uses the lifted tint the
+   wordmark uses on dark backgrounds. */
 [data-md-color-scheme="default"] {
-  --md-typeset-a-color: var(--meme-blue-dark);
+  --md-typeset-a-color: var(--meme-blue);
 }
 
 [data-md-color-scheme="slate"] {
-  --md-typeset-a-color: var(--meme-blue);
+  --md-typeset-a-color: var(--meme-blue-bright);
+  --md-accent-fg-color: var(--meme-blue-bright);
+  --md-accent-fg-color--transparent: #6aa8f01a;
   /* The dark scheme leans on the banner's navy instead of Material's grey-blue. */
-  --md-default-bg-color: #0f1a24;
-  --md-default-bg-color--light: #0f1a24b3;
-  --md-default-bg-color--lighter: #0f1a2466;
-  --md-default-bg-color--lightest: #0f1a241f;
-  --md-code-bg-color: #16222e;
-  --md-footer-bg-color: #0b0d10;
-  --md-footer-bg-color--dark: #06080a;
+  --md-default-bg-color: #0c1b24;
+  --md-default-bg-color--light: #0c1b24b3;
+  --md-default-bg-color--lighter: #0c1b2466;
+  --md-default-bg-color--lightest: #0c1b241f;
+  --md-code-bg-color: #13262f;
+  --md-footer-bg-color: #06111a;
+  --md-footer-bg-color--dark: #030a0f;
 }
 
-/* Header and tabs are the ink plate in both schemes; the blue mark reads on it. */
+/* Header and tabs are the ink plate in both schemes; the gradient icon reads on it. */
 .md-header, .md-tabs {
   background-color: var(--meme-ink);
 }
 
-/* A thin gradient rule under the header echoes the banner. */
+/* A thin rule under the header repeats the icon's teal-to-blue gradient. */
 .md-header::after {
   content: "";
   display: block;
   height: 2px;
-  background: linear-gradient(90deg, var(--meme-blue), var(--meme-teal));
+  background: linear-gradient(90deg, var(--meme-teal), var(--meme-blue));
 }
 
 /* Table header rows in the capability matrices. */
 .md-typeset table:not([class]) th {
-  background-color: #1c9bd61a;
+  background-color: #2b7fd41a;
 }

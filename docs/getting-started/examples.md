@@ -9,6 +9,7 @@ been executed against the real API with real solvers and run to `succeeded`
 | File | Target | Exercises |
 |---|---|---|
 | [`pypsa_full.json`](https://github.com/enerplanet/meme/blob/main/examples/pypsa_full.json) | `pypsa` | 3 carriers, 2 nodes (coords + native bus columns), physics PV with precomputed CF + per-node overrides, committable CCGT (full UC set + ramps + min/max_pu), time-varying marginal cost, multi-output CHP (rigid ratios), battery (cyclic, self-discharge, initial SOC), hydro (inflow series + spill cost, non-cyclic), bidirectional line with native `x`/`r`, trade with **series** import price + emission factor + export revenue, CO₂ cap (GlobalConstraint), one unscoped + two scoped/multi-term constraints (run.py sidecar), a **series import limit** (fixed-p_nom generator + time-varying `p_max_pu`), per-distance line losses folded into the link efficiency, snapshot **weights**, `build_year`/`annual_output_max`/`systemwide_max`, typed solver `time_limit`/`threads`, tech/carrier/system native blocks, and a 2-point **sweep** → 2 independent runs |
+| [`pypsa_power_flow.json`](https://github.com/enerplanet/meme/blob/main/examples/pypsa_power_flow.json) | `pypsa` | **Mode `power_flow`**: no optimization — an HV slack feeding two 20 kV nodes through a transformer and a line (`node.electrical.v_nom`, `transmission.electrical`), PV and a battery following their `dispatch` series, two loads; Newton-Raphson seeded by a linear solve, results under `output/power_flow/` (per-bus voltages, line and transformer loading, `summary.json`). The second call of a plan-then-check workflow; see below |
 | [`calliope_full.json`](https://github.com/enerplanet/meme/blob/main/examples/calliope_full.json) | `calliope` | availability data table from a CF series, first-class `source` + `area` (per-area resource on a bounded area), **MILP committable** (integer 50-MW units + purchase cost + min stable load), multi-output CHP via **ratio-pinning math**, **piecewise** part-load conversion (fixed 300 MW), battery with energy-capacity costs (`cost_storage_cap`) + `cost_om_annual` + **depth of discharge**, transmission (bidirectional, distance, **per-distance investment cost**), `reporting.save_logs`, typed solver `time_limit`, trade (import price + co2 factor, paid export), CO₂ cap + scoped constraint (custom math), native `flow_out_parasitic_eff`, and **resample 1H → 3H** |
 | [`adopt_full.json`](https://github.com/enerplanet/meme/blob/main/examples/adopt_full.json) | `adopt-net0` | full climate block (ghi/dni/dhi/temp_air/rh/ws10; series and scalars mixed), three physics techs (`pv` → Photovoltaic, `wind` → WindTurbine, `heat_pump` → HeatPump_AirSourced serving a heat demand), battery on two nodes with a **per-node override** (`size_max` 100 vs 40), tech-level native patch, trade at both nodes with a **series** import price + import/**export** emission factors, `reporting.case_name`, typed solver `time_limit`/`mip_gap`, and a CO₂ emission cap (`costs_emissionlimit` objective) |
 | [`shared_full.json`](https://github.com/enerplanet/meme/blob/main/examples/shared_full.json) | **`all`** | The maximal **intersection**: one config valid for all three frameworks *simultaneously* — physics PV + wind carrying both a climate block (AdOpT computes output itself) and precomputed CF profiles (PyPSA/Calliope), a two-node battery with a per-node override, scalar-priced trade at both nodes (+ import co2 factor), an emission cap, a battery-capacity **sweep**, a global **`discount_rate`** and typed solver `time_limit` (both honored by all three), and a per-target `native` block on the same tech (each framework picks only its own). Submitted once with `?target=all` → **6 solves** (3 frameworks × 2 sweep points) in one job, one zip |
@@ -160,3 +161,39 @@ curl -s -X POST 'localhost:8080/validate?target=adopt-net0' -d @examples/pypsa_f
 # {"valid":false, "error":"multi-port conversion (flows) is not supported by target \"adopt-net0\""}
 # (drop the CHP and the next gate fires: tech "ccgt" has no adopt_net0 database mapping …)
 ```
+
+## Power flow: the second call after a plan
+
+A power flow is not an optimization, and MEME does not chain jobs: the API
+consumer plans first (on Calliope, or on PyPSA), reads the dispatch out of
+that result, and submits a second payload in mode `power_flow` to `pypsa`
+(see [ADR-0008](../decisions/0008-power-flow-as-a-pypsa-run-mode.md)). The
+second payload carries the electrical network (`electrical.v_nom` on every
+node of it, `electrical` on every arc of it), a `dispatch` series on every
+supply, conversion and storage technology except the one named as `slack`,
+and fixed capacities throughout.
+
+```bash
+# 1. plan as usual (any target) and read the dispatch out of the bundle
+ID=$(curl -s -X POST 'localhost:8080/simulate?target=calliope' -d @plan.json | jq -r .id)
+curl -s -o plan.zip "localhost:8080/jobs/$ID"      # results/csv/flow_out.csv -> per-tech dispatch
+
+# 2. power flow of that dispatch on pypsa
+ID=$(curl -s -X POST 'localhost:8080/simulate?target=pypsa' \
+     -d @examples/pypsa_power_flow.json | jq -r .id)
+curl -s "localhost:8080/jobs/$ID/status" | jq '{state, log: (.log | split("\n") | map(select(test("power flow"))))}'
+# -> "power flow converged 4/4 snapshots", "status ok power flow converged"
+curl -s -o pf.zip "localhost:8080/jobs/$ID"
+unzip -p pf.zip files/run_0/output/power_flow/summary.json
+#   {"method":"newton_raphson","slack":"grid","slack_bus":"hv::electricity","snapshots":4,
+#    "converged_snapshots":4,"min_v_mag_pu":0.975,"max_v_mag_pu":1.003,
+#    "max_line_loading":0.306,"max_transformer_loading":0.428,"failure":null}
+```
+
+A snapshot that does not converge fails the run (exit code 3, job `failed`)
+with `convergence.csv` and the tables still written for diagnosis; the
+`linear` method (`experiment.power_flow.method`) always solves and keeps the
+voltages nominal. Calliope and AdOpT reject the mode outright; a `dispatch`
+in any optimization mode is rejected on every target with a pointer to
+`operation.equals_pu`, so a planning payload and a power-flow payload cannot
+be confused.

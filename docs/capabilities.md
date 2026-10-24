@@ -30,6 +30,7 @@ support. Support is a sparse map — absence means unsupported.
 | `indexed_params` | multi-valued `Value` | | ✓ | | | yes (multi-valued only) |
 | `piecewise_performance` | `performance.type: piecewise` (Calliope: fixed-capacity conversion) | | ✓ | | | yes |
 | `physics_performance` | `performance.type: physics` | | | | ✓ | yes (needs precomputed off AdOpT) |
+| `power_flow` | `experiment.mode: power_flow` + `node.electrical`, `transmission.electrical`, `technology.dispatch` | ✓ | | | | yes (mode gate; `dispatch` rejected outside the mode) |
 | `custom_math` | `experiment.custom_math` → `additional_math.yaml` | | ✓ | | | rendered (linear IR + emission limits) |
 | `objective:min_emissions` | `experiment.objective` | | | ✓ | ✓ | yes |
 
@@ -41,9 +42,12 @@ to a component attribute. Calliope committable is the MILP subset (integer
 units + min stable load) — start/stop costs and min up/down times are rejected
 with a pointer to `native.calliope`. AdOpT accepts only techs that map onto its
 technology database (pv/wind/heat_pump physics, storage); anything else is
-rejected with a pointer to node-level `native.adopt-net0`. `power_flow`
-(Lines/Transformers, KVL) is deliberately NOT claimed for PyPSA: the schema
-carries no electrical parameters, so all transmission emits as transport Links.
+rejected with a pointer to node-level `native.adopt-net0`. `power_flow` is
+claimed by PyPSA alone and is both a mode and a field family: in mode
+`power_flow` the electrical fields become Lines, Transformers and `v_nom`
+buses solved by `lpf()`/`pf()`; in every optimization mode a `dispatch` is
+rejected (the solver decides dispatch) and electrical parameters are named
+as unused while the arcs stay transport Links ([ADR-0008](decisions/0008-power-flow-as-a-pypsa-run-mode.md)).
 `physics_performance` off AdOpT requires a `performance.precomputed` series
 (else 422). `custom_math` is a Calliope 0.7 render toggle (`experiment.custom_math`,
 default on) for the portable `constraints`/`emission_limits` IR; ratio-pinning

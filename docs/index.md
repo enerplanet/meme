@@ -65,14 +65,19 @@ AdOpT `input_data/` tree — and solves to the same optimum on each.
   target with its own emitter and capability profile; `calliope-0.7` is the
   version-explicit alias of the default. `GET /capabilities` tells you which
   release each target drives.
+- **Power flow as a run mode.** `experiment.mode: power_flow` makes PyPSA
+  solve the AC network described in the canonical model (`electrical`
+  fields, a fixed `dispatch`) instead of optimizing: bus voltages, branch
+  loading and convergence per snapshot. The consumer plans first, on any
+  target, and calls again; MEME never chains jobs.
 - **Capability-gated validation.** Every feature claim is backed by a
   runnable scenario; a payload that asks for something the selected target
   cannot honor is rejected with a pointed message, never silently trimmed.
 - **Async job API.** `POST /simulate` answers `202` with an id; poll
   `GET /jobs/{id}/status` for state and the live solver log, download the
   bundle from `GET /jobs/{id}`. Parameter sweeps expand into independent runs.
-- **Native passthrough.** Anything a single framework owns (power-flow
-  electrics, custom math, solver heuristics) rides in `native.<target>` and
+- **Native passthrough.** Anything a single framework owns (framework-only
+  attributes, custom math, solver heuristics) rides in `native.<target>` and
   lands verbatim in that framework's files.
 - **Verified translations.** Golden files freeze every emitted model byte for
   byte, a validation matrix freezes every accept/reject verdict, and a

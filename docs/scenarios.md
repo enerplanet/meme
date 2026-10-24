@@ -28,6 +28,7 @@ directly loadable by the pinned framework (see [Targets and versions](targets.md
 | `pypsa_stochastic` | two-stage stochastic (`set_scenarios` + per-scenario overrides) | `_scenarios.json` (`fuel_high`, translated `marginal_cost`) |
 | `pypsa_constraints_sidecar` | tech-scoped constraint applied by run.py as a linopy constraint (binding, objective-checked in E2E) | `force_pv` in `_constraints.json` |
 | `pypsa_trade_price_series` | time-varying import price (objective-checked in E2E) | `market_import`, `generators-marginal_cost.csv` |
+| `pypsa_power_flow` | mode `power_flow`: an HV slack feeding two MV nodes through a transformer and a line, PV with a dispatch series, two loads (converges 4/4 in E2E; the linear method and a diverging load are E2E-checked too) | `v_nom`, `lines.csv`, `transformers.csv`, `control: Slack`, `generators-p_set.csv` |
 
 ## Calliope 0.7 (`calliope`)
 

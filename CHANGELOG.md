@@ -7,6 +7,35 @@ Go modules require (`v0.1.0-alpha`).
 
 ## [Unreleased]
 
+### Added
+
+- Power flow as a PyPSA run mode ([ADR-0008]): `experiment.mode: power_flow`
+  solves the AC network for a fixed dispatch with `lpf()` and `pf()` instead
+  of optimizing. The canonical model describes the network itself —
+  `node.electrical.v_nom`, `transmission.electrical` (`kind` line or
+  transformer, `r`, `x`, `s_nom`, `num_parallel`, `tap_ratio`) and
+  `technology.dispatch` (overridable per node) — and `experiment.power_flow`
+  names the `slack`, the `method` (`newton_raphson` or `linear`),
+  `distribute_slack` and the `tolerance`. The run writes `output/power_flow/`:
+  `convergence.csv`, per-bus voltage magnitude, angle and power, per-line and
+  per-transformer flows and loading, generator dispatch and a `summary.json`;
+  a snapshot that does not converge fails the run. The API consumer chains a
+  plan and a power flow as two calls; MEME holds no state between them.
+- Gates around the new inputs: the mode routes through the `power_flow`
+  capability (PyPSA only); a `dispatch` in any optimization mode is rejected
+  on every target with a pointer to `operation.equals_pu`; electrical
+  parameters outside a power flow are named as unused while the arcs stay
+  transport links; in mode `power_flow` expandable capacities, trade,
+  constraints, emission limits and scenarios are rejected.
+- Scenario `pypsa_power_flow`, example payload `examples/pypsa_power_flow.json`
+  and E2E checks for convergence, the linear method and a diverging load.
+
+### Changed
+
+- The PyPSA driver parses its run configuration as JSON (`json.loads`)
+  instead of pasting the JSON in as a Python literal, which broke on the
+  first boolean setting.
+
 ## [0.1.0-alpha] - 2026-10-24
 
 The first pre-release. It carries the service as scaffolded in July 2026 —
@@ -96,6 +125,7 @@ still change between releases.
   with no technologies emitted as `techs: {}`.
 
 [Unreleased]: https://github.com/enerplanet/meme/compare/v0.1.0-alpha...HEAD
+[ADR-0008]: https://enerplanet.github.io/meme/decisions/0008-power-flow-as-a-pypsa-run-mode/
 [0.1.0-alpha]: https://github.com/enerplanet/meme/releases/tag/v0.1.0-alpha
 [#3]: https://github.com/enerplanet/meme/issues/3
 [#4]: https://github.com/enerplanet/meme/issues/4

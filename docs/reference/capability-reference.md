@@ -38,6 +38,7 @@ One `Job` = `model` (the physical system) + `experiment` (how to run it).
     "carriers":  { "<id>": { "unit": "MWh", "co2_intensity": 0.2, "color": "…", "native": { … } } },
     "nodes":     { "<id>": { "coords": {"lat":48,"lon":11,"alt":0}, "available_area": 1e4,
                              "climate": { "ghi": "ts-id", "temp_air": 8.5, … }, "native": { … } } },
+                             "electrical": { "v_nom": 20 },   // kV; the node's AC bus for a power flow (P, mode power_flow)
     "timeseries":{ "<id>": { "source": "inline", "values": [ … ], "unit": "MW" }   // or
                             { "source": "file", "path": "…", "column": "…" } },  // file: schema-valid, but no target reads files yet -> 422
     "technologies": {
@@ -71,6 +72,7 @@ One `Job` = `model` (the physical system) + `experiment` (how to run it).
                        "spill_cost": 5, "initial_soc": 0.5, "cyclic": true,
                        "no_simultaneous_charge_discharge": true },
         "demand_profile": 100 | "ts-id", "demand_curtailable": false,
+        "dispatch": 3 | "ts-id",                 // fixed MW per timestep a power flow injects (P, mode power_flow only)
         "area":   { "max": 5000, "per_capacity": 8 },
         "source": { "max": 0.25 | "ts-id", "unit": "per_area" | "per_cap" | "absolute", "cap": 900 },
         "costs": { "monetary": {                  // only the "monetary" class is priced
@@ -86,6 +88,7 @@ One `Job` = `model` (the physical system) + `experiment` (how to run it).
       }
     },
     "transmission": { "<id>": { "carrier": "…", "from": "n1", "to": "n2", "bidirectional": true,
+                                 "electrical": { "kind": "line" | "transformer", "r": 1.2, "x": 3.5, "s_nom": 20, "num_parallel": 1, "tap_ratio": 1 },  // AC branch for a power flow
                                 "capacity": {…}, "efficiency": 0.97, "distance": 50,
                                 "loss_per_distance": 1e-4, "min_flow": 0.05, "emission_factor": 0.001,
                                 "energy_consumption": { "carrier": "…", "per_flow": 0.01, "per_flow_distance": 1e-4 },
@@ -103,7 +106,7 @@ One `Job` = `model` (the physical system) + `experiment` (how to run it).
     "native": { "<target>": { … } }               // system-wide target-specific config
   },
   "experiment": {
-    "mode": "plan" | "operate" | "alternatives" | "pareto" | "monte_carlo" | "stochastic",
+    "mode": "plan" | "operate" | "alternatives" | "pareto" | "monte_carlo" | "stochastic" | "power_flow",
     "objective": "min_cost" | "min_emissions",
     "emission_accounting": "net" | "positive_only",           // A: emissions_net vs emissions_pos
     "foresight": "perfect" | "myopic",
@@ -164,12 +167,14 @@ resolved; supply real literals or full data-table definitions.
 | `carriers.<id>.native` | extra columns on the `carriers.csv` row |
 | `nodes.<id>.native` | extra columns on every `buses.csv` row of that node |
 | `technologies.<id>.native` | extra columns on the component's CSV row (`generators`/`loads`/`links`/`storage_units`) |
-| `transmission.<id>.native` | extra columns on the link row (e.g. `{"x":0.1,"r":0.01}`) |
+| `transmission.<id>.native` | extra columns on the link row, or on the line/transformer row in mode power_flow (e.g. `{"length": 12}`) |
 | `model.native` | `_native.pypsa.json` sidecar (not consumed by run.py — documentation payload) |
 
-Typical native-only uses: electrical parameters (`x`/`r`, Lines/Transformers),
-`marginal_cost_quadratic`, `ramp_limit_start_up`, `stand_by_cost`, Stores with
-independent charger/discharger links.
+Typical native-only uses: `marginal_cost_quadratic`, `ramp_limit_start_up`,
+`stand_by_cost`, Stores with independent charger/discharger links, reactive
+set-points (`q_set`) and `PV` voltage control on the power-flow generators.
+Electrical parameters themselves are first-class since mode power_flow
+(`transmission.electrical`, `node.electrical`).
 
 ### Calliope (`native.calliope`)
 
@@ -225,6 +230,7 @@ storage (`Storage_Battery`) map canonically. Any other non-demand tech is
 | `mode: pareto` | ✗ | ✗ | ✓ (`experiment.pareto.points`) | |
 | `mode: monte_carlo` | ✗ | ✗ | ✓ (`experiment.monte_carlo.{samples,standard_deviation,on}`) | |
 | `mode: stochastic` | ✓ two-stage `set_scenarios` | ✗ | ✗ | overrides must be translatable and numeric (validated) |
+| `mode: power_flow` | ✓ `lpf()` then `pf()` (or `lpf()` alone) over the electrical fields; `experiment.power_flow.{method,slack,distribute_slack,tolerance}`; results under `output/power_flow/` | ✗ | ✗ | no optimization: fixed capacities, `dispatch` on every injection but the slack, no trade/constraints/emission limits/scenarios ([ADR-0008](https://enerplanet.github.io/meme/decisions/0008-power-flow-as-a-pypsa-run-mode/)) |
 | `objective: min_cost` | ✓ | ✓ | ✓ | default |
 | `objective: min_emissions` | ✗ | ✗ | ✓ | |
 | `emission_accounting: positive_only` | ✗ | ✗ | ✓ `emissions_pos` | default `net` everywhere |
@@ -269,6 +275,7 @@ storage (`Storage_Battery`) map canonically. Any other non-demand tech is
 | Property | P | C | A | Notes |
 |---|:-:|:-:|:-:|---|
 | `coords` | ✓ bus `x`/`y` | ✓ `latitude`/`longitude` | ✓ `NodeLocations.csv` | |
+| `electrical.v_nom` | ✓ bus `v_nom` under carrier `AC` (mode power_flow; ⚠ unused otherwise) | ⚠ unused | ⚠ unused | required on every bus of the power-flow network |
 | `available_area` | ✗ (area is Calliope-only) | ✓ `available_area` | ✗ | gated with `technology.area` |
 | `climate` (ghi, dni, dhi, temp_air, rh, ws10, hydro_inflow) | — | — | ✓ `ClimateData.csv` (scalar or series) | feeds physics techs |
 | `allowed_techs` | · | · | · | informational (tech placement comes from `technology.node`) |
@@ -316,6 +323,7 @@ storage (`Storage_Battery`) map canonically. Any other non-demand tech is
 | `storage.cyclic` | ✓ `cyclic_state_of_charge` | ✓ `cyclic_storage` (operate: forced false) | — | |
 | `demand_profile` (scalar / series) | ✓ `p_set` / `loads-p_set.csv` | ✓ data table (scalar expanded) | ✓ `Demand` column | |
 | `demand_curtailable` | ✗ | ✓ `sink_use_max` instead of `sink_use_equals` | ✗ | |
+| `dispatch` (scalar / series) | ✓ `p_set` / `<component>-p_set.csv` on generators, storage units and links (mode power_flow) | ✗ | ✗ | a power-flow input: rejected in every optimization mode (pin dispatch with `operation.equals_pu` there); overridable per node |
 | `area.max` | ✗ gated | ✓ `area_use_max` (+node `available_area`) | ✗ gated | |
 | `area.per_capacity` | — | ⚠ not emitted (use native `area_use_per_flow_cap`) | — | |
 | `source.max` (scalar / series) | ✗ gated | ✓ `source_use_max` (+ data table) | ✗ gated | |
@@ -350,6 +358,7 @@ storage (`Storage_Battery`) map canonically. Any other non-demand tech is
 | `transmission.emission_factor` | ✗ (carrier-wide accounting) | ✓ co2 cost class on the link flow | ✗ | |
 | `transmission.energy_consumption` | ✓ multi-port link (`bus2`, negative `efficiency2`; one-way arcs only) | ✗ | ✗ | |
 | `transmission.active: false` | ✓ `active` column | ✓ `active: false` | ✗ | |
+| `transmission.electrical` (`kind`, `r`, `x`, `s_nom`, `num_parallel`, `tap_ratio`) | ✓ `lines.csv` / `transformers.csv` row with the impedance and rating (mode power_flow; ⚠ unused otherwise, arc stays a Link) | ⚠ unused (transmission tech) | ✗ | electrical arcs are bidirectional; a line joins equal `v_nom`; `s_nom` defaults to `capacity.existing` |
 | `transmission.costs.investment_per_capacity_distance` | ⚠ warned & dropped | ✓ `cost_flow_cap_per_distance` | ✗ | |
 | `transmission.costs` (other fields) | ⚠ warned & dropped | ⚠ warned & dropped | ✗ | no lifetime/interest on transmission to annualize |
 | `trade.import.limit` (scalar / series) | ✓ `p_nom_max` / ✓ fixed `p_nom=1` + `p_max_pu` series | ✓ `flow_cap_max` / ✗ | ✓ / ✓ per-timestep column | |
@@ -367,7 +376,8 @@ storage (`Storage_Battery`) map canonically. Any other non-demand tech is
 | Native inputs on disk | `run_i/input/*.csv` + sidecars | `run_i/input/model.yaml` + data tables + `additional_math.yaml` | `run_i/input/input_data/` tree |
 | Executed driver | `run_i/run.py` | Calliope CLI (command in `results.json`) | `run_i/run.py` |
 | Solved model | `run_i/output/network.nc` (+ `network_baseline.nc` for MGA) | `run_i/output/results.nc` + `output/csv/*` (per-variable CSVs incl. `flow_out`, `storage`, `purchased_units`, costs) | `run_i/input/results/` (HDF5 per solve + `Summary.xlsx` + `solver_log.txt`) |
-| Objective / status in log | `status ok optimal`, `objective <v>` (non-optimal ⇒ non-zero exit ⇒ job `failed`) | `Optimal - objective value <v>`, `Calliope run complete` | Pyomo block (`Termination condition: optimal`, bounds) |
+| Objective / status in log | `status ok optimal`, `objective <v>` (non-optimal ⇒ non-zero exit ⇒ job `failed`); power flow: `power flow converged k/n snapshots`, `status ok power flow converged` (a non-converged snapshot ⇒ exit 3 ⇒ job `failed`) | `Optimal - objective value <v>`, `Calliope run complete` | Pyomo block (`Termination condition: optimal`, bounds) |
+| Power-flow results (mode power_flow) | `run_i/output/power_flow/`: `convergence.csv`, `buses-v_mag_pu/v_ang/p/q.csv`, `lines-p0/p1/q0/q1/loading.csv`, `transformers-…`, `generators-p/q.csv`, `storage_units-p.csv`, `links-p0.csv`, `summary.json` (method, slack bus, converged snapshots, voltage band, peak loadings) | — | — |
 | Job artifacts (all targets) | `GET /jobs/{id}` zip: `metadata.json`, `log.txt`, `results.json` (target-labeled per-run exit/stdout/plan), `config.json` (byte-identical initial config), `files/` (everything above; multi-target jobs nest as `files/<target>/run_i/…`) | — | — |
 | Status endpoint | `GET /jobs/{id}/status`: `state` (queued/running/succeeded/failed), live `log`, per-run results, timings | — | — |
 | Multi-target submit | `?target=pypsa,calliope,adopt-net0` or `target=all` on validate/convert/simulate: per-target verdicts/entrypoints, one job running every framework (422 up front if ANY requested target rejects the payload; see [`examples/shared_full.json`](https://github.com/enerplanet/meme/blob/main/examples/shared_full.json)) | — | — |

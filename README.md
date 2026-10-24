@@ -57,7 +57,11 @@ property, architecture and the decisions behind it.
 | `adopt-net0` | AdOpT-NET0 | 0.1.10 | ✓ |
 
 `GET /capabilities` lists the targets, what `all` runs, the aliases, the
-framework version each target drives, and the feature matrix.
+framework version each target drives, and the feature matrix. One run mode is
+not an optimization: `experiment.mode: power_flow` has PyPSA solve the AC
+network described in the payload (voltage levels, line and transformer
+impedances, a fixed dispatch) and report voltages, loading and convergence,
+the natural second call after a plan on any target.
 
 ## Quickstart
 

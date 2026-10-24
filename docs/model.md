@@ -26,6 +26,7 @@ project an indexed value to a scalar (and error if it can't for a flat target).
     "nodes":     { "<id>": { "coords"?: {"lat":48.8,"lon":12.9,"alt"?:0},
                              "allowed_techs"?: ["…"], "available_area"?: 1e4,
                              "climate"?: {"ghi":"series_id","temp_air":15,…},  // AdOpT weather for physics techs
+                             "electrical"?: {"v_nom":20},                      // kV; the node's AC bus (PyPSA power flow)
                              "native"?: {…} } },
     "timeseries"?:{ "<id>": { "source": "inline"|"file", "values"?: [ … ], "path"?: "…", "column"?: "…" } },  // file: accepted by the schema, rejected by validation until a target reads files
 
@@ -52,6 +53,7 @@ project an indexed value to a scalar (and error if it can't for a flat target).
                         "discharge_eff"?:0.95, "self_discharge"?:0.001, "inflow"?:Value,
                         "spill_cost"?:0, "initial_soc"?:0.5, "cyclic"?:true },
         "demand_profile"?: Value,                                // role: demand
+        "dispatch"?: Value,                                      // fixed MW per timestep; power_flow input only
         "area"?:   { "max"?:1500, "per_capacity"?:0.01 },        // Calliope-only
         "source"?: { "cap"?:…, "unit"?:"per_area", "max"?:Value },// Calliope-only
         "costs"?:  { "<class>": { "investment_per_capacity"?:6e5, "investment_per_energy_capacity"?:…,
@@ -64,7 +66,10 @@ project an indexed value to a scalar (and error if it can't for a flat target).
 
     "transmission"?: { "<id>": { "carrier":"<id>", "from":"<node>", "to":"<node>",
                                  "bidirectional"?:true, "capacity"?:{…}, "efficiency"?:0.97,
-                                 "distance"?:…, "costs"?:{…}, "native"?:{…} } },
+                                 "distance"?:…, "costs"?:{…},
+                                 "electrical"?: { "kind":"line"|"transformer", "r":1.2, "x":3.5,   // AC branch (PyPSA power flow)
+                                                  "s_nom"?:20, "num_parallel"?:1, "tap_ratio"?:1 },
+                                 "native"?:{…} } },
     "trade"?: { "<id>": { "node":"<node>", "carrier":"<id>",
                           "import"?:{ "limit"?:500, "price"?:Value, "emission_factor"?:0.35 },
                           "export"?:{ "limit"?:500, "price"?:Value } } },
@@ -78,7 +83,9 @@ project an indexed value to a scalar (and error if it can't for a flat target).
   },
 
   "experiment": {
-    "mode"?: "plan"|"operate"|"alternatives"|"pareto"|"monte_carlo"|"stochastic",
+    "mode"?: "plan"|"operate"|"alternatives"|"pareto"|"monte_carlo"|"stochastic"|"power_flow",
+    "power_flow"?: { "method"?:"newton_raphson"|"linear", "slack":"<tech>"|"<tech>@<node>",
+                     "distribute_slack"?:false, "tolerance"?:1e-6 },   // mode power_flow (PyPSA)
     "objective"?: "min_cost"|"min_emissions",
     "foresight"?: "perfect"|"myopic",
     "time_aggregation"?: { "method":"typical_days"|"resample", "periods"?:12, "resolution"?:"3H" },
@@ -155,14 +162,16 @@ combined log.
 
 | Target | Entrypoint | Contents |
 |---|---|---|
-| PyPSA | CSV folder | `network.csv` (name + pinned `pypsa_version`), `buses.csv`, `carriers.csv`, `generators.csv`, `loads.csv`, `links.csv`, `storage_units.csv`, `global_constraints.csv` (unscoped constraints only), materialized time-varying CSVs (`loads-p_set`, `generators-p_max_pu`, `generators-marginal_cost`, `links-marginal_cost`, `storage_units-inflow`), `_constraints.json` (scoped constraints, applied by run.py), `_scenarios.json` (stochastic mode), `_performance.json`, `_native.pypsa.json` |
+| PyPSA | CSV folder | `network.csv` (name + pinned `pypsa_version`), `buses.csv`, `carriers.csv`, `generators.csv`, `loads.csv`, `links.csv`, `storage_units.csv`, `global_constraints.csv` (unscoped constraints only), materialized time-varying CSVs (`loads-p_set`, `generators-p_max_pu`, `generators-marginal_cost`, `links-marginal_cost`, `storage_units-inflow`), `_constraints.json` (scoped constraints, applied by run.py), `_scenarios.json` (stochastic mode), `_performance.json`, `_native.pypsa.json`; mode power_flow: `lines.csv`, `transformers.csv`, `v_nom` + carrier `AC` on the electrical buses, `control`/`p_set` on generators and `<component>-p_set.csv` dispatch series |
 | Calliope 0.7 (`calliope`) | `model.yaml` | `config` (`init.mode`/`init.resample`/`solve.solver`/`solve.spores`/`init.math_paths`+`extra_math` incl. `milp`), `techs` (incl. co2 `cost_flow_in` / `cost_source_use` on supply, trade market techs, MILP unit-commitment params, piecewise breakpoint params), `nodes`, `data_tables` (`table` + `add_dims.inputs`) + materialized series CSVs (demand, availability, source), `data_definitions.objective_cost_weights`, `additional_math.yaml` (constraint IR + flow-ratio pinning + piecewise machinery), `_constraints.json` sidecar when `custom_math=false` |
 | Calliope 0.6 (`calliope-0.6`) | `model.yaml` | `model` (`calliope_version`, `timeseries_data_path`, `subset_time`, `time` resample / k-means `apply_clustering`), `run` (`mode` plan/operate/spores, `solver`, `objective_options.cost_class` weights, `cyclic_storage`, `operation`, `spores_options`), `techs` (`essentials`/`constraints`/`costs`; `conversion_plus` carrier tiers + `carrier_ratios`; trade market techs; `units_max`/`energy_cap_per_unit` MILP; `emissions` cost class), `locations` (coordinates, `available_area`, per-location `file=` resources + overrides), `links` (`from,to` → transmission techs + distance), `group_constraints` (constraint IR, emission limits, annual output bounds, SPORES cost slack), `timeseries_data/*.csv` (datetime index, one column per node; demand negative) |
 | AdOpT-NET0 | `input_data/` | `Topology.json`, `ConfigModel.json` (glpk, `write_results: 1`), `NodeLocations.csv`, `_meme_overrides.json` (keyed node → tech), per-period `Networks.json`, per-node `Technologies.json` (database tech names) + `ClimateData.csv` + `CarbonCost.csv` + `carrier_data/*.csv` (`;`-delimited; demand/import/export incl. per-timestep prices) + `EnergybalanceOptions.json`. The run step copies tech data + applies overrides. |
 
 The orchestrator writes each run's Python driver as `run_i/run.py` (PyPSA:
 import → sidecar constraints → mode branch (plan / rolling-horizon operate /
-MGA / stochastic) → export `network.nc`, non-zero exit unless optimal; AdOpT:
+MGA / stochastic / power flow: `lpf()` then `pf()` with the result tables under
+`output/power_flow/`) → export `network.nc`, non-zero exit unless optimal or
+converged; AdOpT:
 copy tech data → apply node-keyed overrides → `quick_solve`). Calliope runs via
 its CLI with `--save_netcdf`/`--save_csv` — `calliope` for 0.7, `calliope-0.6`
 for 0.6 (two venvs in the image). The executed script ships in the result

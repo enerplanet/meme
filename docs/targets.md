@@ -45,6 +45,15 @@ by property, what each target honors.
   long tail routes through `native` and sidecars. Verified end-to-end against
   pinned framework versions (see the [environment](operations/environment.md)): PyPSA (HiGHS), Calliope 0.7.0
   and 0.6.8 (cbc, incl. plan/operate/SPORES/emission-limits), AdOpT-NET0.
+- **Power flow is a PyPSA run mode, not a hidden hand-over.** `experiment.mode:
+  power_flow` solves the AC network the canonical fields describe
+  (`node.electrical.v_nom`, `transmission.electrical`, `technology.dispatch`)
+  with `lpf()`/`pf()` over a fixed dispatch; nothing is optimized, and the
+  results land under `output/power_flow/`. The API consumer chains the calls:
+  plan on any target, then fill the dispatch into a second payload for
+  `?target=pypsa`. Calliope and AdOpT reject the mode; in optimization modes
+  the electrical parameters are named as unused and the arcs stay transport
+  links ([ADR-0008](decisions/0008-power-flow-as-a-pypsa-run-mode.md)).
 - **Calliope versions are targets.** `calliope` is Calliope 0.7.0 (alias
   `calliope-0.7`); `calliope-0.6` is Calliope 0.6.8 — a separate emitter for
   the legacy dialect, driven by the `calliope-0.6` CLI from a second venv in

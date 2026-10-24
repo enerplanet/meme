@@ -111,6 +111,11 @@ func (Emitter) Emit(j *model.Job, outDir string) (string, error) {
 	for _, sb := range storeBuses {
 		buses.add(map[string]string{"name": sb[0], "carrier": sb[1]})
 	}
+	// Copperplate (ADR-0011): one free hub per carrier joins every node's bus.
+	hubs := copperplateHubs(j, pairs)
+	for _, h := range hubs {
+		buses.add(map[string]string{"name": h.bus, "carrier": h.carrier})
+	}
 	if err := buses.write(outDir, "buses.csv"); err != nil {
 		return "", err
 	}
@@ -118,6 +123,9 @@ func (Emitter) Emit(j *model.Job, outDir string) (string, error) {
 	carriers := &pcsv{base: []string{"name", "co2_emissions"}}
 	if isNet {
 		carriers.add(map[string]string{"name": acCarrier, "co2_emissions": "0"})
+	}
+	if ud := j.Experiment.AllowUnmetDemand; ud != nil && ud.Enabled {
+		carriers.add(map[string]string{"name": unmetCarrier, "co2_emissions": "0"})
 	}
 	for _, id := range emit.Keys(m.Carriers) {
 		c := m.Carriers[id]
@@ -239,12 +247,53 @@ func (Emitter) Emit(j *model.Job, outDir string) (string, error) {
 			if err := mergeNativeInto(row, eff.Native.For(model.TargetPyPSA)); err != nil {
 				return "", fmt.Errorf("tech %q: %w", id, err)
 			}
-			tbl.add(row)
+			setModule(row, eff.Capacity, "p_nom_mod")
+			for _, r := range retirementRows(m, eff, row) {
+				tbl.add(r)
+			}
+		}
+	}
+
+	// Unmet demand (ADR-0011): a priced slack generator at every load bus.
+	if ud := j.Experiment.AllowUnmetDemand; ud != nil && ud.Enabled && ud.PenaltyPrice != nil {
+		seen := map[string]bool{}
+		for _, id := range emit.Keys(m.Technologies) {
+			t := m.Technologies[id]
+			for _, node := range t.Node {
+				eff := t.At(node)
+				if eff.Role != model.RoleDemand || !eff.IsActive() {
+					continue
+				}
+				bus := BusID(node, eff.CarrierIn.First())
+				if seen[bus] {
+					continue
+				}
+				seen[bus] = true
+				gens.add(map[string]string{
+					"name": bus + "::" + unmetCarrier, "bus": bus, "carrier": unmetCarrier,
+					"p_nom": "0", "p_nom_extendable": "True", "p_nom_max": "inf",
+					"capital_cost": "0", "marginal_cost": emit.Ftoa(*ud.PenaltyPrice), "efficiency": "1",
+				})
+			}
+		}
+	}
+
+	// copperplate -> hub links; the model's arcs are dropped (ValidateJob warns)
+	for _, h := range hubs {
+		for _, node := range h.nodes {
+			links.add(map[string]string{
+				"name": BusID(node, h.carrier) + "::copperplate", "bus0": BusID(node, h.carrier), "bus1": h.bus,
+				"p_nom": "0", "p_nom_extendable": "True", "p_nom_max": "inf", "p_min_pu": "-1",
+				"efficiency": "1", "capital_cost": "0",
+			})
 		}
 	}
 
 	// transmission -> links across the node grid ------------------------------
 	for _, id := range emit.Keys(m.Transmission) {
+		if j.Experiment.Copperplate {
+			break
+		}
 		l := m.Transmission[id]
 		if isNet && l.Electrical != nil {
 			// An AC branch: a Line or a Transformer with its impedance and

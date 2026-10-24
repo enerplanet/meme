@@ -87,6 +87,9 @@ func TestScenarios(t *testing.T) {
 		// An energy-sized storage as a Store with charger and discharger, the
 		// structural constraints in the sidecar, a fixed state-of-charge profile.
 		{"pypsa_store.json", model.TargetPyPSA, []string{"e_nom_extendable", "battery_charge", "battery_discharge", "equal_power", "state_of_charge_set"}},
+		{"pypsa_modular.json", model.TargetPyPSA, []string{"p_nom_mod", "e_nom_mod"}},
+		{"pypsa_retire_slack.json", model.TargetPyPSA, []string{"::unmet", "unmet,0"}},
+		{"pypsa_copperplate.json", model.TargetPyPSA, []string{"copperplate::electricity"}},
 
 		// --- Calliope ---
 		{"calliope_plan.json", model.TargetCalliope, []string{"mode: base", "base_tech: supply", "solver: cbc"}},

@@ -1,0 +1,67 @@
+config:
+  init:
+    mode: base
+    broadcast_input_data: true
+  solve:
+    solver: cbc
+techs:
+  battery:
+    base_tech: storage
+    carrier_in: electricity
+    carrier_out: electricity
+    cyclic_storage: true
+    flow_cap_max: 10
+    cost_flow_cap:
+      data: 1
+      index: monetary
+      dims: costs
+    cost_storage_cap:
+      data: 1
+      index: monetary
+      dims: costs
+    cost_depreciation_rate:
+      data: 1
+      index: monetary
+      dims: costs
+  load:
+    base_tech: demand
+    carrier_in: electricity
+  modular:
+    base_tech: supply
+    carrier_out: electricity
+    flow_cap_max: 70
+    cost_flow_cap:
+      data: 5
+      index: monetary
+      dims: costs
+    cost_depreciation_rate:
+      data: 1
+      index: monetary
+      dims: costs
+    cost_flow_out:
+      data: 10
+      index: monetary
+      dims: costs
+  peaker:
+    base_tech: supply
+    carrier_out: electricity
+    flow_cap_max: 100
+    flow_cap_min: 100
+    cost_flow_out:
+      data: 80
+      index: monetary
+      dims: costs
+nodes:
+  n1:
+    techs:
+      battery:
+      load:
+      modular:
+      peaker:
+data_tables:
+  load__sink_use_equals:
+    table: load__sink_use_equals.csv
+    rows: timesteps
+    columns: [techs, nodes]
+    add_dims:
+      inputs: sink_use_equals

@@ -1,0 +1,68 @@
+model:
+  name: pypsa_retire_slack
+  calliope_version: 0.6.8
+  timeseries_data_path: timeseries_data
+run:
+  mode: plan
+  solver: cbc
+  objective_options:
+    cost_class:
+      monetary: 1
+    sense: minimize
+  ensure_feasibility: true
+techs:
+  cheap:
+    essentials:
+      name: cheap
+      parent: supply
+      carrier_out: electricity
+    constraints:
+      energy_cap_equals: 20
+    costs:
+      monetary:
+        om_prod: 10
+  island:
+    essentials:
+      name: island
+      parent: supply
+      carrier_out: electricity
+    constraints:
+      energy_cap_equals: 50
+    costs:
+      monetary:
+        om_prod: 20
+  load_a:
+    essentials:
+      name: load_a
+      parent: demand
+      carrier_in: electricity
+  load_b:
+    essentials:
+      name: load_b
+      parent: demand
+      carrier_in: electricity
+  old:
+    essentials:
+      name: old
+      parent: supply
+      carrier_out: electricity
+    constraints:
+      energy_cap_max: 60
+    costs:
+      monetary:
+        om_annual: 100
+        om_prod: 60
+locations:
+  a:
+    techs:
+      cheap:
+      load_a:
+        constraints:
+          resource: "file=load_a__resource.csv:a"
+      old:
+  b:
+    techs:
+      island:
+      load_b:
+        constraints:
+          resource: "file=load_b__resource.csv:b"

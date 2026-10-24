@@ -1,0 +1,63 @@
+model:
+  name: pypsa_modular
+  calliope_version: 0.6.8
+  timeseries_data_path: timeseries_data
+run:
+  mode: plan
+  solver: cbc
+  objective_options:
+    cost_class:
+      monetary: 1
+    sense: minimize
+  cyclic_storage: true
+techs:
+  battery:
+    essentials:
+      name: battery
+      parent: storage
+      carrier: electricity
+    constraints:
+      energy_cap_max: 10
+      lifetime: 1
+    costs:
+      monetary:
+        energy_cap: 1
+        storage_cap: 1
+        interest_rate: 0
+  load:
+    essentials:
+      name: load
+      parent: demand
+      carrier_in: electricity
+  modular:
+    essentials:
+      name: modular
+      parent: supply
+      carrier_out: electricity
+    constraints:
+      energy_cap_max: 70
+      lifetime: 1
+    costs:
+      monetary:
+        energy_cap: 5
+        om_prod: 10
+        interest_rate: 0
+  peaker:
+    essentials:
+      name: peaker
+      parent: supply
+      carrier_out: electricity
+    constraints:
+      energy_cap_equals: 100
+    costs:
+      monetary:
+        om_prod: 80
+locations:
+  n1:
+    techs:
+      battery:
+      load:
+        constraints:
+          resource: "file=load__resource.csv:n1"
+      modular:
+      peaker:

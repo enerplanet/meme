@@ -46,62 +46,66 @@ func materializeTimeSeries(m *model.Model, dir string, pfMode bool) error {
 
 	for id, t := range m.Technologies {
 		for _, node := range t.Node {
-			name := id
+			base := id
 			if len(t.Node) > 1 {
-				name = id + "@" + node
+				base = id + "@" + node
 			}
 			eff := t.At(node)
-			// Power-flow inputs: a fixed dispatch is the component's p_set;
-			// reactive power is a q_set series as given, or derived from a
-			// series active set-point at the power factor (the scale is Q per
-			// unit of P; writeSeriesCSV applies it).
-			if eff.Dispatch.IsSeries() && pfMode {
-				if file, ok := dispatchFile[eff.Role]; ok {
-					add(file, name, eff.Dispatch.SeriesID())
-				}
-			}
-			if file, ok := qFile[eff.Role]; ok && pfMode {
-				if e := eff.Electrical; e != nil {
-					if e.ReactiveDispatch.IsSeries() {
-						add(file, name, e.ReactiveDispatch.SeriesID())
-					} else if p := activeSetpoint(eff); e.PowerFactor != nil && p.IsSeries() {
-						addScaled(file, name, p.SeriesID(), e.ReactiveFactor())
+			// Continuous retirement splits an expandable technology into an
+			// existing and a new-build part; every series applies to both.
+			for _, name := range retirementNames(base, eff) {
+				// Power-flow inputs: a fixed dispatch is the component's p_set;
+				// reactive power is a q_set series as given, or derived from a
+				// series active set-point at the power factor (the scale is Q per
+				// unit of P; writeSeriesCSV applies it).
+				if eff.Dispatch.IsSeries() && pfMode {
+					if file, ok := dispatchFile[eff.Role]; ok {
+						add(file, name, eff.Dispatch.SeriesID())
 					}
 				}
-			}
-			switch eff.Role {
-			case model.RoleDemand:
-				if eff.DemandProfile.IsSeries() {
-					add("loads-p_set.csv", name, eff.DemandProfile.SeriesID())
+				if file, ok := qFile[eff.Role]; ok && pfMode {
+					if e := eff.Electrical; e != nil {
+						if e.ReactiveDispatch.IsSeries() {
+							add(file, name, e.ReactiveDispatch.SeriesID())
+						} else if p := activeSetpoint(eff); e.PowerFactor != nil && p.IsSeries() {
+							addScaled(file, name, p.SeriesID(), e.ReactiveFactor())
+						}
+					}
 				}
-			case model.RoleSupply:
-				if eff.Operation != nil && eff.Operation.EqualsPU.IsSeries() {
-					// Fixed dispatch: the same series pins both bounds.
-					add("generators-p_max_pu.csv", name, eff.Operation.EqualsPU.SeriesID())
-					add("generators-p_min_pu.csv", name, eff.Operation.EqualsPU.SeriesID())
-				} else if eff.Operation != nil && eff.Operation.MaxPU.IsSeries() {
-					add("generators-p_max_pu.csv", name, eff.Operation.MaxPU.SeriesID())
-				} else if eff.Performance != nil && eff.Performance.Kind() == model.PerfPhysics && eff.Performance.Precomputed.IsSeries() {
-					add("generators-p_max_pu.csv", name, eff.Performance.Precomputed.SeriesID())
-				}
-				if c, ok := eff.Costs[model.PrimaryCostClass]; ok && c.VariableOM.IsSeries() {
-					add("generators-marginal_cost.csv", name, c.VariableOM.SeriesID())
-				}
-			case model.RoleConversion:
-				if c, ok := eff.Costs[model.PrimaryCostClass]; ok && c.VariableOM.IsSeries() {
-					add("links-marginal_cost.csv", name, c.VariableOM.SeriesID())
-				}
-			case model.RoleStorage:
-				if eff.Storage != nil && eff.Storage.Inflow.IsSeries() {
-					add("storage_units-inflow.csv", name, eff.Storage.Inflow.SeriesID())
-				}
-				if eff.Storage != nil && eff.Storage.SOCProfile.IsSeries() {
-					add("storage_units-state_of_charge_set.csv", name, eff.Storage.SOCProfile.SeriesID())
-				}
-				// A Store's variable cost sits on its discharger link.
-				if eff.Storage.IsStore() {
+				switch eff.Role {
+				case model.RoleDemand:
+					if eff.DemandProfile.IsSeries() {
+						add("loads-p_set.csv", name, eff.DemandProfile.SeriesID())
+					}
+				case model.RoleSupply:
+					if eff.Operation != nil && eff.Operation.EqualsPU.IsSeries() {
+						// Fixed dispatch: the same series pins both bounds.
+						add("generators-p_max_pu.csv", name, eff.Operation.EqualsPU.SeriesID())
+						add("generators-p_min_pu.csv", name, eff.Operation.EqualsPU.SeriesID())
+					} else if eff.Operation != nil && eff.Operation.MaxPU.IsSeries() {
+						add("generators-p_max_pu.csv", name, eff.Operation.MaxPU.SeriesID())
+					} else if eff.Performance != nil && eff.Performance.Kind() == model.PerfPhysics && eff.Performance.Precomputed.IsSeries() {
+						add("generators-p_max_pu.csv", name, eff.Performance.Precomputed.SeriesID())
+					}
 					if c, ok := eff.Costs[model.PrimaryCostClass]; ok && c.VariableOM.IsSeries() {
-						add("links-marginal_cost.csv", name+"_discharge", c.VariableOM.SeriesID())
+						add("generators-marginal_cost.csv", name, c.VariableOM.SeriesID())
+					}
+				case model.RoleConversion:
+					if c, ok := eff.Costs[model.PrimaryCostClass]; ok && c.VariableOM.IsSeries() {
+						add("links-marginal_cost.csv", name, c.VariableOM.SeriesID())
+					}
+				case model.RoleStorage:
+					if eff.Storage != nil && eff.Storage.Inflow.IsSeries() {
+						add("storage_units-inflow.csv", name, eff.Storage.Inflow.SeriesID())
+					}
+					if eff.Storage != nil && eff.Storage.SOCProfile.IsSeries() {
+						add("storage_units-state_of_charge_set.csv", name, eff.Storage.SOCProfile.SeriesID())
+					}
+					// A Store's variable cost sits on its discharger link.
+					if eff.Storage.IsStore() {
+						if c, ok := eff.Costs[model.PrimaryCostClass]; ok && c.VariableOM.IsSeries() {
+							add("links-marginal_cost.csv", name+"_discharge", c.VariableOM.SeriesID())
+						}
 					}
 				}
 			}

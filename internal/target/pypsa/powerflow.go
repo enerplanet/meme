@@ -559,6 +559,7 @@ func branchRow(m *model.Model, id string, l model.Transmission) map[string]strin
 			row["s_nom_min"] = emit.Ftoa(*min)
 		}
 	}
+	setModule(row, l.Capacity, "s_nom_mod")
 	if e.MaxLoading != nil {
 		row["s_max_pu"] = emit.Ftoa(*e.MaxLoading)
 	}

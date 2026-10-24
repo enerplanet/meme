@@ -1,0 +1,11 @@
+{
+  "stores": [
+    {
+      "name": "battery",
+      "store": "battery",
+      "charge": "battery_charge",
+      "discharge": "battery_discharge",
+      "equal_power": true
+    }
+  ]
+}

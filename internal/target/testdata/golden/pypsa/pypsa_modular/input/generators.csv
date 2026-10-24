@@ -1,0 +1,3 @@
+name,bus,carrier,p_nom,p_nom_extendable,p_nom_max,capital_cost,marginal_cost,efficiency,p_nom_mod
+modular,n1::electricity,electricity,0,True,70,5,10,1,7
+peaker,n1::electricity,electricity,100,False,inf,0,80,1,

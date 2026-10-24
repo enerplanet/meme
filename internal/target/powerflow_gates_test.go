@@ -563,3 +563,96 @@ func TestStoreRepresentationGates(t *testing.T) {
 		}
 	}
 }
+
+// --- ADR-0011: modules, retirement, slack demand, copperplate ---------------
+
+func scenarioJob(t *testing.T, file string, mut func(j *model.Job)) model.Job {
+	t.Helper()
+	j, err := scenarios.Load(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mut != nil {
+		mut(&j)
+	}
+	return j
+}
+
+// Continuous retirement, slack demand and copperplate are honored on PyPSA
+// now; what still has no slot is named: a retirement cost, complete-only
+// retirement, retirement of a Store, slack demand without a price, a
+// copperplate under the voltage law.
+func TestRetirementSlackCopperplateGates(t *testing.T) {
+	for _, file := range []string{"pypsa_modular.json", "pypsa_retire_slack.json", "pypsa_copperplate.json"} {
+		j := scenarioJob(t, file, nil)
+		if _, err := target.ValidateFor(&j, model.TargetPyPSA); err != nil {
+			t.Errorf("%s should validate on pypsa: %v", file, err)
+		}
+	}
+	j := scenarioJob(t, "pypsa_copperplate.json", nil)
+	warns, _ := target.ValidateFor(&j, model.TargetPyPSA)
+	if !hasWarning(warns, "copperplate", "transmission [l12]", "dropped") {
+		t.Errorf("copperplate should name the arcs it drops, got %v", warns)
+	}
+	j = scenarioJob(t, "pypsa_retire_slack.json", func(j *model.Job) {
+		o := j.Model.Technologies["old"]
+		o.Capacity.Decommission.Cost = fp(50)
+		j.Model.Technologies["old"] = o
+	})
+	warns, err := target.ValidateFor(&j, model.TargetPyPSA)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !hasWarning(warns, `tech "old"`, "decommission.cost", "not priced") {
+		t.Errorf("a retirement cost has no PyPSA slot and must be warned about, got %v", warns)
+	}
+
+	cases := []struct {
+		file string
+		mut  func(j *model.Job)
+		want string
+	}{
+		{"pypsa_retire_slack.json", func(j *model.Job) {
+			o := j.Model.Technologies["old"]
+			o.Capacity.Decommission.Mode = "only_complete"
+			j.Model.Technologies["old"] = o
+		}, `tech "old": capacity.decommission mode "only_complete" is not supported for pypsa`},
+		{"pypsa_retire_slack.json", func(j *model.Job) { j.Experiment.AllowUnmetDemand.PenaltyPrice = nil },
+			`allow_unmet_demand needs penalty_price on pypsa (the slack generators' marginal cost)`},
+		{"pypsa_store.json", func(j *model.Job) {
+			b := j.Model.Technologies["battery"]
+			b.Capacity = &model.Capacity{Existing: 5, Decommission: &model.Decommission{Mode: "continuous"}}
+			j.Model.Technologies["battery"] = b
+		}, `tech "battery": continuous retirement of a Store-based storage is not supported for pypsa`},
+		{"pypsa_copperplate.json", func(j *model.Job) {
+			for _, n := range []string{"n1", "n2", "n3"} {
+				j.Model.Nodes[n] = model.Node{Electrical: &model.NodeElectrical{VNom: 110}}
+			}
+			l := j.Model.Transmission["l12"]
+			l.Electrical = &model.TransmissionElectrical{Kind: model.ElectricalLine, R: 1, X: 10}
+			j.Model.Transmission["l12"] = l
+			j.Experiment.Network = &model.NetworkOptions{Model: model.NetworkLinearPowerFlow}
+		}, `copperplate cannot be combined with network model "linear_power_flow"`},
+	}
+	for _, c := range cases {
+		t.Run(c.want[:24], func(t *testing.T) {
+			j := scenarioJob(t, c.file, c.mut)
+			wantGateErr(t, &j, model.TargetPyPSA, c.want)
+		})
+	}
+	// Calliope keeps its own mappings for these fields: the slack payload
+	// validates there as before (ensure_feasibility), the copperplate one is
+	// still rejected there, the modular one accepted.
+	j = scenarioJob(t, "pypsa_retire_slack.json", nil)
+	if _, err := target.ValidateFor(&j, model.TargetCalliope); err != nil {
+		t.Errorf("calliope: slack payload should still validate: %v", err)
+	}
+	j = scenarioJob(t, "pypsa_copperplate.json", nil)
+	if _, err := target.ValidateFor(&j, model.TargetCalliope); err == nil {
+		t.Error("calliope: copperplate stays rejected there")
+	}
+	j = scenarioJob(t, "pypsa_modular.json", nil)
+	if _, err := target.ValidateFor(&j, model.TargetCalliope); err != nil {
+		t.Errorf("calliope: modular payload should validate: %v", err)
+	}
+}

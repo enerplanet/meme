@@ -243,15 +243,17 @@ func TestPyPSASecondTrancheGates(t *testing.T) {
 			pv.EmissionFactor = fp(0.1)
 			j.Model.Technologies["pv"] = pv
 		}, "emission_factor"},
-		{"decommission continuous", func(j *model.Job) {
+		// Continuous retirement, copperplate and priced unmet demand are honored
+		// since ADR-0011; what stays out is complete-only retirement and a slack
+		// without a price.
+		{"decommission only_complete", func(j *model.Job) {
 			pv := j.Model.Technologies["pv"]
-			pv.Capacity.Decommission = &model.Decommission{Mode: "continuous"}
+			pv.Capacity.Decommission = &model.Decommission{Mode: "only_complete"}
 			j.Model.Technologies["pv"] = pv
 		}, "decommission"},
-		{"copperplate", func(j *model.Job) { j.Experiment.Copperplate = true }, "copperplate"},
-		{"unmet demand", func(j *model.Job) {
-			j.Experiment.AllowUnmetDemand = &model.AllowUnmetDemand{Enabled: true, PenaltyPrice: fp(100)}
-		}, "allow_unmet_demand"},
+		{"unmet demand without a price", func(j *model.Job) {
+			j.Experiment.AllowUnmetDemand = &model.AllowUnmetDemand{Enabled: true}
+		}, "allow_unmet_demand needs penalty_price"},
 		{"positive-only accounting", func(j *model.Job) {
 			j.Experiment.EmissionAccounting = "positive_only"
 		}, "emission_accounting"},

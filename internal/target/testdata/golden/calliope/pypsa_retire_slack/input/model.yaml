@@ -1,0 +1,68 @@
+config:
+  init:
+    mode: base
+    broadcast_input_data: true
+  solve:
+    solver: cbc
+  build:
+    ensure_feasibility: true
+techs:
+  cheap:
+    base_tech: supply
+    carrier_out: electricity
+    flow_cap_max: 20
+    flow_cap_min: 20
+    cost_flow_out:
+      data: 10
+      index: monetary
+      dims: costs
+  island:
+    base_tech: supply
+    carrier_out: electricity
+    flow_cap_max: 50
+    flow_cap_min: 50
+    cost_flow_out:
+      data: 20
+      index: monetary
+      dims: costs
+  load_a:
+    base_tech: demand
+    carrier_in: electricity
+  load_b:
+    base_tech: demand
+    carrier_in: electricity
+  old:
+    base_tech: supply
+    carrier_out: electricity
+    flow_cap_max: 60
+    cost_om_annual:
+      data: 100
+      index: monetary
+      dims: costs
+    cost_flow_out:
+      data: 60
+      index: monetary
+      dims: costs
+nodes:
+  a:
+    techs:
+      cheap:
+      load_a:
+      old:
+  b:
+    techs:
+      island:
+      load_b:
+data_tables:
+  load_a__sink_use_equals:
+    table: load_a__sink_use_equals.csv
+    rows: timesteps
+    columns: [techs, nodes]
+    add_dims:
+      inputs: sink_use_equals
+  load_b__sink_use_equals:
+    table: load_b__sink_use_equals.csv
+    rows: timesteps
+    columns: [techs, nodes]
+    add_dims:
+      inputs: sink_use_equals

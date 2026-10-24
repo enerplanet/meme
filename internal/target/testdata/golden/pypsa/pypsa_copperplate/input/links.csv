@@ -1,0 +1,4 @@
+name,bus0,bus1,p_nom,p_nom_extendable,p_nom_max,efficiency,capital_cost,p_min_pu
+n1::electricity::copperplate,n1::electricity,copperplate::electricity,0,True,inf,1,0,-1
+n2::electricity::copperplate,n2::electricity,copperplate::electricity,0,True,inf,1,0,-1
+n3::electricity::copperplate,n3::electricity,copperplate::electricity,0,True,inf,1,0,-1

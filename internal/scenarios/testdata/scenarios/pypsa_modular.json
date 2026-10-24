@@ -1,0 +1,21 @@
+{
+  "model": {
+    "metadata": {"name": "pypsa_modular"},
+    "time": {"start": "2025-01-01T00:00:00", "end": "2025-01-01T03:00:00", "resolution": "1H"},
+    "carriers": {"electricity": {"unit": "MWh"}},
+    "nodes": {"n1": {}},
+    "technologies": {
+      "modular": {"role": "supply", "node": "n1", "carrier_out": "electricity",
+                  "capacity": {"existing": 0, "expandable": true, "per_unit": 7, "units_max": 10},
+                  "costs": {"monetary": {"investment_per_capacity": 5, "variable_om": 10}}, "cost_basis": "annualized"},
+      "peaker": {"role": "supply", "node": "n1", "carrier_out": "electricity", "capacity": {"existing": 100},
+                 "costs": {"monetary": {"variable_om": 80}}},
+      "load": {"role": "demand", "node": "n1", "carrier_in": "electricity", "demand_profile": [20, 33, 45, 30]},
+      "battery": {"role": "storage", "node": "n1", "carrier_out": "electricity",
+                  "capacity": {"existing": 0, "expandable": true, "per_unit": 2, "units_max": 5},
+                  "storage": {"energy_capacity": {"existing": 0, "expandable": true, "per_unit": 5, "units_max": 4}, "cyclic": true},
+                  "costs": {"monetary": {"investment_per_capacity": 1, "investment_per_energy_capacity": 1}}, "cost_basis": "annualized"}
+    }
+  },
+  "experiment": {"mode": "plan", "solver": {"name": "highs"}}
+}

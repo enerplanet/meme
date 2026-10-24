@@ -411,3 +411,55 @@ func TestE2EPyPSAStore(t *testing.T) {
 		t.Errorf("results lack stores-e.csv (have %v)", zipNames(files))
 	}
 }
+
+// TestE2EPyPSAModularRetireSlackCopperplate: the three planning additions on
+// the real framework. Modules: the built capacity is a whole number of 7 MW
+// units. Retirement and slack: the old unit retires what the horizon never
+// uses, the island's shortfall is served by the priced slack. Copperplate:
+// a load on nodes without arcs is served through the hub.
+func TestE2EPyPSAModularRetireSlackCopperplate(t *testing.T) {
+	requireE2E(t)
+	t.Parallel()
+	srv, _ := newE2EServer(t)
+	ids := map[string]string{}
+	for _, f := range []string{"pypsa_modular.json", "pypsa_retire_slack.json", "pypsa_copperplate.json"} {
+		ids[f] = submit(t, srv.URL, model.TargetPyPSA, readScenario(t, f))["id"].(string)
+	}
+	results := map[string]map[string][]byte{}
+	for f, id := range ids {
+		st := awaitJob(t, srv.URL, id)
+		if st["state"] != string(service.StateSucceeded) {
+			t.Fatalf("%s failed: %v\nlog:\n%v", f, st["error"], st["log"])
+		}
+		results[f] = fetchZip(t, srv.URL, id)
+	}
+	capsOf := func(files map[string][]byte) map[string]float64 {
+		recs, err := csv.NewReader(bytes.NewReader(files["files/run_0/output/results/capacities.csv"])).ReadAll()
+		if err != nil {
+			t.Fatal(err)
+		}
+		out := map[string]float64{}
+		for _, r := range recs[1:] {
+			v, _ := strconv.ParseFloat(r[3], 64)
+			out[r[0]+":"+r[1]] = v
+		}
+		return out
+	}
+	caps := capsOf(results["pypsa_modular.json"])
+	if m := caps["Generator:modular"]; m <= 0 || math.Abs(math.Mod(m, 7)) > 1e-6 && math.Abs(math.Mod(m, 7)-7) > 1e-6 {
+		t.Errorf("modular capacity should be a positive multiple of 7 MW, got %v", m)
+	}
+	if e := caps["Store:battery"]; e > 0 && math.Abs(math.Mod(e, 5)) > 1e-6 && math.Abs(math.Mod(e, 5)-5) > 1e-6 {
+		t.Errorf("store energy should come in 5 MWh modules, got %v", e)
+	}
+	caps = capsOf(results["pypsa_retire_slack.json"])
+	if old := caps["Generator:old"]; old >= 60-1e-6 || old < 40-1e-6 {
+		t.Errorf("the old unit should retire what the horizon never uses (40 MW kept of 60), got %v", old)
+	}
+	if unmet := resultCol(t, results["pypsa_retire_slack.json"], "generators-p.csv", "b::electricity::unmet"); len(unmet) != 4 || unmet[3] < 20-1e-6 || unmet[0] > 1e-6 {
+		t.Errorf("the island's shortfall should be served by the slack (20 MW in the last hour, none in the first), got %v", unmet)
+	}
+	if flow := resultCol(t, results["pypsa_copperplate.json"], "links-p0.csv", "n1::electricity::copperplate"); len(flow) != 3 || flow[2] < 80-1e-6 {
+		t.Errorf("the copperplate hub should carry the generator's output to the two loads (80 MW in the last hour), got %v", flow)
+	}
+}

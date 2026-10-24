@@ -1,0 +1,6 @@
+name,bus,carrier,p_nom,p_nom_extendable,p_nom_max,capital_cost,marginal_cost,efficiency
+cheap,a::electricity,electricity,20,False,inf,0,10,1
+island,b::electricity,electricity,50,False,inf,0,20,1
+old,a::electricity,electricity,60,True,60,100,60,1
+a::electricity::unmet,a::electricity,unmet,0,True,inf,0,500,1
+b::electricity::unmet,b::electricity,unmet,0,True,inf,0,500,1

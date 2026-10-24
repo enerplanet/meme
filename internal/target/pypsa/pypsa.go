@@ -142,12 +142,23 @@ func (PyPSA) ValidateJob(j *model.Job) ([]string, error) {
 		}
 	}
 
-	// Run-level switches with no PyPSA representation.
+	// Run-level switches (ADR-0011). Copperplate joins every node's bus of a
+	// carrier through a free hub and drops the arcs, which contradicts a
+	// network solved under the voltage law or as a power flow. Unmet demand
+	// is a priced slack generator at every load bus and needs its price.
 	if e.Copperplate {
-		return nil, fmt.Errorf("copperplate is not supported for pypsa (restructure the network via native.pypsa instead)")
+		if e.EffectiveMode() == model.ModePowerFlow {
+			return nil, fmt.Errorf("copperplate cannot be combined with mode \"power_flow\" (a power flow solves the network as it is)")
+		}
+		if e.EffectiveNetworkModel() == model.NetworkLinearPowerFlow {
+			return nil, fmt.Errorf("copperplate cannot be combined with network model \"linear_power_flow\" (the voltage law needs the arcs copperplate drops)")
+		}
+		if arcs := emit.Keys(m.Transmission); len(arcs) > 0 {
+			warns = append(warns, fmt.Sprintf("copperplate: transmission %v dropped; every node's bus of a carrier is joined through a free hub instead", arcs))
+		}
 	}
-	if ud := e.AllowUnmetDemand; ud != nil && ud.Enabled {
-		return nil, fmt.Errorf("allow_unmet_demand is not supported for pypsa (add slack generators via native.pypsa)")
+	if ud := e.AllowUnmetDemand; ud != nil && ud.Enabled && ud.PenaltyPrice == nil {
+		return nil, fmt.Errorf("allow_unmet_demand needs penalty_price on pypsa (the slack generators' marginal cost)")
 	}
 	if e.EmissionAccounting == "positive_only" {
 		return nil, fmt.Errorf("emission_accounting \"positive_only\" is not supported for pypsa (carrier co2_emissions accounting is net by construction)")
@@ -166,7 +177,16 @@ func (PyPSA) ValidateJob(j *model.Job) ([]string, error) {
 		if (t.AnnualOutputMin != nil || t.AnnualOutputMax != nil) && t.Role != model.RoleSupply {
 			return nil, fmt.Errorf("tech %q: annual_output_min/max map onto generator e_sum_min/e_sum_max and need role \"supply\"", id)
 		}
-		if t.Capacity != nil && t.Capacity.DecommissionMode() != "impossible" {
+		switch t.Capacity.DecommissionMode() {
+		case "impossible":
+		case "continuous":
+			if t.Storage.IsStore() {
+				return nil, fmt.Errorf("tech %q: continuous retirement of a Store-based storage is not supported for pypsa (it would split three components); keep decommission impossible or size the storage with max_hours", id)
+			}
+			if t.Capacity.Decommission != nil && t.Capacity.Decommission.Cost != nil {
+				warns = append(warns, fmt.Sprintf("tech %q: decommission.cost is not priced on pypsa (retirement is driven by the fixed O&M the retired capacity saves)", id))
+			}
+		default:
 			return nil, fmt.Errorf("tech %q: capacity.decommission mode %q is not supported for pypsa (existing capacity stays fixed); adopt-net0 honors it", id, t.Capacity.DecommissionMode())
 		}
 		if op := t.Operation; op != nil {
@@ -239,6 +259,9 @@ func (PyPSA) ValidateJob(j *model.Job) ([]string, error) {
 		}
 		if l.EmissionFactor != nil {
 			return nil, fmt.Errorf("transmission %q: emission_factor is only supported for calliope (co2 cost class); pypsa emission accounting is carrier-wide", id)
+		}
+		if l.Capacity.DecommissionMode() != "impossible" {
+			return nil, fmt.Errorf("transmission %q: capacity.decommission mode %q is not supported for pypsa (an arc's existing capacity stays fixed)", id, l.Capacity.DecommissionMode())
 		}
 	}
 

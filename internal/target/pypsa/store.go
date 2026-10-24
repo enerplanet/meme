@@ -55,6 +55,7 @@ func storeTopology(m *model.Model, name, node string, t model.Technology) (store
 		"e_cyclic": emit.BoolPy(s.Cyclic), "standing_loss": emit.OptFloat(s.SelfDischarge, "0"),
 		"capital_cost": emit.Ftoa(energyCapitalCost(m, t)), "marginal_cost": "0",
 	}
+	setModule(store, ec, "e_nom_mod")
 	if ec.Expandable {
 		if min := ec.EffectiveMin(); min != nil {
 			store["e_nom_min"] = emit.Ftoa(*min)
@@ -73,6 +74,7 @@ func storeTopology(m *model.Model, name, node string, t model.Technology) (store
 			"efficiency": emit.OptFloat(eff, "1"), "capital_cost": emit.Ftoa(capital), "marginal_cost": marginalCost,
 		}
 		setPNomMin(row, t.Capacity)
+		setModule(row, t.Capacity, "p_nom_mod")
 		if !t.IsActive() {
 			row["active"] = "False"
 		}

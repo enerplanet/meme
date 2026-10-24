@@ -690,3 +690,125 @@ func TestInitialStateOfChargeIsAbsolute(t *testing.T) {
 		t.Errorf("state_of_charge_initial: got %q, want 12 MWh (0.5 x 4 MW x 6 h)", got)
 	}
 }
+
+// --- ADR-0011: modules, retirement, slack demand, copperplate ---------------
+
+func emitScenario(t *testing.T, file string, mut func(j *model.Job)) (string, model.Job) {
+	t.Helper()
+	j, err := scenarios.Load(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mut != nil {
+		mut(&j)
+	}
+	if _, err := target.ValidateFor(&j, model.TargetPyPSA); err != nil {
+		t.Fatalf("validate: %v", err)
+	}
+	dir := t.TempDir()
+	if _, err := (pypsa.PyPSA{}).Emit(&j, dir); err != nil {
+		t.Fatalf("emit: %v", err)
+	}
+	return dir, j
+}
+
+// capacity.per_unit on an expandable component is PyPSA's integer module.
+func TestModularCapacity(t *testing.T) {
+	dir, _ := emitScenario(t, "pypsa_modular.json", nil)
+	g := table(t, dir, "generators.csv")["modular"]
+	if g["p_nom_mod"] != "7" || g["p_nom_max"] != "70" || g["p_nom_extendable"] != "True" {
+		t.Errorf("modular generator: %v", g)
+	}
+	if p := table(t, dir, "generators.csv")["peaker"]; p["p_nom_mod"] != "" {
+		t.Errorf("a fixed generator has no module: %v", p)
+	}
+	st := table(t, dir, "stores.csv")["battery"]
+	if st["e_nom_mod"] != "5" || st["e_nom_max"] != "20" {
+		t.Errorf("modular store: %v", st)
+	}
+	links := table(t, dir, "links.csv")
+	if links["battery_charge"]["p_nom_mod"] != "2" || links["battery_discharge"]["p_nom_mod"] != "2" {
+		t.Errorf("modular store links: %v %v", links["battery_charge"], links["battery_discharge"])
+	}
+	dir, _ = emitScenario(t, "pypsa_lopf.json", func(j *model.Job) {
+		l := j.Model.Transmission["ab"]
+		l.Capacity.PerUnit = fp(25)
+		j.Model.Transmission["ab"] = l
+	})
+	if ln := table(t, dir, "lines.csv")["ab"]; ln["s_nom_mod"] != "25" {
+		t.Errorf("modular line: %v", ln)
+	}
+}
+
+// Continuous retirement splits a component into its existing part, retirable
+// down to zero at its fixed O&M, and a new-build part carrying the investment.
+func TestContinuousRetirement(t *testing.T) {
+	dir, _ := emitScenario(t, "pypsa_retire_slack.json", nil)
+	gens := table(t, dir, "generators.csv")
+	old := gens["old"]
+	if old["p_nom"] != "60" || old["p_nom_extendable"] != "True" || old["p_nom_max"] != "60" || old["p_nom_min"] != "" || old["capital_cost"] != "100" || old["marginal_cost"] != "60" {
+		t.Errorf("retirable existing part: %v", old)
+	}
+	if _, ok := gens["old_new"]; ok {
+		t.Error("a non-expandable retirable component has no new-build part")
+	}
+	// Expandable too: the new-build part carries the investment above the
+	// existing capacity.
+	dir, _ = emitScenario(t, "pypsa_retire_slack.json", func(j *model.Job) {
+		o := j.Model.Technologies["old"]
+		o.Capacity.Expandable = true
+		o.Capacity.Max = fp(100)
+		o.Costs = map[string]model.CostClass{"monetary": {InvestmentPerCapacity: fp(1000), FixedOM: fp(100), VariableOM: model.Num(60)}}
+		o.Operation = &model.Operation{MaxPU: model.Series("avail")}
+		if j.Model.Timeseries == nil {
+			j.Model.Timeseries = map[string]model.TimeSeries{}
+		}
+		j.Model.Timeseries["avail"] = model.TimeSeries{Source: "inline", Values: []float64{1, 1, 0.5, 0.5}}
+		j.Model.Technologies["old"] = o
+	})
+	gens = table(t, dir, "generators.csv")
+	old, nw := gens["old"], gens["old_new"]
+	if old["p_nom_max"] != "60" || old["capital_cost"] != "100" {
+		t.Errorf("existing part keeps fixed O&M only: %v", old)
+	}
+	if nw["p_nom"] != "0" || nw["p_nom_extendable"] != "True" || nw["p_nom_max"] != "40" || nw["capital_cost"] != "1100" || nw["marginal_cost"] != "60" {
+		t.Errorf("new-build part: %v", nw)
+	}
+	avail := table(t, dir, "generators-p_max_pu.csv")
+	if avail["2025-01-01 02:00:00"]["old"] != "0.5" || avail["2025-01-01 02:00:00"]["old_new"] != "0.5" {
+		t.Errorf("series apply to both parts: %v", avail["2025-01-01 02:00:00"])
+	}
+}
+
+// allow_unmet_demand adds a priced slack generator at every load bus under
+// its own carrier; copperplate joins every node's bus of a carrier through a
+// free hub and drops the arcs.
+func TestSlackDemandAndCopperplate(t *testing.T) {
+	dir, _ := emitScenario(t, "pypsa_retire_slack.json", nil)
+	gens := table(t, dir, "generators.csv")
+	for _, bus := range []string{"a::electricity", "b::electricity"} {
+		s := gens[bus+"::unmet"]
+		if s["bus"] != bus || s["carrier"] != "unmet" || s["marginal_cost"] != "500" || s["p_nom_extendable"] != "True" || s["capital_cost"] != "0" {
+			t.Errorf("slack generator at %s: %v", bus, s)
+		}
+	}
+	if _, ok := table(t, dir, "carriers.csv")["unmet"]; !ok {
+		t.Error("the unmet carrier must be declared")
+	}
+
+	dir, _ = emitScenario(t, "pypsa_copperplate.json", nil)
+	buses := table(t, dir, "buses.csv")
+	if _, ok := buses["copperplate::electricity"]; !ok {
+		t.Errorf("copperplate hub bus expected: %v", buses)
+	}
+	links := table(t, dir, "links.csv")
+	for _, node := range []string{"n1", "n2", "n3"} {
+		l := links[node+"::electricity::copperplate"]
+		if l["bus0"] != node+"::electricity" || l["bus1"] != "copperplate::electricity" || l["p_nom_extendable"] != "True" || l["p_min_pu"] != "-1" || l["capital_cost"] != "0" {
+			t.Errorf("copperplate link of %s: %v", node, l)
+		}
+	}
+	if _, ok := links["l12"]; ok {
+		t.Error("copperplate drops the model's own arcs")
+	}
+}

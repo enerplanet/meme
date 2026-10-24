@@ -37,6 +37,10 @@ const maxBodyBytes = 32 << 20 // 32 MiB
 //
 // CORS defaults to off (its zero value); see CORSConfig for how browser
 // cross-origin access is enabled and customized.
+//
+// Version is the build version GET /healthz reports next to the liveness
+// status, so a deployment can be told apart from the release notes it claims
+// to implement; main stamps it from the binary.
 type Server struct {
 	Executor   *service.Executor
 	WorkRoot   string
@@ -44,11 +48,12 @@ type Server struct {
 	JobContext context.Context
 	APIKey     string
 	CORS       CORSConfig
+	Version    string
 }
 
 // NewServer returns an http.Handler exposing (also aliased under /v1/):
 //
-//	GET  /healthz                 liveness
+//	GET  /healthz                 liveness and the build version
 //	GET  /capabilities            targets, default targets, aliases, framework
 //	                              versions, capability matrix (target -> feature -> bool)
 //	POST /validate?target=        validate a Job (warnings or 4xx)
@@ -86,7 +91,7 @@ func NewServer(s Server) http.Handler {
 		}
 	}
 	route("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
-		writeJSONResp(w, http.StatusOK, map[string]string{"status": "ok"})
+		writeJSONResp(w, http.StatusOK, map[string]string{"status": "ok", "version": s.Version})
 	})
 	route("GET /capabilities", func(w http.ResponseWriter, r *http.Request) {
 		writeJSONResp(w, http.StatusOK, map[string]any{

@@ -33,7 +33,15 @@ CORS_FLAG   := $(if $(CORS_ORIGINS),-cors-origins '$(CORS_ORIGINS)',)
 
 GO          := go
 GOFLAGS     :=
-LDFLAGS     := -s -w
+# VERSION is stamped into the binary (`meme -version`, the version field of
+# GET /healthz). It defaults to the nearest tag, with the distance, commit and
+# a -dirty marker once the tree has moved on (0.1.0-alpha,
+# 0.1.0-alpha-3-g1a2b3c4-dirty); the tag's "v" prefix is dropped so the value
+# reads like the changelog. A checkout without tags yields the commit, a tree
+# without git "dev". Override it for a reproducible build: make VERSION=0.1.0-alpha
+GIT_VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
+VERSION     ?= $(patsubst v%,%,$(GIT_VERSION))
+LDFLAGS     := -s -w -X main.version=$(VERSION)
 
 # --- Meta -------------------------------------------------------------------
 .DEFAULT_GOAL := build

@@ -9,7 +9,7 @@ is also served under `/v1/` (`/v1/simulate`, …). Errors use one envelope:
 
 | Method and path | Purpose | Success |
 |---|---|---|
-| `GET /healthz` | liveness | `200 {"status":"ok"}` |
+| `GET /healthz` | liveness and the build version | `200 {"status":"ok","version":"0.1.0-alpha"}` |
 | `GET /capabilities` | targets, default targets, aliases, framework versions, feature matrix | `200` |
 | `POST /validate?target=…` | validate a job for the target(s); nothing is written | `200` (`422` with the first rejection) |
 | `POST /convert?target=…` | validate and emit the native model files synchronously | `200` with entrypoints |

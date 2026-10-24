@@ -11,6 +11,9 @@
 //
 // Go's flag package only overwrites a default when a flag is actually passed,
 // so seeding each default from the .env value gives exactly that precedence.
+//
+// -version is not configuration: it asks the caller to print the build
+// version and exit, which main does before anything else starts.
 package cli
 
 import (
@@ -30,6 +33,7 @@ type Config struct {
 	CORSOrigins []string // browser origins allowed via CORS (nil -> CORS disabled)
 	EnvFile     string   // .env path that was consulted
 	EnvLoaded   bool     // whether that file existed and was read
+	ShowVersion bool     // -version: print the build version and exit
 }
 
 // Parse resolves configuration from os.Args, exiting the process on a flag
@@ -75,6 +79,7 @@ func ParseArgs(args []string) (Config, error) {
 	workRoot := fs.String("work", get("WORK", ""), "root dir for emitted files (default: OS temp)")
 	apiKey := fs.String("api-key", get("API_KEY", ""), "require this api_key in every request payload (default: no authentication)")
 	corsOrigins := fs.String("cors-origins", get("CORS_ORIGINS", ""), `comma-separated browser origins allowed via CORS: exact origins, "*", or subdomain wildcards like https://*.example.com (default: CORS disabled)`)
+	showVersion := fs.Bool("version", false, "print the build version and exit")
 
 	if err := fs.Parse(args); err != nil {
 		return Config{}, err
@@ -87,6 +92,7 @@ func ParseArgs(args []string) (Config, error) {
 		CORSOrigins: splitList(*corsOrigins),
 		EnvFile:     *envFile,
 		EnvLoaded:   loaded,
+		ShowVersion: *showVersion,
 	}, nil
 }
 

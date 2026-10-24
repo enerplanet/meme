@@ -11,9 +11,12 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log"
 	"net/http"
 	"os/signal"
+	"runtime/debug"
+	"strings"
 	"syscall"
 	"time"
 
@@ -30,8 +33,33 @@ const (
 	shutdownGrace   = 10 * time.Second
 )
 
+// version is the release stamped into the binary at build time: `make build`
+// passes -X main.version=<git describe> (see the Makefile). A plain `go build`
+// leaves it empty and buildVersion falls back to what the toolchain recorded.
+var version string
+
+// buildVersion reports the version of this binary: the stamped release, else
+// the module version a `go install module@version` binary carries, else
+// "dev". A module version's leading "v" is dropped so the value reads like
+// the changelog and CITATION.cff ("0.1.0-alpha").
+func buildVersion() string {
+	if version != "" {
+		return version
+	}
+	if info, ok := debug.ReadBuildInfo(); ok {
+		if v := info.Main.Version; v != "" && v != "(devel)" {
+			return strings.TrimPrefix(v, "v")
+		}
+	}
+	return "dev"
+}
+
 func main() {
 	cfg := cli.Parse()
+	if cfg.ShowVersion {
+		fmt.Println("meme", buildVersion())
+		return
+	}
 	if cfg.EnvLoaded {
 		log.Printf("loaded env file %s", cfg.EnvFile)
 	}
@@ -62,6 +90,7 @@ func main() {
 		JobContext: jobCtx,
 		APIKey:     cfg.APIKey,
 		CORS:       corsCfg,
+		Version:    buildVersion(),
 	})
 
 	server := &http.Server{

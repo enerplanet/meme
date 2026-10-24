@@ -288,3 +288,25 @@ func post(t *testing.T, url string, body []byte) map[string]any {
 	}
 	return out
 }
+
+// /healthz answers on both route forms with the liveness status and the build
+// version the server was constructed with.
+func TestHealthzReportsVersion(t *testing.T) {
+	srv := httptest.NewServer(api.NewServer(api.Server{Version: "0.1.0-test"}))
+	t.Cleanup(srv.Close)
+
+	for _, path := range []string{"/healthz", "/v1/healthz"} {
+		resp, err := http.Get(srv.URL + path)
+		if err != nil {
+			t.Fatalf("%s: %v", path, err)
+		}
+		var body map[string]string
+		if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+			t.Fatalf("%s: decode: %v", path, err)
+		}
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusOK || body["status"] != "ok" || body["version"] != "0.1.0-test" {
+			t.Errorf("%s: status %d body %v", path, resp.StatusCode, body)
+		}
+	}
+}

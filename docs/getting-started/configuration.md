@@ -19,6 +19,12 @@ the [environment guide](../operations/environment.md)).
 | `API_KEY` | `-api-key` | *(empty)* | require this key in every payload; empty = auth off |
 | `CORS_ORIGINS` | `-cors-origins` | *(empty)* | comma-separated browser origins allowed via CORS; empty = CORS off |
 
+**Version.** `meme -version` prints the build version and exits, and
+`GET /healthz` reports the same value next to the liveness status. `make build`
+stamps it from the git tag (`0.1.0-alpha`, or `0.1.0-alpha-3-g1a2b3c4-dirty`
+once the tree has moved on), a `go install …@version` binary carries its
+module version, and a plain `go build` reports `dev`.
+
 **Authentication.** Set `API_KEY` and every payload-bearing request
 (`/validate`, `/convert`, `/simulate`) must carry it as a top-level
 `"api_key"` field in the JSON body or it is rejected with a 401

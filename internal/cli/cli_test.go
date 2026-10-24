@@ -132,3 +132,26 @@ func TestParseArgsFlagError(t *testing.T) {
 		t.Error("unknown flag must return an error, not exit")
 	}
 }
+
+// -version asks the caller to print the build version; it is off by default
+// and needs no other configuration to be valid.
+func TestParseArgsVersion(t *testing.T) {
+	t.Setenv("MEME_ENV_FILE", "")
+	missing := filepath.Join(t.TempDir(), "none.env")
+
+	cfg, err := ParseArgs([]string{"-env-file", missing})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.ShowVersion {
+		t.Error("ShowVersion must default to false")
+	}
+
+	cfg, err = ParseArgs([]string{"-env-file", missing, "-version"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.ShowVersion {
+		t.Error("-version should set ShowVersion")
+	}
+}

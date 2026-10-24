@@ -161,6 +161,7 @@ nav:
       - ADR-0006 Framework versions as targets: decisions/0006-framework-versions-as-targets.md
       - ADR-0007 Free solvers: decisions/0007-free-solvers.md
       - ADR-0008 Power flow as a run mode: decisions/0008-power-flow-as-a-pypsa-run-mode.md
+      - ADR-0009 Reactive power and fixed transfers: decisions/0009-reactive-power-voltage-control-and-fixed-transfers.md
       - Template: decisions/0000-template.md
   - Contributing:
       - Overview: contributing/index.md

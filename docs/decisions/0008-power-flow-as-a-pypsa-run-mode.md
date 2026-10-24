@@ -1,6 +1,6 @@
 # ADR-0008: Power flow is a PyPSA run mode over an electrical network in the canonical model; MEME never chains jobs
 
-- **Status:** accepted
+- **Status:** accepted (amended 2026-10-25)
 - **Date:** 2026-10-24
 
 ## Context
@@ -102,3 +102,13 @@ code 3) with the tables still written for diagnosis; the log carries
 - The rejected branch stays rejected: a top-level network block would
   reappear as soon as a consumer wanted a shape the canonical model cannot
   express. The answer to that is a canonical field with a gate, as here.
+
+## Amendments
+
+- **2026-10-25.** The rejection of `dispatch` in optimization modes is
+  superseded by [ADR-0009](0009-reactive-power-voltage-control-and-fixed-transfers.md):
+  every power-flow input is ignored with a warning wherever no power flow
+  runs, on Calliope and AdOpT-NET0 and on PyPSA's optimization modes alike,
+  so one payload serves the planning call and the power-flow call. The mode
+  gate is unchanged. ADR-0009 also adds reactive power, voltage control,
+  shunts and fixed transfers to the network described here.

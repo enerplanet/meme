@@ -30,9 +30,9 @@ a 422 rejection) is on the [Examples](examples.md) page.
 
 ## Next steps
 
-- [Configuration](https://github.com/enerplanet/meme/blob/main/configuration.md): ports, work directory, real execution,
+- [Configuration](configuration.md): ports, work directory, real execution,
   API key and CORS.
-- [Examples](https://github.com/enerplanet/meme/blob/main/examples.md): the full request walkthrough, single- and
+- [Examples](examples.md): the full request walkthrough, single- and
   multi-target, every run mode, and what a rejection looks like.
-- [Targets and versions](https://github.com/enerplanet/meme/blob/main/../targets.md): which framework release each
+- [Targets and versions](../targets.md): which framework release each
   target drives and how `all`, variants and aliases resolve.

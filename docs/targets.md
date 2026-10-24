@@ -28,15 +28,15 @@ Each version has its own emitter, capability profile and native key:
 `native.calliope` is Calliope 0.7 syntax and is never applied by the 0.6
 target, which reads `native["calliope-0.6"]`. The decision and its
 alternatives are recorded in
-[ADR-0006](https://github.com/enerplanet/meme/blob/main/decisions/0006-framework-versions-as-targets.md).
+[ADR-0006](decisions/0006-framework-versions-as-targets.md).
 
 ```bash
 curl -s -X POST 'localhost:8080/validate?target=calliope-0.6' -d @examples/shared_full.json
 curl -s -X POST 'localhost:8080/convert?target=calliope,calliope-0.6' -d @examples/shared_full.json
 ```
 
-The pinned releases are installed by the [environment image](https://github.com/enerplanet/meme/blob/main/operations/environment.md);
-the [capability reference](https://github.com/enerplanet/meme/blob/main/reference/capability-reference.md) lists, property
+The pinned releases are installed by the [environment image](operations/environment.md);
+the [capability reference](reference/capability-reference.md) lists, property
 by property, what each target honors.
 
 ## Extension points and known caveats

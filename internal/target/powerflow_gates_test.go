@@ -197,6 +197,9 @@ func TestPowerFlowPyPSAGates(t *testing.T) {
 			l.Capacity = &model.Capacity{}
 			j.Model.Transmission["l12"] = l
 		}, `transmission "l12" needs electrical.s_nom or capacity.existing (the branch rating for the loading output)`},
+		{"distributed slack without a dispatch on the slack", func(j *model.Job) {
+			j.Experiment.PowerFlow.DistributeSlack = true
+		}, `experiment.power_flow.distribute_slack shares the balance in proportion to each generator's dispatch, so the slack "grid" needs a dispatch too`},
 		{"two electrical carriers", func(j *model.Job) {
 			j.Model.Carriers["heat"] = model.Carrier{}
 			j.Model.Nodes["h1"] = model.Node{Electrical: &model.NodeElectrical{VNom: 20}}
@@ -215,6 +218,16 @@ func TestPowerFlowPyPSAGates(t *testing.T) {
 	j := powerFlowJob(t, func(j *model.Job) { j.Experiment.PowerFlow.Slack = "grid@hv" })
 	if _, err := target.ValidateFor(&j, model.TargetPyPSA); err != nil {
 		t.Errorf("slack spelled tech@node should be accepted: %v", err)
+	}
+	// With a dispatch on the slack, distributing the balance is fine.
+	j = powerFlowJob(t, func(j *model.Job) {
+		j.Experiment.PowerFlow.DistributeSlack = true
+		g := j.Model.Technologies["grid"]
+		g.Dispatch = model.Num(16)
+		j.Model.Technologies["grid"] = g
+	})
+	if _, err := target.ValidateFor(&j, model.TargetPyPSA); err != nil {
+		t.Errorf("distribute_slack with a slack dispatch should be accepted: %v", err)
 	}
 
 	// Warnings: other carriers ride along unbalanced; solver settings are moot.

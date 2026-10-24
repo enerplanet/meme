@@ -147,9 +147,18 @@ func validatePowerFlow(j *model.Job) ([]string, error) {
 	}
 	others = emit.Keys(otherSet)
 
-	slackName, _, err := slackComponent(m, carrier, j.Experiment.PowerFlow.SlackOrEmpty())
+	slackName, slackNode, err := slackComponent(m, carrier, j.Experiment.PowerFlow.SlackOrEmpty())
 	if err != nil {
 		return nil, err
+	}
+	// PyPSA distributes the balance in proportion to each generator's p_set;
+	// a slack without one would get nothing and the other generators would
+	// absorb the whole imbalance.
+	if j.Experiment.PowerFlow.DistributeSlack {
+		tid, _, _ := strings.Cut(j.Experiment.PowerFlow.Slack, "@")
+		if m.Technologies[tid].At(slackNode).Dispatch == nil {
+			return nil, fmt.Errorf("experiment.power_flow.distribute_slack shares the balance in proportion to each generator's dispatch, so the slack %q needs a dispatch too (its expected output); otherwise PyPSA moves the whole balance onto the other generators", slackName)
+		}
 	}
 	for _, id := range emit.Keys(m.Technologies) {
 		t := m.Technologies[id]

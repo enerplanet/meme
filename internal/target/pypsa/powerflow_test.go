@@ -233,8 +233,11 @@ func TestPowerFlowRunPyConfig(t *testing.T) {
 
 	_, _, j = emitPowerFlow(t, func(j *model.Job) {
 		j.Experiment.PowerFlow.Method = model.PowerFlowLinear
-		j.Experiment.PowerFlow.DistributeSlack = true
+		j.Experiment.PowerFlow.DistributeSlack = true // needs a dispatch on the slack
 		j.Experiment.PowerFlow.Tolerance = fp(1e-4)
+		g := j.Model.Technologies["grid"]
+		g.Dispatch = model.Num(16)
+		j.Model.Technologies["grid"] = g
 	})
 	if cfg := cfgLine(t, plan(t, &j)); !strings.Contains(cfg, `"power_flow":{"distribute_slack":true,"method":"linear","slack":"grid","tolerance":0.0001}`) {
 		t.Errorf("explicit options not forwarded:\n%s", cfg)

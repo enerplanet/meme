@@ -5,6 +5,7 @@
 
 [![CI](https://github.com/enerplanet/meme/actions/workflows/ci.yml/badge.svg)](https://github.com/enerplanet/meme/actions/workflows/ci.yml)
 [![MkDocs](https://github.com/enerplanet/meme/actions/workflows/docs.yml/badge.svg)](https://enerplanet.github.io/meme)
+[![Release](https://img.shields.io/github/v/release/enerplanet/meme?include_prereleases&sort=semver&display_name=tag)](https://github.com/enerplanet/meme/releases)
 [![Go](https://img.shields.io/github/go-mod/go-version/enerplanet/meme?logo=go&logoColor=white)](go.mod)
 [![License: MIT](https://img.shields.io/github/license/enerplanet/meme)](LICENSE)
 
@@ -67,6 +68,10 @@ make run                                                        # build + serve 
 curl -s -X POST 'localhost:8080/validate?target=all' -d @examples/shared_full.json | jq .
 curl -s -X POST 'localhost:8080/convert?target=calliope' -d @examples/calliope_full.json | jq .
 ```
+
+Without a checkout, `go install github.com/enerplanet/meme/cmd/meme@latest`
+puts the same dry-run binary into your Go bin directory (`meme -version`
+tells you which release).
 
 Real solvers in Docker (PyPSA/HiGHS, Calliope 0.7 and 0.6/CBC, AdOpT/GLPK):
 

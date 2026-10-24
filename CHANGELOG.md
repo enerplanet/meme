@@ -2,13 +2,28 @@
 
 All notable changes to MEME are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow
-[Semantic Versioning](https://semver.org). Until the first tagged release,
-changes accumulate under *Unreleased*.
+[Semantic Versioning](https://semver.org), and git tags carry the `v` prefix
+Go modules require (`v0.1.0-alpha`).
 
 ## [Unreleased]
 
+## [0.1.0-alpha] - 2026-10-24
+
+The first pre-release. It carries the service as scaffolded in July 2026 —
+the canonical model and its validation, the emission toolkit, the target
+registry with capability-driven validation, the PyPSA, Calliope and
+AdOpT-NET0 targets, the job execution engine with bounded concurrency, the
+HTTP API with multi-target resolution and API-key authentication, the
+embedded scenario corpus with golden snapshots and the validation matrix, the
+containerized solver environment, the real-solver E2E suite, the published
+JSON Schemas and the example payloads — together with everything that landed
+on it since, listed below. Before 1.0 the API and the canonical model may
+still change between releases.
+
 ### Added
 
+- `meme -version` and the `version` field of `GET /healthz` report the build
+  version, which `make build` stamps from the git tag.
 - Calliope 0.6.8 as the `calliope-0.6` target: its own emitter for the 0.6
   model definition (`model`/`run`/`techs`/`locations`/`links`, `file=`
   timeseries, `group_constraints`, `conversion_plus` carrier tiers), its own
@@ -70,19 +85,8 @@ changes accumulate under *Unreleased*.
   edge cases, resolution parsing and YAML floats in the emitters; a node
   with no technologies emitted as `techs: {}`.
 
-## [0.1.0-alpha] - 2026-07-16
-
-Initial scaffold of the service: canonical model and validation, the
-emission toolkit, the target registry with capability-driven validation,
-the PyPSA, Calliope 0.7 (dev7) and AdOpT-NET0 targets, the job execution
-engine with bounded concurrency, the HTTP API with multi-target resolution
-and API-key authentication, the embedded scenario corpus with golden
-snapshots and the validation matrix, the containerized solver environment,
-the real-solver E2E suite, the published JSON Schemas and the example
-payloads.
-
-[Unreleased]: https://github.com/enerplanet/meme/compare/0b16636...main
-[0.1.0-alpha]: https://github.com/enerplanet/meme/tree/0b16636
+[Unreleased]: https://github.com/enerplanet/meme/compare/v0.1.0-alpha...HEAD
+[0.1.0-alpha]: https://github.com/enerplanet/meme/releases/tag/v0.1.0-alpha
 [#3]: https://github.com/enerplanet/meme/issues/3
 [#4]: https://github.com/enerplanet/meme/issues/4
 [#7]: https://github.com/enerplanet/meme/issues/7

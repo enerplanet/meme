@@ -145,6 +145,7 @@ nav:
       - Targets and versions: targets.md
       - Capability matrix: capabilities.md
       - Scenario catalog: scenarios.md
+      - Coverage roadmap: roadmap.md
   - Reference:
       - Capability reference: reference/capability-reference.md
       - Changelog: changelog.md

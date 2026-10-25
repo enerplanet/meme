@@ -7,6 +7,21 @@ Go modules require (`v0.1.0-alpha`).
 
 ## [Unreleased]
 
+### Added
+
+- `docs/roadmap.md`: the coverage roadmap. It records the 2026-10-25
+  measurement of what each framework accepts natively against what the
+  emitters write for the whole scenario and example corpus, lists the
+  emitter code paths no payload exercises, names two defects the capability
+  reference hides (PyPSA storage units lose `capacity.max` and
+  `operation.min_pu`/`max_pu`; AdOpT batteries ignore
+  `storage.charge_eff`/`discharge_eff`), and plans the additive work for
+  `0.2.x` and the breaking bundle for `0.3.0`, each with its deprecation.
+  Technology catalogs become selectable: a `library` pin on a technology
+  or arc names an upstream entry (AdOpT database, PyPSA standard types)
+  or asks for a MEME-synthesized definition, and `experiment.catalog`
+  sets the default.
+
 ## [0.2.0-alpha] - 2026-10-25
 
 ### Added

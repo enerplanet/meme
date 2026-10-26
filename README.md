@@ -716,7 +716,14 @@ and piecewise math render regardless (they are model physics, not user math).
     `output/highs_solveN.mps`, with the options it was solved with in
     `highs_solveN.opt`, so it can be benchmarked directly
     (`highs --options_file highs_solve1.opt highs_solve1.mps`). The full-year
-    Italy LP is ~1.5 GB as MPS.
+    Italy LP is ~1.5 GB as MPS. The MPS file is close to the solved LP but
+    not identical: about one number in ten is rounded in the last digit, and
+    the reader drops free rows. That changes IPX's path (on the 3H full year,
+    settings that converged on the MPS file stalled in the job), so the arrays are also
+    kept bit for bit in `highs_solveN.npz`. Replay that one when the outcome
+    matters (`highs_solver._load_npz(highspy.Highs(), path)`, then the
+    `.opt` options): it reproduces the pipeline's solve exactly. A SPORES
+    worker names its files after its log (`highs_w3_solveN.*`).
   - Every `HiGHS: solve N: optimal …` line carries the wall time and the
     process's peak RSS. The throwaway LP is written to `/dev/shm` when it
     has ≥ 8 GiB free (the compose files set `shm_size: 16gb`; Docker's

@@ -615,16 +615,47 @@ def _summary(info, solver):
 def _keep_lp(h, opts):
     """keep_lp: write the LP exactly as HiGHS is about to solve it (after the
     placeholder handling) plus the options, for benchmarking HiGHS directly:
-    highs --options_file <name>.opt <name>.mps (or highspy readModel)."""
-    name = os.path.join(os.path.dirname(_LOG_FILE), f"highs_solve{_SOLVE_COUNT}")
+    highs --options_file <name>.opt <name>.mps (or highspy readModel).
+
+    The MPS file is not the same LP: it rounds ~1 in 10 numbers in the last
+    digit and its reader drops free rows (the retired and relaxed ones). That
+    changes IPX's path: on the Italy 3H explore LP, settings that converged on
+    the MPS file stalled in the job. So <name>.npz keeps the arrays bit for
+    bit; replay with _load_npz (same iterations and objective as the job)."""
+    name = f"{os.path.splitext(_LOG_FILE)[0]}_solve{_SOLVE_COUNT}"  # highs_w3_solve2 in a SPORES worker
     t = time.time()
     h.writeModel(name + ".mps")
+    lp = h.getLp()
+    a = lp.a_matrix_
+    np.savez(name + ".npz", col_cost=np.asarray(lp.col_cost_), col_lower=np.asarray(lp.col_lower_),
+             col_upper=np.asarray(lp.col_upper_), row_lower=np.asarray(lp.row_lower_),
+             row_upper=np.asarray(lp.row_upper_), start=np.asarray(a.start_), index=np.asarray(a.index_),
+             value=np.asarray(a.value_), offset=lp.offset_, sense=int(lp.sense_ == highspy.ObjSense.kMaximize),
+             integrality=np.asarray(lp.integrality_, dtype=np.int8))
     with open(name + ".opt", "w", encoding="utf-8") as fh:
         for key, value in opts.items():
             fh.write(f"{key} = {value}\n")
     print(f"HiGHS: {_LABEL}solve {_SOLVE_COUNT}: kept the LP as {name}.mps "
-          f"({os.path.getsize(name + '.mps') / 2**20:.1f} MiB, {time.time() - t:.1f}s) with its options in {name}.opt",
+          f"({os.path.getsize(name + '.mps') / 2**20:.1f} MiB) and bit for bit as {name}.npz "
+          f"({os.path.getsize(name + '.npz') / 2**20:.1f} MiB) in {time.time() - t:.1f}s, with its options in {name}.opt",
           flush=True)
+
+
+def _load_npz(h, path):
+    """Load an LP kept by keep_lp (<name>.npz) into highspy.Highs `h`, exactly."""
+    d = np.load(path)
+    lp = highspy.HighsLp()
+    lp.num_col_, lp.num_row_ = len(d["col_cost"]), len(d["row_lower"])
+    lp.col_cost_, lp.col_lower_, lp.col_upper_ = d["col_cost"], d["col_lower"], d["col_upper"]
+    lp.row_lower_, lp.row_upper_ = d["row_lower"], d["row_upper"]
+    lp.a_matrix_.format_ = highspy.MatrixFormat.kColwise
+    lp.a_matrix_.num_col_, lp.a_matrix_.num_row_ = lp.num_col_, lp.num_row_
+    lp.a_matrix_.start_, lp.a_matrix_.index_, lp.a_matrix_.value_ = d["start"], d["index"], d["value"]
+    lp.offset_ = float(d["offset"])
+    lp.sense_ = highspy.ObjSense.kMaximize if int(d["sense"]) else highspy.ObjSense.kMinimize
+    if d["integrality"].any():
+        lp.integrality_ = [highspy.HighsVarType(int(v)) for v in d["integrality"]]
+    return h.passModel(lp)
 
 
 def _solve_highs(self, solve_config, warmstart=False):
@@ -660,10 +691,10 @@ def _solve_highs(self, solve_config, warmstart=False):
         model = _Model(self, threshold, clamp)
         self._meme_highs = model
         how = model.load(keep, str(solve_config.save_logs) if keep else None)
-        model.dump = dump and _LOG_FILE is not None
         if HOOKS["on_loaded"]:
             HOOKS["on_loaded"](self)
     print(f"HiGHS: {_LABEL}solve {_SOLVE_COUNT}: {how}", flush=True)
+    model.dump = dump and _LOG_FILE is not None  # every solve, also one updated in place
     h = model.h
 
     user = dict(solve_config.solver_options or {})

@@ -34,7 +34,7 @@ Run as a script, it replaces `calliope run` for a plain (non-schedule) run:
 HiGHS options: defaults below, then config.solve.solver_options (HiGHS option
 names, e.g. time_limit, threads, run_crossover, solver) override them; the
 bridge's own options (keep_lp, placeholder_bound, placeholder_clamp,
-spores_run_crossover) and the SPORES driver's (spores_workers,
+spores_run_crossover, spores_cost_tiebreak) and the SPORES driver's (spores_workers,
 spores_explore_chains) are taken out before the rest reach HiGHS. An
 interior-point solve that stalls is retried (see _solve_highs).
 The HiGHS log is written to <output dir>/highs.log and echoed to stdout as it
@@ -80,10 +80,38 @@ _EXACT_ROWS = frozenset({"total_system_cost_max"})
 # by default (spores_run_crossover): they only need near-optimal capacities,
 # and on a full-year model crossover can take hours. The LPs are degenerate,
 # so per-node capacities are not unique even with crossover.
+# Explore SPORES solves (objective min_spores) also add spores_cost_tiebreak x
+# the total system cost (the SPORES cost cap's expression, in EUR) to their
+# objective. min_spores costs only ~100 of millions of columns, so its optimal
+# face is huge and IPX stalled on it (Italy 3H full year: always at
+# user_bound_scale -16, by chance at -12). With 1e-6 it solved to the same
+# score (6.7342e7, ~0.1 % added); 1e-5 broke it. Minimise solves
+# (tempo_min_spores) converge without it and stalled with it (week model), so
+# they are left alone. 0 turns the tie-break off.
+# SPORES solves walk a ladder of user_bound_scale offsets from bound_scale():
+# IPX converges or stops with "no progress" (model status Unknown) on them
+# depending on the scale, and the scale that works differs from LP to LP. Seen
+# on the Italy 3H full year (bound_scale() -16), replaying each LP bit for bit:
+# - explore: the first explore LP stalled (~1 h) at -16 and -12 and converged
+#   at -13/-14 (~2 h); of five explore LPs, four converged at -13 and one
+#   stalled at -13, -14, -12, -11 and -15 but converged at -16 (2.5 h).
+# - minimise: three of four converged at -16; one stopped at iteration 19
+#   (~10 min) at -16 and converged at -12, -13 and -14 (1.7 h).
+# - 178-SPORE run: of 21 explore LPs, 7 converged at -13, 5 at -16 and 8 at
+#   -14; the 21st stalled or failed at -13, -16, -14, -12, -17 and -10 and
+#   converged at -15, -18, -11 and -8 (~2 h each). Ten minimise LPs failed
+#   -16, -13, -14 and -12 and went on to the fallback, which ran 30-65 h.
+# On an explore LP the crossover/dual simplex fallback ran 39 h without
+# finishing, so explore solves stop after the ladder. A minimise solve gets it
+# last (it finished that minimise LP, in 39 h, in a worker).
+_EXPLORE_SCALES = (3, 0, 2, 4, 1, -2, 5)
+_MINIMISE_SCALES = (0, 3, 2, 4, 1, -2, 5)
+
 DEFAULTS = {
     "solver": "ipx",
     "run_crossover": "on",
     "spores_run_crossover": "off",
+    "spores_cost_tiebreak": 1e-6,
     "threads": os.cpu_count() or 1,
 }
 
@@ -105,7 +133,8 @@ _SOLVE_COUNT = 0
 _LABEL = ""  # log prefix, e.g. "[w3] " in a SPORES driver worker process
 
 # Solver options the bridge or the SPORES driver consume; never passed to HiGHS.
-_OWN_OPTIONS = ("keep_lp", "placeholder_bound", "placeholder_clamp", "spores_explore_chains", "spores_run_crossover", "spores_workers")
+_OWN_OPTIONS = ("keep_lp", "placeholder_bound", "placeholder_clamp", "spores_cost_tiebreak", "spores_explore_chains",
+                "spores_run_crossover", "spores_workers")
 
 # Driver hooks: on_loaded(backend) after a full LP load and before it is
 # solved; on_solved(backend, results) after each optimal solve.
@@ -203,6 +232,9 @@ class _Model:
         self.relaxed_cols = {}  # col -> original (lb, ub), after any shift
         self.relaxed_rows = {}  # row -> original (lb, ub)
         self.objective = None
+        self.obj_cost = np.zeros(0)  # the objective's column costs, without a tie-break
+        self.tiebreak = None  # ((eps, cost cap row ids), its columns) while in the objective
+        self.cost_terms = None  # (cost cap row ids, columns, coefficients)
         self.is_mip = False
         self.max_bound = 0.0
         self.dead_rows = 0
@@ -257,6 +289,8 @@ class _Model:
         self.shift = np.zeros(lp.num_col_)
         self.relaxed_cols, self.relaxed_rows = {}, {}
         self.objective = self._active_objective()
+        self.obj_cost = np.asarray(lp.col_cost_, dtype=float).copy()
+        self.tiebreak = None
         self.dead_rows = 0
         self._clear_dirty()
         t1 = time.time()
@@ -549,6 +583,38 @@ class _Model:
         sense = highspy.ObjSense.kMaximize if objective.sense == -1 else highspy.ObjSense.kMinimize
         self.h.changeObjectiveSense(sense)
         self.objective = objective
+        self.obj_cost = costs
+        self.tiebreak = None
+
+    def set_tiebreak(self, eps):
+        """Objective = its own costs + eps x the SPORES cost cap's expression
+        (minimised: a maximised objective subtracts it); eps 0 removes it.
+        Returns the number of columns it touches (0 without a cost cap)."""
+        cons = [c for c in self.comp_cons.get("total_system_cost_max", ()) if c.active] if eps else []
+        key = (eps, tuple(id(c) for c in cons)) if cons else None
+        if key == (self.tiebreak and self.tiebreak[0]):
+            return len(self.tiebreak[1]) if key else 0
+        costs = np.zeros(len(self.col_var))
+        costs[:len(self.obj_cost)] = self.obj_cost
+        self.tiebreak = None
+        if key:
+            if self.cost_terms is None or self.cost_terms[0] != key[1]:
+                # the cost row is ~5e5 terms on a full year: expand it once, not
+                # every SPORES iteration (each one refreshes the objective)
+                cols, coefs = [], []
+                for con in cons:
+                    repn = generate_standard_repn(con.body, compute_values=True, quadratic=False)
+                    cols.extend(self._col(v) for v in repn.linear_vars)
+                    coefs.extend(repn.linear_coefs)
+                self.cost_terms = (key[1], np.asarray(cols, dtype=np.int64), np.asarray(coefs, dtype=float))
+                costs = np.append(costs, np.zeros(len(self.col_var) - len(costs)))  # _col may add columns
+            _, cols, coefs = self.cost_terms
+            sign = -1.0 if self.objective.sense == -1 else 1.0
+            np.add.at(costs, cols, sign * eps * coefs)
+            self.tiebreak = (key, np.unique(cols))
+        n = len(costs)
+        self.h.changeColsCost(n, np.arange(n, dtype=np.int32), costs)
+        return len(self.tiebreak[1]) if key else 0
 
     # -- after the solve ---------------------------------------------------
 
@@ -673,8 +739,11 @@ def _solve_highs(self, solve_config, warmstart=False):
     # baseline); set_objective rewrites config.objective, so remember it.
     if getattr(self, "_meme_base_objective", None) is None:
         self._meme_base_objective = self.objective
-    if self.objective != self._meme_base_objective:  # a SPORES solve
+    spores = self.objective != self._meme_base_objective
+    if spores:
         opts["run_crossover"] = opts["spores_run_crossover"]
+    explore = self.objective == "min_spores"  # an explore SPORES solve
+    tiebreak = float(opts.get("spores_cost_tiebreak") or 0) if explore else 0.0
     dump = str(opts.get("keep_lp", "")).lower() in ("1", "true", "on", "yes")
     for key in _OWN_OPTIONS:
         opts.pop(key, None)
@@ -696,6 +765,9 @@ def _solve_highs(self, solve_config, warmstart=False):
     print(f"HiGHS: {_LABEL}solve {_SOLVE_COUNT}: {how}", flush=True)
     model.dump = dump and _LOG_FILE is not None  # every solve, also one updated in place
     h = model.h
+    if not model.is_mip and model.set_tiebreak(tiebreak):
+        print(f"HiGHS: {_LABEL}solve {_SOLVE_COUNT}: objective + {tiebreak:g} x total system cost "
+              "(spores_cost_tiebreak)", flush=True)
 
     user = dict(solve_config.solver_options or {})
     if model.is_mip:
@@ -708,9 +780,15 @@ def _solve_highs(self, solve_config, warmstart=False):
               "(pip install highspy-extras); using ipx", flush=True)
         opts["solver"] = "ipx"
 
+    ipm = not model.is_mip and opts.get("solver") in ("hipo", "ipm", "ipx")
+    ladder = [0]
+    if ipm and spores and "user_bound_scale" not in user:
+        ladder = list(_EXPLORE_SCALES if explore else _MINIMISE_SCALES)
+    shift = [ladder[0]]  # user_bound_scale - bound_scale() of the current attempt
+
     def run(retry=None):
         if "user_bound_scale" not in user:
-            opts["user_bound_scale"] = model.bound_scale()
+            opts["user_bound_scale"] = model.bound_scale() + shift[0]
         opts.update(retry or {})
         if getattr(model, "dump", False):
             _keep_lp(h, opts)
@@ -725,12 +803,20 @@ def _solve_highs(self, solve_config, warmstart=False):
     # crossover: deterministic, independent of threads, but gone with the bounds
     # scaled by a different power of two, and IPX solved it too.
     retries = []
-    if not model.is_mip and opts.get("solver") in ("hipo", "ipm", "ipx"):
+    if len(ladder) > 1:
+        # SPORES solves: next bound scale (see _EXPLORE_SCALES)
+        retries = [{"shift": s} for s in ladder[1:]]
+        if not explore:
+            retries.append({"shift": 0, "solver": "ipx", "run_crossover": "on"})
+    elif ipm:
         if opts["solver"] != "ipx" and "user_bound_scale" not in user:
             retries.append({"user_bound_scale": model.bound_scale() + 2})
         retries.append({"solver": "ipx", "run_crossover": "on", "user_bound_scale": model.bound_scale()})
     while h.getModelStatus().name not in _STATUS and retries:
         retry = retries.pop(0)
+        if "shift" in retry:
+            shift[0] = retry.pop("shift")
+            retry["user_bound_scale"] = model.bound_scale() + shift[0]
         print(f"HiGHS: {_LABEL}solve {_SOLVE_COUNT}: {h.modelStatusToString(h.getModelStatus())} with "
               f"{opts['solver']} after {time.time() - t0:.1f}s; solving again with "
               + ", ".join(f"{k} {v}" for k, v in retry.items()), flush=True)

@@ -668,10 +668,36 @@ and piecewise math render regardless (they are model physics, not user math).
     with crossover (IPX vs HiPO: up to 11.7 GW on one node at identical
     cost) because the LPs are degenerate. Set `spores_run_crossover: "on"` to
     get vertices.
-  - If an interior-point solve stalls (model status Unknown; seen once on a
-    week-model minimise SPORE without crossover), the bridge retries with
-    `user_bound_scale` + 2, then with IPX plus crossover; the job log says so
-    (`… Unknown with hipo …; solving again with …`).
+  - Cost tie-break: explore SPORES solves (objective `min_spores`) minimise
+    their objective plus `spores_cost_tiebreak` (default `1e-6`) × the total
+    system cost (the SPORES cost cap's expression), so among equally good
+    solutions the cheapest is picked. `min_spores` costs only ~100 of 2.8M
+    columns on the Italy 3H full year, and without the tie-break IPX stalled
+    on it ("no progress", hours of dual simplex after). With it the explore
+    LP solved in 2.0 h to the same score; `1e-5` already broke it. Minimise
+    solves (`tempo_min_spores`) converge without it and stalled with it on
+    the week model, so they do not get it. Set `0` to turn it off. The
+    objective HiGHS logs includes the tie-break; the results do not.
+  - SPORES bound scale: whether IPX converges on a SPORES LP also depends on
+    `user_bound_scale`, and the scale that works changes from LP to LP. On
+    the Italy 3H full year (default −16), replaying each LP exactly: four of
+    five explore LPs converged at −13 (~2 h) and one only at −16 (2.5 h; it
+    stalled at −11 to −15); three of four minimise LPs converged at −16 and
+    one only away from it (−12 to −14, 1.7 h). So SPORES solves walk a
+    ladder: explore starts at the default + 3, then + 0, + 2, + 4, + 1, − 2,
+    + 5; minimise starts at the default, then + 3, + 2, + 4, + 1, − 2, + 5.
+    The last three came from the 178-SPORE run, where the 21st explore LP
+    failed the first four and converged at −15, −18 and −11 (~2 h); ten
+    minimise LPs failed the first four too. An explore stall costs ~1 h
+    on a full year, a minimise one ~10 min. The log says so
+    (`… Unknown with ipx …; solving again with user_bound_scale …`). After
+    the ladder a minimise solve gets IPX plus crossover at the default (it
+    finished that LP, in 39 h); an explore solve does not (39 h without
+    finishing). Setting `user_bound_scale` yourself turns the ladder off.
+  - Any other interior-point solve that stalls (model status Unknown) is
+    retried with `user_bound_scale` + 2 (HiPO only), then with IPX plus
+    crossover; the job log says so (`… Unknown with hipo …; solving again
+    with …`).
   - `time_limit`/`mip_gap`/`threads` map to HiGHS options. Any HiGHS option
     can be set through `config.solve.solver_options` (native.calliope). MILP
     math uses HiGHS branch-and-bound, and piecewise curves are built in

@@ -731,7 +731,10 @@ and piecewise math render regardless (they are model physics, not user math).
     directions, then accumulates its own SPOREs' relative-deployment scores
     as the native loop does. A chain avoids only its own earlier SPOREs, not
     the other chains'. Each explore SPORE carries `chain` in the contract and
-    a global `iteration` number.
+    a global `iteration` number. This departs from the published SPORES
+    method, where every explore SPORE is scored against all earlier ones in
+    one sequence; for a run that reproduces the method, keep the default
+    `spores_explore_chains: 1`.
   - Coarser time step: `experiment.time_aggregation: {"method": "resample",
     "resolution": "3H"}` resamples the whole run (Calliope
     `config.init.resample`), including the cost-optimal solve that sets the

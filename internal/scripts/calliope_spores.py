@@ -105,7 +105,8 @@ class _Ctx:
         return _scores(results, self.inputs, self.track, self.threshold)
 
     def run_family(self, fam, score0, progress):
-        """Solve one family; returns [(iteration, postprocessed results)]."""
+        """Solve one family; yields (iteration, postprocessed results) as each
+        run finishes, so a worker writes it before starting the next."""
         backend = self.model.backend
         members = set(fam.target)
         excl = xr.DataArray([1.0 if t in members else 0.0 for t in self.techs],
@@ -113,7 +114,6 @@ class _Ctx:
         cumulative = score0.copy()
         backend.update_input("tempo_excl_score", excl)
         backend.update_input("tempo_w_excl", self.w_excl)
-        out = []
         for k in range(fam.count):
             print(f"SPORES minimise {progress(k)}: {'+'.join(fam.target)} (run {k + 1})", flush=True)
             backend.update_input("spores_score", cumulative)
@@ -124,17 +124,16 @@ class _Ctx:
                 break
             res = postprocess.postprocess_model_results(res, self.model)
             cumulative = cumulative + self.scores(res)
-            out.append((k + 1, res))
-        return out
+            yield k + 1, res
 
     def run_chain(self, chain, score0, progress):
         """Solve one independent explore chain (objective min_spores, which
-        the caller sets); returns [(iteration within the chain, results)]."""
+        the caller sets); yields (iteration within the chain, results) as each
+        run finishes."""
         backend = self.model.backend
         rng = np.random.default_rng(chain.index)
         seed = xr.zeros_like(score0) + rng.uniform(0.0, 1.0, size=score0.shape)
         cumulative = score0 + seed.where(self.track).fillna(0)
-        out = []
         for k in range(chain.count):
             print(f"SPORES explore {progress(k)}: chain {chain.index} (run {k + 1})", flush=True)
             backend.update_input("spores_score", cumulative)
@@ -144,8 +143,7 @@ class _Ctx:
                 break
             res = postprocess.postprocess_model_results(res, self.model)
             cumulative = cumulative + self.scores(res)
-            out.append((k + 1, res))
-        return out
+            yield k + 1, res
 
     def run(self, job, score0, progress):
         """Run a minimise target or an explore chain under its objective."""
@@ -217,7 +215,8 @@ class _Pool:
     runs (so no solver threads exist yet); each inherits the built model and
     the loaded HiGHS instance copy-on-write. After the baseline solve the parent
     sends them the baseline scores and cost, then carries on with Calliope's
-    native explore iterations while they solve their targets. Each worker writes its SPOREs to <results dir>/spores_parts/
+    native explore iterations while they solve their targets. Each worker
+    writes every SPORE to <results dir>/spores_parts/ as soon as it is solved,
     and the parent merges them in schedule order, so the output has the same
     layout as a serial run."""
 
@@ -317,7 +316,14 @@ class _Pool:
         for job in jobs:
             for k, res in self.ctx.run(job, score0, lambda k: f"[w{i}] {job.kind} job {job.index}"):
                 res.attrs = {}
-                res.to_netcdf(os.path.join(self.part_dir, job.part(k)))
+                # each run on disk as soon as it is solved (a stopped job keeps
+                # them); written aside and renamed, so a part is never half
+                # written. Compressed like Calliope's own files: a full-year 3H
+                # SPORE is 1.1 GB raw, ~32 MB compressed.
+                path = os.path.join(self.part_dir, job.part(k))
+                enc = {v: {"zlib": True, "complevel": 4} for v in res.data_vars if res[v].dtype.kind in "biuf"}
+                res.to_netcdf(path + ".tmp", format="NETCDF4", encoding=enc)
+                os.replace(path + ".tmp", path)
 
     def collect(self):
         """Wait for the workers; returns their SPOREs and labels in schedule order."""

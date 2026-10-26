@@ -391,8 +391,25 @@ def main(entry, netcdf, schedule_path, labels_path):
               f"{', '.join(str(c.count) for c in chains)}", flush=True)
 
     model.build()
+    native_spores = {"number": chains[0].count} if chains else None
+    if not explore:
+        # Calliope's SPORES loop refuses number 0 (it checks 0 >= number even
+        # on a fresh run), so a minimise-only schedule runs it with 1 and skips
+        # that explore solve: an empty result ends the loop after the baseline.
+        solve = model.backend._solve
+
+        def _skip_explore(solve_config, warmstart=False):
+            if model.backend.objective == "min_spores":
+                print("SPORES: no explore stage; skipping Calliope's explore iteration", flush=True)
+                skipped = xr.Dataset()
+                skipped.attrs["termination_condition"] = "skipped"
+                return skipped
+            return solve(solve_config, warmstart=warmstart)
+
+        model.backend._solve = _skip_explore
+        native_spores = {"number": 1}
     # native: baseline + explore iterations (chain 0 only, with chains)
-    model.solve(**({"spores": {"number": chains[0].count}} if chains else {}))
+    model.solve(**({"spores": native_spores} if native_spores else {}))
     native = model.results
     parts = [native.sel(spores=s, drop=True) for s in native["spores"].values]
     labels = [{"stage": "cost_optimal" if i == 0 else "explore", "target": None, "iteration": i}

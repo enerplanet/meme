@@ -34,9 +34,11 @@ Run as a script, it replaces `calliope run` for a plain (non-schedule) run:
 HiGHS options: defaults below, then config.solve.solver_options (HiGHS option
 names, e.g. time_limit, threads, run_crossover, solver) override them; the
 bridge's own options (keep_lp, placeholder_bound, placeholder_clamp,
-spores_run_crossover, spores_cost_tiebreak) and the SPORES driver's (spores_workers,
-spores_explore_chains) are taken out before the rest reach HiGHS. An
-interior-point solve that stalls is retried (see _solve_highs).
+spores_run_crossover, spores_cost_tiebreak, spores_gurobi, spores_gurobi_python)
+and the SPORES driver's (spores_workers, spores_explore_chains) are taken out
+before the rest reach HiGHS. An interior-point solve that stalls is retried
+(see _solve_highs); a SPORES solve that no retry solves goes to Gurobi when it
+is available (see _GRB_STATUS).
 The HiGHS log is written to <output dir>/highs.log and echoed to stdout as it
 runs.
 """
@@ -45,9 +47,11 @@ import os
 import re
 import resource
 import shutil
+import subprocess
 import sys
 import tempfile
 import time
+import types
 
 import highspy
 import numpy as np
@@ -107,11 +111,23 @@ _EXACT_ROWS = frozenset({"total_system_cost_max"})
 _EXPLORE_SCALES = (3, 0, 2, 4, 1, -2, 5)
 _MINIMISE_SCALES = (0, 3, 2, 4, 1, -2, 5)
 
+# A SPORES LP that every bound scale fails goes to Gurobi's barrier with
+# crossover when Gurobi is available (spores_gurobi; it runs in a subprocess,
+# spores_gurobi_python, so it can live in its own venv). On the Italy 3H full
+# year it solved the 21st explore LP of the 178-SPORE run in 18 min (HiGHS:
+# 2 h at the scales that converge; same objective, score capacities equal to
+# 1e-6) and a minimise LP that failed all seven scales in 2-4 min. Without
+# crossover its barrier stopped short ("sub-optimal") on both. A minimise
+# solve still gets HiGHS's crossover after it, should Gurobi fail.
+_GRB_STATUS = {2: "kOptimal", 3: "kInfeasible", 4: "kUnboundedOrInfeasible", 5: "kUnbounded", 9: "kTimeLimit"}
+
 DEFAULTS = {
     "solver": "ipx",
     "run_crossover": "on",
     "spores_run_crossover": "off",
     "spores_cost_tiebreak": 1e-6,
+    "spores_gurobi": "last",
+    "spores_gurobi_python": "",
     "threads": os.cpu_count() or 1,
 }
 
@@ -134,7 +150,7 @@ _LABEL = ""  # log prefix, e.g. "[w3] " in a SPORES driver worker process
 
 # Solver options the bridge or the SPORES driver consume; never passed to HiGHS.
 _OWN_OPTIONS = ("keep_lp", "placeholder_bound", "placeholder_clamp", "spores_cost_tiebreak", "spores_explore_chains",
-                "spores_run_crossover", "spores_workers")
+                "spores_gurobi", "spores_gurobi_python", "spores_run_crossover", "spores_workers")
 
 # Driver hooks: on_loaded(backend) after a full LP load and before it is
 # solved; on_solved(backend, results) after each optimal solve.
@@ -729,6 +745,93 @@ def _save_npz(h, path):
              integrality=np.asarray(lp.integrality_, dtype=np.int8))
 
 
+# Run by spores_gurobi_python (needs gurobipy, numpy and scipy):
+#   <lp.npz> <out.npz> <threads> <time limit s, 0 none> <log file> <duals 0/1>
+# Rows lo == up are equalities; a ranged row becomes a <= and a >= row, whose
+# duals add up again.
+_GUROBI_SCRIPT = r"""
+import sys
+import numpy as np, scipy.sparse as sp, gurobipy as gp
+inp, out, threads, limit, log, duals = sys.argv[1:7]
+d = np.load(inp)
+n, m = len(d["col_cost"]), len(d["row_lower"])
+A = sp.csc_matrix((d["value"], d["index"], d["start"]), shape=(m, n)).tocsr()
+inf = lambda a: np.clip(a, -gp.GRB.INFINITY, gp.GRB.INFINITY)
+rl, ru = inf(d["row_lower"]), inf(d["row_upper"])
+env = gp.Env(params={"LogFile": log, "LogToConsole": 0})
+mdl = gp.Model(env=env)
+x = mdl.addMVar(n, lb=inf(d["col_lower"]), ub=inf(d["col_upper"]), obj=d["col_cost"])
+mdl.ModelSense = gp.GRB.MAXIMIZE if int(d["sense"]) else gp.GRB.MINIMIZE
+mdl.ObjCon = float(d["offset"])
+eq = rl == ru
+groups = [(np.flatnonzero(eq), "=", rl), (np.flatnonzero(~eq & (ru < gp.GRB.INFINITY)), "<", ru),
+          (np.flatnonzero(~eq & (rl > -gp.GRB.INFINITY)), ">", rl)]
+cons = [(idx, mdl.addMConstr(A[idx], x, s, rhs[idx])) for idx, s, rhs in groups if len(idx)]
+mdl.Params.Method, mdl.Params.Threads = 2, int(threads)
+if float(limit) > 0:
+    mdl.Params.TimeLimit = float(limit)
+mdl.optimize()
+res = {"status": mdl.Status, "runtime": mdl.Runtime, "bar_iter": mdl.BarIterCount, "iter": mdl.IterCount}
+if mdl.SolCount:
+    res["x"] = x.X
+    res["row"] = A @ res["x"]
+    res["obj"] = mdl.ObjVal
+    if int(duals) and mdl.Status == gp.GRB.OPTIMAL:
+        res["dual"] = np.zeros(m)
+        for idx, c in cons:
+            np.add.at(res["dual"], idx, np.asarray(c.Pi))
+np.savez(out, **res)
+"""
+
+_GUROBI_OK = {}  # python -> whether it imports gurobipy (checked once per process)
+
+
+def _gurobi_python(opts):
+    """The interpreter that runs Gurobi for SPORES solves, or None."""
+    if str(opts.get("spores_gurobi", "")).lower() in ("", "0", "off", "false", "no"):
+        return None
+    python = str(opts.get("spores_gurobi_python") or "") or sys.executable
+    if python not in _GUROBI_OK:
+        try:
+            _GUROBI_OK[python] = subprocess.run([python, "-c", "import gurobipy, numpy, scipy"],
+                                                capture_output=True, timeout=120).returncode == 0
+        except (OSError, subprocess.SubprocessError):
+            _GUROBI_OK[python] = False
+        if not _GUROBI_OK[python] and opts.get("spores_gurobi_python"):
+            print(f"HiGHS: {_LABEL}spores_gurobi_python {python} cannot import gurobipy, numpy and scipy; "
+                  "no Gurobi rung", flush=True)
+    return python if _GUROBI_OK[python] else None
+
+
+def _solve_gurobi(h, python, opts, duals):
+    """Solve the LP in `h` with Gurobi (barrier, then crossover) in `python`.
+    Returns a HiGHS-like status name, a solution (col_value, row_value,
+    row_dual and validity flags, in HiGHS's columns and rows), the objective
+    and a summary for the log."""
+    work = tempfile.mkdtemp(prefix="meme-gurobi-", dir=_scratch_dir())
+    log = f"{os.path.splitext(_LOG_FILE)[0]}_solve{_SOLVE_COUNT}_gurobi.log" if _LOG_FILE else ""
+    limit = float(opts.get("time_limit") or 0)
+    try:
+        inp, out = os.path.join(work, "lp.npz"), os.path.join(work, "sol.npz")
+        _save_npz(h, inp)
+        rc = subprocess.run([python, "-c", _GUROBI_SCRIPT, inp, out, str(int(opts.get("threads") or 1)),
+                             str(limit if limit < _INF else 0), log, "1" if duals else "0"]).returncode
+        if rc != 0 or not os.path.exists(out):
+            return "kSolveError", None, None, f"Gurobi exited with code {rc}"
+        with np.load(out) as r:
+            res = {k: r[k] for k in r.files}
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+    status = _GRB_STATUS.get(int(res["status"]), "kUnknown")
+    summary = (f"Gurobi status {int(res['status'])}, barrier {int(res['bar_iter'])} it, "
+               f"{int(res['iter'])} simplex it, {float(res['runtime']):.1f}s" + (f", log {log}" if log else ""))
+    if "x" not in res:
+        return status, None, None, summary
+    sol = types.SimpleNamespace(col_value=res["x"], row_value=res["row"], value_valid=True,
+                                row_dual=res.get("dual"), dual_valid="dual" in res)
+    return status, sol, float(res["obj"]), summary
+
+
 def _solve_highs(self, solve_config, warmstart=False):
     """Drop-in for PyomoBackendModel._solve with solve_config.solver == "highs"."""
     global _SOLVE_COUNT
@@ -750,6 +853,8 @@ def _solve_highs(self, solve_config, warmstart=False):
     explore = self.objective == "min_spores"  # an explore SPORES solve
     tiebreak = float(opts.get("spores_cost_tiebreak") or 0) if explore else 0.0
     dump = str(opts.get("keep_lp", "")).lower() in ("1", "true", "on", "yes")
+    gurobi = _gurobi_python(opts) if spores else None
+    gurobi_first = str(opts.get("spores_gurobi", "")).lower() == "first"
     for key in _OWN_OPTIONS:
         opts.pop(key, None)
     keep = solve_config.save_logs is not None
@@ -790,10 +895,16 @@ def _solve_highs(self, solve_config, warmstart=False):
     if ipm and spores and "user_bound_scale" not in user:
         ladder = list(_EXPLORE_SCALES if explore else _MINIMISE_SCALES)
     shift = [ladder[0]]  # user_bound_scale - bound_scale() of the current attempt
+    grb = {}  # the last attempt's Gurobi result, when Gurobi made it
+    duals = self.shadow_prices.is_active
 
     def run(retry=None):
         if "user_bound_scale" not in user:
             opts["user_bound_scale"] = model.bound_scale() + shift[0]
+        grb.clear()
+        if retry and retry.get("gurobi"):
+            grb["status"], sol, grb["objective"], grb["summary"] = _solve_gurobi(h, gurobi, opts, duals)
+            return sol
         opts.update(retry or {})
         if getattr(model, "dump", False):
             _keep_lp(h, opts)
@@ -802,45 +913,62 @@ def _solve_highs(self, solve_config, warmstart=False):
         h.run()
         return h.getSolution()
 
-    sol = run()
+    def status_name():
+        return grb["status"] if grb else h.getModelStatus().name
+
     # The interior-point solvers can stall ("no progress", model status
     # Unknown) on a SPORES LP. Seen on an Italy minimise solve with HiPO and no
     # crossover: deterministic, independent of threads, but gone with the bounds
     # scaled by a different power of two, and IPX solved it too.
     retries = []
     if len(ladder) > 1:
-        # SPORES solves: next bound scale (see _EXPLORE_SCALES)
+        # SPORES solves: next bound scale (see _EXPLORE_SCALES), then Gurobi
+        # (see _GRB_STATUS) if available
         retries = [{"shift": s} for s in ladder[1:]]
+        if gurobi and gurobi_first:
+            retries.insert(0, {"shift": ladder[0]})
+        elif gurobi:
+            retries.append({"gurobi": True})
         if not explore:
             retries.append({"shift": 0, "solver": "ipx", "run_crossover": "on"})
     elif ipm:
         if opts["solver"] != "ipx" and "user_bound_scale" not in user:
             retries.append({"user_bound_scale": model.bound_scale() + 2})
         retries.append({"solver": "ipx", "run_crossover": "on", "user_bound_scale": model.bound_scale()})
-    while h.getModelStatus().name not in _STATUS and retries:
+    last = {"gurobi": True} if gurobi and gurobi_first and len(ladder) > 1 else None
+    if last:
+        print(f"HiGHS: {_LABEL}solve {_SOLVE_COUNT}: solving with Gurobi first (spores_gurobi first)", flush=True)
+    sol = run(last)
+    while status_name() not in _STATUS and retries:
         retry = retries.pop(0)
         if "shift" in retry:
             shift[0] = retry.pop("shift")
             retry["user_bound_scale"] = model.bound_scale() + shift[0]
-        print(f"HiGHS: {_LABEL}solve {_SOLVE_COUNT}: {h.modelStatusToString(h.getModelStatus())} with "
-              f"{opts['solver']} after {time.time() - t0:.1f}s; solving again with "
-              + ", ".join(f"{k} {v}" for k, v in retry.items()), flush=True)
+        failed = (f"{grb['status'][1:]} with Gurobi ({grb['summary']})" if grb else
+                  f"{h.modelStatusToString(h.getModelStatus())} with {opts['solver']}")
+        print(f"HiGHS: {_LABEL}solve {_SOLVE_COUNT}: {failed} after {time.time() - t0:.1f}s; solving again with "
+              + ("Gurobi barrier and crossover" if retry.get("gurobi") else
+                 ", ".join(f"{k} {v}" for k, v in retry.items())), flush=True)
         if "user_bound_scale" in user:
             retry.pop("user_bound_scale")
+        last = dict(retry)
         sol = run(retry)
-    bad = model.violated_relaxations(sol) if h.getModelStatus().name == "kOptimal" else []
+    bad = model.violated_relaxations(sol) if status_name() == "kOptimal" else []
     if bad:
         kind, k, lb, ub, x = bad[0]
         print(f"HiGHS: {_LABEL}solve {_SOLVE_COUNT}: {len(bad)} relaxed placeholder bound(s) would bind "
               f"(e.g. {kind} {k}: {x:g} outside [{lb:g}, {ub:g}]); restoring them and solving again", flush=True)
         model.restore_relaxations()
-        sol = run()
+        sol = run(last if grb else None)
 
-    status = h.getModelStatus()
-    termination = _STATUS.get(status.name, "other")
-    info = h.getInfo()
-    has_primal = sol.value_valid
-    if termination == "optimal" and info.primal_solution_status != 2:  # kSolutionStatusFeasible
+    termination = _STATUS.get(status_name(), "other")
+    has_primal = sol is not None and sol.value_valid
+    if grb:
+        objective, summary = grb["objective"], grb["summary"]
+    else:
+        info = h.getInfo()
+        objective, summary = info.objective_function_value, _summary(info, opts.get("solver"))
+    if termination == "optimal" and not grb and info.primal_solution_status != 2:  # kSolutionStatusFeasible
         # HiGHS solved the user-scaled model to optimality, but unscaled a row
         # misses the absolute 1e-7 tolerance (seen: 7e-6 on a 1e9 cost row,
         # 7e-15 relative). The solution is optimal for all practical purposes.
@@ -852,15 +980,16 @@ def _solve_highs(self, solve_config, warmstart=False):
         if self.shadow_prices.is_active and sol.dual_valid:
             model.load_duals(sol)
         results = self.load_results()
-        print(f"HiGHS: {_LABEL}solve {_SOLVE_COUNT}: optimal, objective {info.objective_function_value:.10g}, "
-              f"{time.time() - t0:.1f}s total ({_summary(info, opts.get('solver'))}, "
-              f"user_bound_scale {opts.get('user_bound_scale', 0)}, {_memory()})",
+        scale = "" if grb else f", user_bound_scale {opts.get('user_bound_scale', 0)}"
+        print(f"HiGHS: {_LABEL}solve {_SOLVE_COUNT}: optimal, objective {objective:.10g}, "
+              f"{time.time() - t0:.1f}s total ({summary}{scale}, {_memory()})",
               flush=True)
         if HOOKS["on_solved"]:
             HOOKS["on_solved"](self, results)
     else:
-        self._solve_logger.critical(f"HiGHS model status: {h.modelStatusToString(status)}")
-        print(f"HiGHS: {_LABEL}solve {_SOLVE_COUNT}: {h.modelStatusToString(status)} after {time.time() - t0:.1f}s", flush=True)
+        what = f"{grb['status'][1:]} with Gurobi ({grb['summary']})" if grb else h.modelStatusToString(h.getModelStatus())
+        self._solve_logger.critical(f"HiGHS model status: {what}")
+        print(f"HiGHS: {_LABEL}solve {_SOLVE_COUNT}: {what} after {time.time() - t0:.1f}s", flush=True)
         _pbm.model_warn("Model solution was non-optimal.", _class=_pbm.BackendWarning)
         results = xr.Dataset()
         if termination == "optimal":  # optimal status but no primal values to load

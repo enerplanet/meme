@@ -691,13 +691,7 @@ def _keep_lp(h, opts):
     name = f"{os.path.splitext(_LOG_FILE)[0]}_solve{_SOLVE_COUNT}"  # highs_w3_solve2 in a SPORES worker
     t = time.time()
     h.writeModel(name + ".mps")
-    lp = h.getLp()
-    a = lp.a_matrix_
-    np.savez(name + ".npz", col_cost=np.asarray(lp.col_cost_), col_lower=np.asarray(lp.col_lower_),
-             col_upper=np.asarray(lp.col_upper_), row_lower=np.asarray(lp.row_lower_),
-             row_upper=np.asarray(lp.row_upper_), start=np.asarray(a.start_), index=np.asarray(a.index_),
-             value=np.asarray(a.value_), offset=lp.offset_, sense=int(lp.sense_ == highspy.ObjSense.kMaximize),
-             integrality=np.asarray(lp.integrality_, dtype=np.int8))
+    _save_npz(h, name + ".npz")
     with open(name + ".opt", "w", encoding="utf-8") as fh:
         for key, value in opts.items():
             fh.write(f"{key} = {value}\n")
@@ -722,6 +716,17 @@ def _load_npz(h, path):
     if d["integrality"].any():
         lp.integrality_ = [highspy.HighsVarType(int(v)) for v in d["integrality"]]
     return h.passModel(lp)
+
+
+def _save_npz(h, path):
+    """The LP in `h` as arrays, bit for bit (see _keep_lp; _load_npz reads it)."""
+    lp = h.getLp()
+    a = lp.a_matrix_
+    np.savez(path, col_cost=np.asarray(lp.col_cost_), col_lower=np.asarray(lp.col_lower_),
+             col_upper=np.asarray(lp.col_upper_), row_lower=np.asarray(lp.row_lower_),
+             row_upper=np.asarray(lp.row_upper_), start=np.asarray(a.start_), index=np.asarray(a.index_),
+             value=np.asarray(a.value_), offset=lp.offset_, sense=int(lp.sense_ == highspy.ObjSense.kMaximize),
+             integrality=np.asarray(lp.integrality_, dtype=np.int8))
 
 
 def _solve_highs(self, solve_config, warmstart=False):

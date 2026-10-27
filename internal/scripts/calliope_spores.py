@@ -347,10 +347,10 @@ class _Pool:
                     parts.append(ds.load())
                 labels.append(_label(job, k))
         out_dir = os.path.dirname(self.part_dir)
-        for i in range(self.workers):  # keep the workers' HiGHS logs next to highs.log
-            log = os.path.join(self.part_dir, f"highs_w{i}.log")
-            if os.path.exists(log):
-                shutil.move(log, os.path.join(out_dir, f"highs_w{i}.log"))
+        # keep the workers' HiGHS and Gurobi logs (and keep_lp files) next to highs.log
+        for name in os.listdir(self.part_dir):
+            if name.startswith("highs_w"):
+                shutil.move(os.path.join(self.part_dir, name), os.path.join(out_dir, name))
         shutil.rmtree(self.part_dir, ignore_errors=True)
         return parts, labels
 

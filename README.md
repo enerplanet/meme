@@ -694,6 +694,22 @@ and piecewise math render regardless (they are model physics, not user math).
     the ladder a minimise solve gets IPX plus crossover at the default (it
     finished that LP, in 39 h); an explore solve does not (39 h without
     finishing). Setting `user_bound_scale` yourself turns the ladder off.
+  - Gurobi rung: a SPORES solve that fails every bound scale goes to
+    Gurobi's barrier plus crossover when Gurobi is available, before the
+    minimise crossover fallback (which still follows, should Gurobi fail). On
+    the Italy 3H full year Gurobi solved the 21st explore LP in 18 min (same
+    objective and score capacities as HiGHS's 2 h solves) and a minimise LP
+    that failed all seven scales in 2-4 min; without crossover its barrier
+    stopped short on both. Gurobi runs in a subprocess:
+    `spores_gurobi_python` names its interpreter (default: the bridge's own),
+    which needs `gurobipy`, `numpy` and `scipy`; without them there is no
+    rung. The licence comes from Gurobi's usual places (`GRB_LICENSE_FILE`,
+    `/opt/gurobi/gurobi.lic`); in a container it needs a WLS licence, since
+    a host-locked one fails there (HostID mismatch). `spores_gurobi: "first"`
+    tries Gurobi before the ladder, `"off"` drops it (default `"last"`).
+    Its log is `highs_wN_solveM_gurobi.log` next to the HiGHS logs. The
+    optimal face is not unique, so a Gurobi SPORE can differ from HiGHS's
+    (equally good), and so do the later SPOREs that are scored against it.
   - Any other interior-point solve that stalls (model status Unknown) is
     retried with `user_bound_scale` + 2 (HiPO only), then with IPX plus
     crossover; the job log says so (`… Unknown with hipo …; solving again

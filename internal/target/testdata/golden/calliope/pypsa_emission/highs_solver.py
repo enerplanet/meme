@@ -34,7 +34,8 @@ Run as a script, it replaces `calliope run` for a plain (non-schedule) run:
 HiGHS options: defaults below, then config.solve.solver_options (HiGHS option
 names, e.g. time_limit, threads, run_crossover, solver) override them; the
 bridge's own options (keep_lp, placeholder_bound, placeholder_clamp,
-spores_run_crossover, spores_cost_tiebreak, spores_gurobi, spores_gurobi_python)
+spores_run_crossover, spores_cost_tiebreak, spores_gurobi, spores_gurobi_python,
+spores_gurobi_method)
 and the SPORES driver's (spores_workers, spores_explore_chains) are taken out
 before the rest reach HiGHS. An interior-point solve that stalls is retried
 (see _solve_highs); a SPORES solve that no retry solves goes to Gurobi when it
@@ -119,6 +120,10 @@ _MINIMISE_SCALES = (0, 3, 2, 4, 1, -2, 5)
 # 1e-6) and a minimise LP that failed all seven scales in 2-4 min. Without
 # crossover its barrier stopped short ("sub-optimal") on both. A minimise
 # solve still gets HiGHS's crossover after it, should Gurobi fail.
+# spores_gurobi_method is Gurobi's Method: 2 (barrier) or 3 (concurrent, whose
+# barrier runs on to 1000 iterations when simplex does not win first). On a
+# full-year minimise run-1 LP whose crossover after barrier had not finished
+# in 6 h, 3 solved it in 93 min with 5 threads.
 _GRB_STATUS = {2: "kOptimal", 3: "kInfeasible", 4: "kUnboundedOrInfeasible", 5: "kUnbounded", 9: "kTimeLimit"}
 
 DEFAULTS = {
@@ -128,6 +133,7 @@ DEFAULTS = {
     "spores_cost_tiebreak": 1e-6,
     "spores_gurobi": "last",
     "spores_gurobi_python": "",
+    "spores_gurobi_method": 2,
     "threads": os.cpu_count() or 1,
 }
 
@@ -150,7 +156,8 @@ _LABEL = ""  # log prefix, e.g. "[w3] " in a SPORES driver worker process
 
 # Solver options the bridge or the SPORES driver consume; never passed to HiGHS.
 _OWN_OPTIONS = ("keep_lp", "placeholder_bound", "placeholder_clamp", "spores_cost_tiebreak", "spores_explore_chains",
-                "spores_gurobi", "spores_gurobi_python", "spores_run_crossover", "spores_workers")
+                "spores_gurobi", "spores_gurobi_method", "spores_gurobi_python", "spores_run_crossover",
+                "spores_workers")
 
 # Driver hooks: on_loaded(backend) after a full LP load and before it is
 # solved; on_solved(backend, results) after each optimal solve.
@@ -746,13 +753,13 @@ def _save_npz(h, path):
 
 
 # Run by spores_gurobi_python (needs gurobipy, numpy and scipy):
-#   <lp.npz> <out.npz> <threads> <time limit s, 0 none> <log file> <duals 0/1>
+#   <lp.npz> <out.npz> <threads> <time limit s, 0 none> <log file> <duals 0/1> <Method>
 # Rows lo == up are equalities; a ranged row becomes a <= and a >= row, whose
 # duals add up again.
 _GUROBI_SCRIPT = r"""
 import sys
 import numpy as np, scipy.sparse as sp, gurobipy as gp
-inp, out, threads, limit, log, duals = sys.argv[1:7]
+inp, out, threads, limit, log, duals, method = sys.argv[1:8]
 d = np.load(inp)
 n, m = len(d["col_cost"]), len(d["row_lower"])
 A = sp.csc_matrix((d["value"], d["index"], d["start"]), shape=(m, n)).tocsr()
@@ -767,7 +774,7 @@ eq = rl == ru
 groups = [(np.flatnonzero(eq), "=", rl), (np.flatnonzero(~eq & (ru < gp.GRB.INFINITY)), "<", ru),
           (np.flatnonzero(~eq & (rl > -gp.GRB.INFINITY)), ">", rl)]
 cons = [(idx, mdl.addMConstr(A[idx], x, s, rhs[idx])) for idx, s, rhs in groups if len(idx)]
-mdl.Params.Method, mdl.Params.Threads = 2, int(threads)
+mdl.Params.Method, mdl.Params.Threads = int(method), int(threads)
 if float(limit) > 0:
     mdl.Params.TimeLimit = float(limit)
 mdl.optimize()
@@ -803,8 +810,9 @@ def _gurobi_python(opts):
     return python if _GUROBI_OK[python] else None
 
 
-def _solve_gurobi(h, python, opts, duals):
-    """Solve the LP in `h` with Gurobi (barrier, then crossover) in `python`.
+def _solve_gurobi(h, python, method, opts, duals):
+    """Solve the LP in `h` with Gurobi (Method `method`: 2 barrier, then
+    crossover; 3 concurrent) in `python`.
     Returns a HiGHS-like status name, a solution (col_value, row_value,
     row_dual and validity flags, in HiGHS's columns and rows), the objective
     and a summary for the log."""
@@ -815,7 +823,8 @@ def _solve_gurobi(h, python, opts, duals):
         inp, out = os.path.join(work, "lp.npz"), os.path.join(work, "sol.npz")
         _save_npz(h, inp)
         rc = subprocess.run([python, "-c", _GUROBI_SCRIPT, inp, out, str(int(opts.get("threads") or 1)),
-                             str(limit if limit < _INF else 0), log, "1" if duals else "0"]).returncode
+                             str(limit if limit < _INF else 0), log, "1" if duals else "0",
+                             str(method)]).returncode
         if rc != 0 or not os.path.exists(out):
             return "kSolveError", None, None, f"Gurobi exited with code {rc}"
         with np.load(out) as r:
@@ -823,7 +832,7 @@ def _solve_gurobi(h, python, opts, duals):
     finally:
         shutil.rmtree(work, ignore_errors=True)
     status = _GRB_STATUS.get(int(res["status"]), "kUnknown")
-    summary = (f"Gurobi status {int(res['status'])}, barrier {int(res['bar_iter'])} it, "
+    summary = (f"Gurobi Method {method}, status {int(res['status'])}, barrier {int(res['bar_iter'])} it, "
                f"{int(res['iter'])} simplex it, {float(res['runtime']):.1f}s" + (f", log {log}" if log else ""))
     if "x" not in res:
         return status, None, None, summary
@@ -855,6 +864,7 @@ def _solve_highs(self, solve_config, warmstart=False):
     dump = str(opts.get("keep_lp", "")).lower() in ("1", "true", "on", "yes")
     gurobi = _gurobi_python(opts) if spores else None
     gurobi_first = str(opts.get("spores_gurobi", "")).lower() == "first"
+    gurobi_method = int(opts.get("spores_gurobi_method") or 2)
     for key in _OWN_OPTIONS:
         opts.pop(key, None)
     keep = solve_config.save_logs is not None
@@ -903,7 +913,7 @@ def _solve_highs(self, solve_config, warmstart=False):
             opts["user_bound_scale"] = model.bound_scale() + shift[0]
         grb.clear()
         if retry and retry.get("gurobi"):
-            grb["status"], sol, grb["objective"], grb["summary"] = _solve_gurobi(h, gurobi, opts, duals)
+            grb["status"], sol, grb["objective"], grb["summary"] = _solve_gurobi(h, gurobi, gurobi_method, opts, duals)
             return sol
         opts.update(retry or {})
         if getattr(model, "dump", False):

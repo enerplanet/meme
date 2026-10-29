@@ -707,6 +707,12 @@ and piecewise math render regardless (they are model physics, not user math).
     `/opt/gurobi/gurobi.lic`); in a container it needs a WLS licence, since
     a host-locked one fails there (HostID mismatch). `spores_gurobi: "first"`
     tries Gurobi before the ladder, `"off"` drops it (default `"last"`).
+    `spores_gurobi_method` is Gurobi's `Method` (default 2, barrier). Some
+    full-year minimise LPs leave Gurobi's crossover running for hours after
+    barrier; on one whose crossover had not finished in 6 h, 3 (concurrent,
+    whose barrier then ran to 1000 iterations) solved it in 93 min with 5
+    threads. Without crossover the barrier solutions were not usable: target
+    capacities 3-14% above the optimum, or numerical trouble.
     Its log is `highs_wN_solveM_gurobi.log` next to the HiGHS logs. The
     optimal face is not unique, so a Gurobi SPORE can differ from HiGHS's
     (equally good), and so do the later SPOREs that are scored against it.

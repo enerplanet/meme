@@ -22,6 +22,14 @@ Go modules require (`v0.1.0-alpha`).
   or asks for a MEME-synthesized definition, and `experiment.catalog`
   sets the default.
 
+### Changed
+
+- `environment/docker-compose.yml` pins the Compose project to `meme`, so
+  the API container is `meme-api-1`. The API joins `tentacron-net` itself
+  with the aliases `meme` and, until callers move, `meme-env-api-1`.
+  `test` and `shell` sit under the `tools` profile, so a plain `up`
+  starts the API only.
+
 ## [0.2.0-alpha] - 2026-10-25
 
 ### Added

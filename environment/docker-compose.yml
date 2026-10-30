@@ -8,7 +8,7 @@
 # The repo root is bind-mounted into /src so edits are picked up without a
 # rebuild; only the frameworks/solver layer is baked into the image.
 
-name: meme-env
+name: meme
 
 services:
   # Long-running API with real solver execution.
@@ -34,10 +34,19 @@ services:
       - go-mod:/root/go/pkg/mod
     ports:
       - "${HOST_PORT:-8080}:${PORT:-8080}"
+    networks:
+      default:
+      tentacron-net:
+        # Callers in other repositories address `meme`. The service name `api`
+        # is shared by other repositories on this network and resolves to any
+        # of them, so it is never an address. meme-env-api-1 is kept until
+        # every caller has moved to `meme`.
+        aliases: [meme, meme-env-api-1]
     command: make run
 
   # One-shot: compile everything and run the Go test suite.
   test:
+    profiles: [tools]
     image: ${IMAGE_TAG:-meme-env:latest}
     build:
       context: ..
@@ -51,6 +60,7 @@ services:
 
   # Interactive shell with Go + all three frameworks (both Calliope releases) + solvers (HiGHS/CBC/GLPK) on PATH.
   shell:
+    profiles: [tools]
     image: ${IMAGE_TAG:-meme-env:latest}
     build:
       context: ..
@@ -65,3 +75,12 @@ services:
 volumes:
   go-build:
   go-mod:
+
+# The key must equal the name and this block must stay exactly as it is:
+# Compose labels the network with the key, and every repository joining
+# tentacron-net declares it identically. A different key fails with
+# "network tentacron-net was found but has incorrect label"; adding a driver or
+# ipam block makes a joining project try to recreate the network.
+networks:
+  tentacron-net:
+    name: tentacron-net

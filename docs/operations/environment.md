@@ -119,6 +119,12 @@ with `ENV=staging`.
   and AdOpT respectively (see the table above). Note the solvers themselves are
   not exact-pinned: `highspy` is unversioned in the requirements and CBC/GLPK
   come from apt — only the three framework packages carry `==` pins.
+- The Compose project is `meme`, so the API container is `meme-api-1`. `api`
+  also joins the shared `tentacron-net` network, where services in other
+  repositories address it as `meme`; `meme-env-api-1` still resolves there for
+  callers not yet moved. The `test` and `shell` services sit under the `tools`
+  profile, so `up` starts only `api`; the Makefile targets name them and run
+  them as before.
 - The `api` service writes emitted files to `/src/.work`; add that to
   `.gitignore` if you don't already ignore it. Note the container runs as root,
   so `.work` contents created via docker are root-owned on the host.
